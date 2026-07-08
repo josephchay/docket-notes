@@ -49,19 +49,39 @@
   font-size: 12px;
 }
 
+.note .note-title {
+  display: block;
+  background: none;
+  border: none;
+  border-bottom: 2px solid var(--black-even-more-transclucent-color);
+  margin-top: 44px;
+  padding: 0 10px 8px 0;
+  outline: none;
+  width: 98%;
+  font-size: 22px;
+  font-weight: 700;
+  font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+  Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  transition: color 0.3s ease-in-out, border-color 0.3s ease-in-out;
+}
+
+.note .note-title::placeholder {
+  color: var(--black-more-transclucent-color);
+}
+
 .note textarea {
   background: none;
   border: none;
   font-size: 18px;
   font-weight: 600;
-  margin-top: 40px;
+  margin-top: 16px;
   padding-right: 10px;
   outline: none;
   font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
   Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
   resize: none;
   width: 98%;
-  height: 72%;
+  height: 46%;
   transition: color 0.3s ease-in-out;
 }
 
@@ -105,4 +125,131 @@
 .note .trash-container .trash .trash-icon {
   font-size: 100px;
   color: var(--black-color);
+}
+
+/* --- Interactive elastic pull-strings ------------------------------------ */
+.note .pull-zone {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  width: 100%;
+  height: 260px;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.note .pull-string {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.note .pull-rope {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 260px;
+  overflow: visible;
+}
+
+.note .pull-rope-line {
+  stroke: var(--black-more-transclucent-color);
+  transition: stroke 0.25s ease-in-out;
+}
+
+.note .pull-string.yellow .pull-rope-line.taut { stroke: var(--yellow-color); }
+.note .pull-string.orange .pull-rope-line.taut { stroke: var(--orange-color); }
+.note .pull-string.green .pull-rope-line.taut { stroke: var(--green-color); }
+.note .pull-string.blue .pull-rope-line.taut { stroke: var(--blue-color); }
+.note .pull-string.purple .pull-rope-line.taut { stroke: var(--purple-color); }
+.note .pull-string.pink .pull-rope-line.taut { stroke: var(--pink-color); }
+.note .pull-string.red .pull-rope-line.taut { stroke: var(--red-color); }
+
+.note .pull-glow {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  margin-left: -30px;
+  margin-top: -30px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--white-color) 0%, transparent 68%);
+  filter: blur(4px);
+  pointer-events: none;
+}
+
+.note .pull-tab {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  margin-left: -20px;
+  margin-top: -20px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  touch-action: none;
+  box-shadow: 0 6px 16px var(--black-even-more-transclucent-color);
+  transition: box-shadow 0.25s ease-in-out;
+}
+
+.note .pull-tab.ready {
+  box-shadow: 0 0 0 4px var(--white-transclucent-color),
+              0 8px 22px var(--black-more-transclucent-color);
+}
+
+.note .pull-tab .pull-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--black-even-more-transclucent-color);
+}
+
+.note .pull-tab .pull-grip-icon {
+  font-size: 10px;
+  color: var(--black-color);
+}
+
+.note .pull-hint {
+  position: absolute;
+  top: 46px;
+  transform: translateX(-50%);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.note .pull-hint .pull-hint-label {
+  white-space: nowrap;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--white-color);
+  background: var(--black-color);
+}
+
+.note .pull-burst {
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.note .pull-burst .spark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 16px;
+  line-height: 1;
 }

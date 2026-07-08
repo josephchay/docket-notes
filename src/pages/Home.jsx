@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { id } from "../utils/math";
 import { formattedDateNow } from "../utils/date";
 import { randomQuote } from "../utils/data";
+import { NOTE_COLORS } from "../constants/colors";
 import Navigation from "../components/Navigation/Navigation";
 import GooeyEffectSvg from "../components/Svg/GooeyEffectSvg";
 import Header from "../components/Header/Header";
@@ -29,6 +30,7 @@ const Home = () => {
 
     newNotes.push({
       id: id(),
+      title: "",
       text: "",
       placeholder: randomQuote(quotes),
       time: formattedDateNow(),
@@ -45,10 +47,30 @@ const Home = () => {
     setNotes(newNotes);
   }
 
+  const updateTitle = (title, id) => {
+    const newNotes = notes.map((note) =>
+      note.id === id ? { ...note, title } : note
+    );
+    setNotes(newNotes);
+  }
+
   const updateText = (text, id) => {
     const newNotes = notes.map((note) =>
       note.id === id ? { ...note, text } : note
     );
+    setNotes(newNotes);
+  }
+
+  const updateColor = (id) => {
+    const palette = Object.keys(NOTE_COLORS);
+
+    const newNotes = notes.map((note) => {
+      if (note.id !== id) return note;
+
+      const nextIndex = (palette.indexOf(note.color) + 1) % palette.length;
+      return { ...note, color: palette[nextIndex] };
+    });
+
     setNotes(newNotes);
   }
 
@@ -86,8 +108,10 @@ const Home = () => {
       <NoteList
         notes={ notes }
         deleteNote={ deleteNote }
+        updateTitle={ updateTitle }
         updateText={ updateText }
         updateFavourite={ updateFavourite }
+        updateColor={ updateColor }
         updateLock={ updateLock }
         sortText={ notesSortText }
         sortFavorite={ notesSortByFavorite }

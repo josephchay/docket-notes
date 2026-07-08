@@ -9,8 +9,10 @@ import { itemsPerFlexRow } from "../../utils/math";
 const NoteList = ({
   notes,
   deleteNote,
+  updateTitle,
   updateText,
   updateFavourite,
+  updateColor,
   updateLock,
   sortText,
   sortFavorite,
@@ -33,7 +35,9 @@ const NoteList = ({
   const [filteredNotes, setFilteredNotes] = useState([...reverseNotes]);
 
   const sortByText = (arr, text) => {
-    return arr.filter((note) => note.text.toLowerCase().includes(text));
+    return arr.filter((note) =>
+      `${ note.title ?? "" } ${ note.text }`.toLowerCase().includes(text)
+    );
   }
 
   const sortByFavorite = (arr) => {
@@ -114,8 +118,10 @@ const NoteList = ({
                       delay={ (index % numPerRow + 1) * 0.16 }
                       note={ item }
                       deleteNote={ deleteNote }
+                      updateTitle={ updateTitle }
                       updateText={ updateText }
                       updateFavorite={ updateFavourite }
+                      updateColor={ updateColor }
                       updateLock={ updateLock }
                     />
                   ))

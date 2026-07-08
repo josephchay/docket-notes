@@ -1,21 +1,24 @@
 import React, { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, useDragControls } from "framer-motion";
 
-import { FaPen, FaStar } from "react-icons/fa6";
+import { FaPen, FaStar, FaPalette, FaDownload, FaUpDownLeftRight } from "react-icons/fa6";
+import { FaEye, FaTrash } from "react-icons/fa";
 
 import useLongPress from "../../hooks/useLongPress";
-import { FaEye, FaTrash } from "react-icons/fa";
+import PullString from "./PullString";
 
 import "./Note.css";
 
-let debounceTimer = 500, debounceTimeout;
+let debounceTimer = 500, debounceTextTimeout, debounceTitleTimeout;
 
 const Note = ({
   delay,
   note,
   deleteNote,
+  updateTitle,
   updateText,
   updateFavorite,
+  updateColor,
   updateLock,
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
@@ -24,15 +27,14 @@ const Note = ({
 
   const [deleteTimeout, setDeleteTimeout] = useState(null);
 
-  const debounce = (func) => {
-    clearTimeout(debounceTimeout);
-      debounceTimeout = setTimeout(() => {
-      func();
-    }, debounceTimer);
+  const handleTitleUpdate = (title, id) => {
+    clearTimeout(debounceTitleTimeout);
+    debounceTitleTimeout = setTimeout(() => updateTitle(title, id), debounceTimer);
   }
 
   const handleTextUpdate = (text, id) => {
-    debounce(() => updateText(text, id));
+    clearTimeout(debounceTextTimeout);
+    debounceTextTimeout = setTimeout(() => updateText(text, id), debounceTimer);
   }
 
   const handlePressHold = () => {
@@ -75,10 +77,34 @@ const Note = ({
     updateLock(note.id);
   }
 
+  // Save the note to a plain text file the visitor can keep.
+  const handleDownload = () => {
+    const body = note.text?.trim() ? note.text : note.placeholder;
+    const content = `${ note.title?.trim() || "Untitled note" }\n\n${ body }\n\n— ${ note.time }`;
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    const safeName = (note.title || "note").trim().replace(/[^\w-]+/g, "_").slice(0, 40) || "note";
+    link.href = url;
+    link.download = `${ safeName }.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // The "move" string drags the whole note freely to wherever it is dropped.
+  const moveControls = useDragControls();
+
   return (
     <motion.div
       key={ note.id }
       layout
+      drag
+      dragListener={ false }
+      dragControls={ moveControls }
+      dragMomentum={ false }
       animate={
         deleteConfirmed ? {
           scale: .2,
@@ -193,6 +219,29 @@ const Note = ({
             />
           </motion.div>
         </div>
+        <motion.input
+          initial={{
+            opacity: 0,
+            scale: 1,
+          }}
+          animate={
+            isDeleting ? {
+              opacity: 0,
+              scale: .4,
+            } : {
+              opacity: 1,
+              scale: 1,
+            }
+          }
+          readOnly={ note.lock }
+          placeholder="Title"
+          defaultValue={ note.title }
+          onInput={ (e) => handleTitleUpdate(e.target.value, note.id) }
+          style={{
+            color: note.lock ? "var(--black-transclucent-color)" : "var(--black-color)",
+          }}
+          className={ `note-title ${ note.color }-highlight` }
+        />
         <motion.textarea
           initial={{
             opacity: 0,
@@ -325,6 +374,82 @@ const Note = ({
             }
           </motion.div>
         </div>
+        <motion.div
+          initial={{
+            opacity: 0,
+            scale: 1,
+            translateY: 0,
+          }}
+          animate={
+            isDeleting ? {
+              opacity: 0,
+              scale: .4,
+              translateY: -140,
+            } : {
+              opacity: 1,
+              scale: 1,
+              translateY: 0,
+            }
+          }
+          transition={{
+            type: "spring",
+            stiffness: 240,
+          }}
+          className="pull-zone"
+        >
+          <PullString
+            anchorX={ 58 }
+            colorName={ note.color }
+            icon={ <FaStar className="pull-grip-icon" /> }
+            verb={ note.favorite ? "unpin" : "pin" }
+            onTrigger={ handleFavorite }
+          />
+          <PullString
+            anchorX={ 132 }
+            colorName={ note.color }
+            icon={ <FaPalette className="pull-grip-icon" /> }
+            verb="recolor"
+            onTrigger={ () => updateColor(note.id) }
+          />
+          <PullString
+            anchorX={ 208 }
+            colorName={ note.color }
+            icon={ <FaDownload className="pull-grip-icon" /> }
+            verb="download"
+            onTrigger={ handleDownload }
+          />
+
+          <div className={ `pull-string ${ note.color }` }>
+            <svg
+              className="pull-rope"
+              viewBox="0 0 340 260"
+              preserveAspectRatio="none"
+            >
+              <path
+                d="M 282 0 Q 282 16 282 26"
+                strokeWidth={ 6 }
+                className="pull-rope-line"
+                fill="none"
+                strokeLinecap="round"
+              />
+            </svg>
+            <motion.button
+              type="button"
+              aria-label="Drag to move note"
+              className={ `pull-tab move ${ note.color }-bg` }
+              style={{ left: 282, top: 26 }}
+              whileHover={{ scale: 1.12 }}
+              whileTap={{ scale: 1.2 }}
+              onPointerDown={ (e) => moveControls.start(e) }
+              onMouseDown={ (e) => e.stopPropagation() }
+              onTouchStart={ (e) => e.stopPropagation() }
+            >
+              <span className="pull-grip">
+                <FaUpDownLeftRight className="pull-grip-icon" />
+              </span>
+            </motion.button>
+          </div>
+        </motion.div>
       </motion.div>
     </motion.div>
   );
