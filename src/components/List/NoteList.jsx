@@ -14,6 +14,7 @@ const NoteList = ({
   updateFavourite,
   updateColor,
   updateLock,
+  reorderNotes,
   sortText,
   sortFavorite,
 }) => {
@@ -123,6 +124,7 @@ const NoteList = ({
                       updateFavorite={ updateFavourite }
                       updateColor={ updateColor }
                       updateLock={ updateLock }
+                      reorderNotes={ reorderNotes }
                     />
                   ))
                 }

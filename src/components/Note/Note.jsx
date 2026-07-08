@@ -20,6 +20,7 @@ const Note = ({
   updateFavorite,
   updateColor,
   updateLock,
+  reorderNotes,
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteConfirmed, setDeleteConfirmed] = useState(false);
@@ -94,17 +95,36 @@ const Note = ({
     URL.revokeObjectURL(url);
   }
 
-  // The "move" string drags the whole note freely to wherever it is dropped.
+  // The "move" string drags the whole note; dropping it on another note swaps
+  // their places in the grid, then it springs back into its (new) slot.
   const moveControls = useDragControls();
+
+  const handleMoveEnd = (event) => {
+    const cx = event.clientX ?? event.changedTouches?.[0]?.clientX;
+    const cy = event.clientY ?? event.changedTouches?.[0]?.clientY;
+    if (cx == null || cy == null) return;
+
+    const stack = document.elementsFromPoint(cx, cy);
+    for (const el of stack) {
+      const card = el.closest?.("[data-note-id]");
+      if (card && card.dataset.noteId !== note.id) {
+        reorderNotes(note.id, card.dataset.noteId);
+        return;
+      }
+    }
+  }
 
   return (
     <motion.div
       key={ note.id }
+      data-note-id={ note.id }
       layout
       drag
       dragListener={ false }
       dragControls={ moveControls }
+      dragSnapToOrigin
       dragMomentum={ false }
+      onDragEnd={ handleMoveEnd }
       animate={
         deleteConfirmed ? {
           scale: .2,

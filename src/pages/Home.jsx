@@ -74,6 +74,21 @@ const Home = () => {
     setNotes(newNotes);
   }
 
+  const reorderNotes = (sourceId, targetId) => {
+    if (sourceId === targetId) return;
+
+    setNotes((prev) => {
+      const next = [...prev];
+      const from = next.findIndex((note) => note.id === sourceId);
+      const to = next.findIndex((note) => note.id === targetId);
+
+      if (from === -1 || to === -1) return prev;
+
+      [next[from], next[to]] = [next[to], next[from]];
+      return next;
+    });
+  }
+
   const updateFavourite = (id) => {
     const newNotes = notes.map((note) =>
       note.id === id ? { ...note, favorite: !note.favorite } : note
@@ -113,6 +128,7 @@ const Home = () => {
         updateFavourite={ updateFavourite }
         updateColor={ updateColor }
         updateLock={ updateLock }
+        reorderNotes={ reorderNotes }
         sortText={ notesSortText }
         sortFavorite={ notesSortByFavorite }
       />
