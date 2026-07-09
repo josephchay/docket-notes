@@ -6,7 +6,11 @@
   width: 340px;
   border: none;
   outline: none;
-  transition: border-radius 0.3s ease-in-out;
+  box-shadow:
+    0 1px 1px rgba(25, 25, 25, 0.04),
+    0 10px 24px -8px rgba(25, 25, 25, 0.18),
+    0 24px 48px -18px rgba(25, 25, 25, 0.22);
+  transition: border-radius 0.3s ease-in-out
 }
 
 .note .header,
@@ -51,6 +55,8 @@
 
 .note .note-title {
   display: block;
+  position: relative;
+  z-index: 1;
   background: none;
   border: none;
   border-bottom: 2px solid var(--black-even-more-transclucent-color);
@@ -70,6 +76,8 @@
 }
 
 .note textarea {
+  position: relative;
+  z-index: 1;
   background: none;
   border: none;
   font-size: 18px;

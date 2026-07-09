@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { motion, useDragControls } from "framer-motion";
 
 import { FaPen, FaStar, FaPalette, FaDownload, FaUpDownLeftRight } from "react-icons/fa6";
@@ -95,23 +95,49 @@ const Note = ({
     URL.revokeObjectURL(url);
   }
 
-  // The "move" string drags the whole note; dropping it on another note swaps
-  // their places in the grid, then it springs back into its (new) slot.
+  // The "move" string drags the whole note; while dragging, hovering over
+  // another note live-swaps their places so you preview the new order, and the
+  // grid glides into position. The dragged note floats above the rest.
   const moveControls = useDragControls();
+  const dragTargetRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
 
-  const handleMoveEnd = (event) => {
+  const noteUnderPointer = (event) => {
     const cx = event.clientX ?? event.changedTouches?.[0]?.clientX;
     const cy = event.clientY ?? event.changedTouches?.[0]?.clientY;
-    if (cx == null || cy == null) return;
+    if (cx == null || cy == null) return null;
 
     const stack = document.elementsFromPoint(cx, cy);
     for (const el of stack) {
       const card = el.closest?.("[data-note-id]");
-      if (card && card.dataset.noteId !== note.id) {
-        reorderNotes(note.id, card.dataset.noteId);
-        return;
-      }
+      if (card && card.dataset.noteId !== note.id) return card.dataset.noteId;
     }
+
+    return null;
+  }
+
+  const handleMoveStart = () => {
+    setIsDragging(true);
+  }
+
+  const handleMove = (event) => {
+    const targetId = noteUnderPointer(event);
+
+    if (!targetId) {
+      dragTargetRef.current = null;
+      return;
+    }
+
+    // Only swap once per note we glide onto, so the grid never oscillates.
+    if (targetId !== dragTargetRef.current) {
+      dragTargetRef.current = targetId;
+      reorderNotes(note.id, targetId);
+    }
+  }
+
+  const handleMoveEnd = () => {
+    dragTargetRef.current = null;
+    setIsDragging(false);
   }
 
   return (
@@ -124,7 +150,13 @@ const Note = ({
       dragControls={ moveControls }
       dragSnapToOrigin
       dragMomentum={ false }
+      onDragStart={ handleMoveStart }
+      onDrag={ handleMove }
       onDragEnd={ handleMoveEnd }
+      style={{
+        zIndex: isDragging ? 40 : 1,
+        position: "relative",
+      }}
       animate={
         deleteConfirmed ? {
           scale: .2,
@@ -149,6 +181,11 @@ const Note = ({
         type: "spring",
         stiffness: 200,
         damping: 20,
+        layout: {
+          type: "spring",
+          stiffness: 420,
+          damping: 34,
+        },
       }}
       { ...longPressEvent }
     >
@@ -198,7 +235,7 @@ const Note = ({
         style={{
           borderRadius: isDeleting ? "50%" : "24px",
         }}
-        className={ `note ${ note.color }-bg` }
+        className={ `note ${ note.color }-bg ${ isDragging ? "dragging" : "" }` }
       >
         <div className="header">
           <motion.div
