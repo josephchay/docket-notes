@@ -1,0 +1,14 @@
+.cursor-aura {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 999999;
+}
+
+/* When WebGL is unavailable (or motion is reduced), bring the OS cursor back. */
+body.native-cursor,
+body.native-cursor * {
+  cursor: auto;
+}

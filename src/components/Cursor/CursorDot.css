@@ -1,0 +1,32 @@
+/* A single ink drop: solid ink as a free dot, translucent ink while it wraps
+   a control. Position, size, and shape are driven per-frame from JS; only
+   color and visibility transition here. */
+.cursor-ink {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background-color: var(--black-color);
+  pointer-events: none;
+  z-index: 999999;
+  will-change: transform, width, height;
+  transition:
+    background-color 0.3s ease-in-out,
+    opacity 0.35s ease-in-out;
+}
+
+.cursor-ink.is-wrap {
+  background-color: var(--black-even-more-transclucent-color);
+}
+
+.cursor-ink.is-hidden {
+  opacity: 0;
+}
+
+/* When the effect steps aside (touch, reduced motion), the OS cursor returns. */
+body.native-cursor,
+body.native-cursor * {
+  cursor: auto;
+}
