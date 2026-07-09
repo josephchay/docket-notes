@@ -12,6 +12,8 @@ import "./Note.css";
 
 let debounceTimer = 500, debounceTextTimeout, debounceTitleTimeout;
 
+const NOTE_WIDTH = 340;   // matches the .note CSS width and the rope svg viewBox
+
 const Note = ({
   delay,
   note,
@@ -107,6 +109,16 @@ const Note = ({
   const noteLeanX = useTransform(movePullX, [-420, 0, 420], [-32, 0, 32], { clamp: true });
   const noteLeanY = useTransform(movePullY, [-420, 0, 420], [-32, 0, 32], { clamp: true });
   const noteTilt = useTransform(movePullX, [-420, 420], [-3, 3], { clamp: true });
+
+  // The action strings, spread evenly across the note's width — add or remove
+  // one here and the row re-spaces itself. The move string always sits last.
+  const pullStrings = [
+    // { key: "favorite", icon: <FaStar className="pull-grip-icon" />, verb: note.favorite ? "unpin" : "pin", onTrigger: handleFavorite },
+    { key: "recolor", icon: <FaPalette className="pull-grip-icon" />, verb: "recolor", onTrigger: () => updateColor(note.id) },
+    { key: "download", icon: <FaDownload className="pull-grip-icon" />, verb: "download", onTrigger: handleDownload },
+  ];
+
+  const anchorFor = (index) => Math.round((NOTE_WIDTH / (pullStrings.length + 2)) * (index + 1));
 
   return (
     <motion.div
@@ -417,29 +429,20 @@ const Note = ({
           }}
           className="pull-zone"
         >
-          <PullString
-            anchorX={ 58 }
-            colorName={ note.color }
-            icon={ <FaStar className="pull-grip-icon" /> }
-            verb={ note.favorite ? "unpin" : "pin" }
-            onTrigger={ handleFavorite }
-          />
-          <PullString
-            anchorX={ 132 }
-            colorName={ note.color }
-            icon={ <FaPalette className="pull-grip-icon" /> }
-            verb="recolor"
-            onTrigger={ () => updateColor(note.id) }
-          />
-          <PullString
-            anchorX={ 208 }
-            colorName={ note.color }
-            icon={ <FaDownload className="pull-grip-icon" /> }
-            verb="download"
-            onTrigger={ handleDownload }
-          />
+          {
+            pullStrings.map((string, index) => (
+              <PullString
+                key={ string.key }
+                anchorX={ anchorFor(index) }
+                colorName={ note.color }
+                icon={ string.icon }
+                verb={ string.verb }
+                onTrigger={ string.onTrigger }
+              />
+            ))
+          }
           <MoveString
-            anchorX={ 282 }
+            anchorX={ anchorFor(pullStrings.length) }
             colorName={ note.color }
             icon={ <FaUpDownLeftRight className="pull-grip-icon" /> }
             noteId={ note.id }
