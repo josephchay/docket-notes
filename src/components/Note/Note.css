@@ -227,6 +227,27 @@
   color: var(--black-color);
 }
 
+.note .pull-tab .pull-grip-arrow {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--black-color);
+}
+
+/* The note a "move" pull is aimed at lights up while the pull is armed. */
+.swap-target .note {
+  box-shadow:
+    0 0 0 4px var(--white-transclucent-color),
+    0 1px 1px rgba(25, 25, 25, 0.04),
+    0 18px 40px -12px rgba(25, 25, 25, 0.3);
+  animation: swap-target-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes swap-target-pulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.08); }
+}
+
 .note .pull-hint {
   position: absolute;
   top: 46px;

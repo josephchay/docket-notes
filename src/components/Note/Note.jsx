@@ -1,11 +1,12 @@
-import React, { useState, useRef } from "react";
-import { motion, useDragControls } from "framer-motion";
+import React, { useState } from "react";
+import { motion, useMotionValue, useTransform } from "framer-motion";
 
 import { FaPen, FaStar, FaPalette, FaDownload, FaUpDownLeftRight } from "react-icons/fa6";
 import { FaEye, FaTrash } from "react-icons/fa";
 
 import useLongPress from "../../hooks/useLongPress";
 import PullString from "./PullString";
+import MoveString from "./MoveString";
 
 import "./Note.css";
 
@@ -95,66 +96,28 @@ const Note = ({
     URL.revokeObjectURL(url);
   }
 
-  // The "move" string drags the whole note; while dragging, hovering over
-  // another note live-swaps their places so you preview the new order, and the
-  // grid glides into position. The dragged note floats above the rest.
-  const moveControls = useDragControls();
-  const dragTargetRef = useRef(null);
-  const [isDragging, setIsDragging] = useState(false);
+  // The "move" string stretches like the others; the note leans a little
+  // toward the pull so it feels tugged along, easing off as the string is
+  // stretched right across the grid. Pull the tassel onto any other note to
+  // light it up as the swap target, and release to trade places with it.
+  const movePullX = useMotionValue(0);
+  const movePullY = useMotionValue(0);
+  const [isPulling, setIsPulling] = useState(false);
 
-  const noteUnderPointer = (event) => {
-    const cx = event.clientX ?? event.changedTouches?.[0]?.clientX;
-    const cy = event.clientY ?? event.changedTouches?.[0]?.clientY;
-    if (cx == null || cy == null) return null;
-
-    const stack = document.elementsFromPoint(cx, cy);
-    for (const el of stack) {
-      const card = el.closest?.("[data-note-id]");
-      if (card && card.dataset.noteId !== note.id) return card.dataset.noteId;
-    }
-
-    return null;
-  }
-
-  const handleMoveStart = () => {
-    setIsDragging(true);
-  }
-
-  const handleMove = (event) => {
-    const targetId = noteUnderPointer(event);
-
-    if (!targetId) {
-      dragTargetRef.current = null;
-      return;
-    }
-
-    // Only swap once per note we glide onto, so the grid never oscillates.
-    if (targetId !== dragTargetRef.current) {
-      dragTargetRef.current = targetId;
-      reorderNotes(note.id, targetId);
-    }
-  }
-
-  const handleMoveEnd = () => {
-    dragTargetRef.current = null;
-    setIsDragging(false);
-  }
+  const noteLeanX = useTransform(movePullX, [-420, 0, 420], [-32, 0, 32], { clamp: true });
+  const noteLeanY = useTransform(movePullY, [-420, 0, 420], [-32, 0, 32], { clamp: true });
+  const noteTilt = useTransform(movePullX, [-420, 420], [-3, 3], { clamp: true });
 
   return (
     <motion.div
       key={ note.id }
       data-note-id={ note.id }
       layout
-      drag
-      dragListener={ false }
-      dragControls={ moveControls }
-      dragSnapToOrigin
-      dragMomentum={ false }
-      onDragStart={ handleMoveStart }
-      onDrag={ handleMove }
-      onDragEnd={ handleMoveEnd }
       style={{
-        zIndex: isDragging ? 40 : 1,
+        x: noteLeanX,
+        y: noteLeanY,
+        rotate: noteTilt,
+        zIndex: isPulling ? 40 : 1,
         position: "relative",
       }}
       animate={
@@ -235,7 +198,7 @@ const Note = ({
         style={{
           borderRadius: isDeleting ? "50%" : "24px",
         }}
-        className={ `note ${ note.color }-bg ${ isDragging ? "dragging" : "" }` }
+        className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" }` }
       >
         <div className="header">
           <motion.div
@@ -475,37 +438,17 @@ const Note = ({
             verb="download"
             onTrigger={ handleDownload }
           />
-
-          <div className={ `pull-string ${ note.color }` }>
-            <svg
-              className="pull-rope"
-              viewBox="0 0 340 260"
-              preserveAspectRatio="none"
-            >
-              <path
-                d="M 282 0 Q 282 16 282 26"
-                strokeWidth={ 6 }
-                className="pull-rope-line"
-                fill="none"
-                strokeLinecap="round"
-              />
-            </svg>
-            <motion.button
-              type="button"
-              aria-label="Drag to move note"
-              className={ `pull-tab move ${ note.color }-bg` }
-              style={{ left: 282, top: 26 }}
-              whileHover={{ scale: 1.12 }}
-              whileTap={{ scale: 1.2 }}
-              onPointerDown={ (e) => moveControls.start(e) }
-              onMouseDown={ (e) => e.stopPropagation() }
-              onTouchStart={ (e) => e.stopPropagation() }
-            >
-              <span className="pull-grip">
-                <FaUpDownLeftRight className="pull-grip-icon" />
-              </span>
-            </motion.button>
-          </div>
+          <MoveString
+            anchorX={ 282 }
+            colorName={ note.color }
+            icon={ <FaUpDownLeftRight className="pull-grip-icon" /> }
+            noteId={ note.id }
+            pullX={ movePullX }
+            pullY={ movePullY }
+            onPullStart={ () => setIsPulling(true) }
+            onPullEnd={ () => setIsPulling(false) }
+            onMove={ (targetId) => reorderNotes(note.id, targetId) }
+          />
         </motion.div>
       </motion.div>
     </motion.div>
