@@ -24,9 +24,9 @@ const Home = () => {
   const [notesSortText, setNotesSortText] = useState("");
   const [notesSortByFavorite, setNotesSortByFavorite] = useState(false);
 
-  // The last long-press-deleted note and where it sat, kept around for the
-  // undo toast's window.
-  const [lastDeleted, setLastDeleted] = useState(null);
+  // Long-press-deleted notes and where each sat, kept around as a toast deck
+  // for their undo windows. Oldest first; only the freshest few are shown.
+  const [deletedNotes, setDeletedNotes] = useState([]);
 
   // Which note is stretched open in the focus editor, if any.
   const [editingNoteId, setEditingNoteId] = useState(null);
@@ -56,24 +56,32 @@ const Home = () => {
     const index = notes.findIndex((note) => note.id === noteId);
     if (index === -1) return;
 
-    setLastDeleted({ note: notes[index], index });
+    setDeletedNotes((prev) => [
+      ...prev.filter((entry) => entry.note.id !== noteId),
+      { note: notes[index], index },
+    ].slice(-4));
     setNotes(notes.filter((note) => note.id !== noteId));
 
     if (editingNoteId === noteId) setEditingNoteId(null);
   }
 
-  const undoDelete = () => {
-    if (!lastDeleted) return;
+  const undoDelete = (noteId) => {
+    const entry = deletedNotes.find((item) => item.note.id === noteId);
+    if (!entry) return;
 
     setNotes((prev) => {
+      if (prev.some((note) => note.id === entry.note.id)) return prev;
+
       const next = [...prev];
-      next.splice(Math.min(lastDeleted.index, next.length), 0, lastDeleted.note);
+      next.splice(Math.min(entry.index, next.length), 0, entry.note);
       return next;
     });
-    setLastDeleted(null);
+    setDeletedNotes((prev) => prev.filter((item) => item.note.id !== noteId));
   }
 
-  const dismissUndo = useCallback(() => setLastDeleted(null), []);
+  const dismissUndo = useCallback((noteId) => {
+    setDeletedNotes((prev) => prev.filter((entry) => entry.note.id !== noteId));
+  }, []);
 
   // The copy lands right beside its source in the grid, starting unstarred.
   const duplicateNote = (noteId) => {
@@ -210,18 +218,21 @@ const Home = () => {
           )
         }
       </AnimatePresence>
-      <AnimatePresence>
-        {
-          lastDeleted && (
-            <UndoToast
-              key={ lastDeleted.note.id }
-              note={ lastDeleted.note }
-              onUndo={ undoDelete }
-              onDismiss={ dismissUndo }
-            />
-          )
-        }
-      </AnimatePresence>
+      <div className="undo-toast-layer">
+        <AnimatePresence>
+          {
+            deletedNotes.map((entry, index) => (
+              <UndoToast
+                key={ entry.note.id }
+                note={ entry.note }
+                depth={ deletedNotes.length - 1 - index }
+                onUndo={ undoDelete }
+                onDismiss={ dismissUndo }
+              />
+            ))
+          }
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

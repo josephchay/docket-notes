@@ -1,16 +1,19 @@
-/* --- Undo toast: a second chance after a long-press delete --------------- */
+/* --- Undo toasts: a deck of second chances after long-press deletes ------ */
+/* Every card shares the single grid cell, so the deck stays centred while
+   depth offsets fan the older ones up behind the newest. */
 .undo-toast-layer {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 34px;
   z-index: 700;
-  display: flex;
-  justify-content: center;
+  display: grid;
+  justify-items: center;
   pointer-events: none;
 }
 
 .undo-toast {
+  grid-area: 1 / 1;
   position: relative;
   display: flex;
   align-items: center;

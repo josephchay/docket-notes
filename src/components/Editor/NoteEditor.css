@@ -17,17 +17,38 @@
   -webkit-backdrop-filter: blur(9px);
 }
 
+.note-editor-shell,
+.note-editor-jelly {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The paper itself. Width and height are driven by the size spring in JS;
+   the jelly wrapper above it carries the squash-and-stretch. */
 .note-editor {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(720px, 94vw);
-  height: min(600px, 86vh);
+  max-width: 94vw;
+  max-height: 90vh;
   padding: 32px 44px 26px;
   border-radius: 32px;
+  overflow: hidden;
   box-shadow:
     0 0 0 4px var(--white-transclucent-color),
     0 40px 90px -30px rgba(25, 25, 25, 0.55);
+}
+
+.note-editor.cozy {
+  padding: 24px 30px 20px;
+  border-radius: 26px;
+}
+
+.note-editor.grand {
+  padding: 40px 54px 32px;
+  border-radius: 38px;
 }
 
 .note-editor-header {
@@ -57,6 +78,55 @@
   box-shadow:
     inset 0 0 0 2px var(--white-transclucent-color),
     0 0 0 3px var(--black-color);
+}
+
+/* Three growing squares: the paper's cozy / roomy / grand sizes. */
+.note-editor-sizes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.note-editor-size {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  background: none;
+}
+
+.note-editor-size .note-editor-size-box {
+  border: 2.5px solid var(--black-more-transclucent-color);
+  background: transparent;
+  transition: background-color 0.25s ease-in-out, border-color 0.25s ease-in-out;
+}
+
+.note-editor-size .note-editor-size-box.s0 {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.note-editor-size .note-editor-size-box.s1 {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.note-editor-size .note-editor-size-box.s2 {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
+
+.note-editor-size.active .note-editor-size-box {
+  border-color: var(--black-color);
+  background: var(--black-color);
 }
 
 .note-editor-actions {
@@ -105,7 +175,7 @@
   font-weight: 700;
   font-family: inherit;
   color: var(--black-color);
-  transition: color 0.3s ease-in-out;
+  transition: color 0.3s ease-in-out, font-size 0.3s ease-in-out;
 }
 
 .note-editor-title::placeholder {
@@ -126,7 +196,7 @@
   line-height: 1.6;
   font-family: inherit;
   color: var(--black-color);
-  transition: color 0.3s ease-in-out;
+  transition: color 0.3s ease-in-out, font-size 0.3s ease-in-out;
 }
 
 .note-editor-text::placeholder {
@@ -168,4 +238,43 @@
 .note-editor-count.muted {
   color: var(--black-color);
   background: var(--black-even-more-transclucent-color);
+}
+
+/* The type scales with the paper. */
+.note-editor.cozy .note-editor-title {
+  font-size: 22px;
+  margin-top: 20px;
+}
+
+.note-editor.cozy .note-editor-text {
+  font-size: 16px;
+}
+
+.note-editor.grand .note-editor-title {
+  font-size: 36px;
+}
+
+.note-editor.grand .note-editor-text {
+  font-size: 21px;
+}
+
+/* Cozy shrinks the header's toys so everything still fits on the small paper. */
+.note-editor.cozy .note-editor-header,
+.note-editor.cozy .note-editor-palette,
+.note-editor.cozy .note-editor-actions {
+  gap: 8px;
+}
+
+.note-editor.cozy .note-editor-dot {
+  width: 16px;
+  height: 16px;
+}
+
+.note-editor.cozy .note-editor-action {
+  width: 34px;
+  height: 34px;
+}
+
+.note-editor.cozy .note-editor-sizes {
+  gap: 2px;
 }
