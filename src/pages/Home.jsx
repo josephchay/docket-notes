@@ -176,32 +176,38 @@ const Home = () => {
   const editingNote = notes.find((note) => note.id === editingNoteId);
 
   return (
-    <div className="home custom-scroll">
-      <Navigation
-        addNote={ addNote }
-      />
-      <GooeyEffectSvg
-        id="colorSelectors"
-      />
-      <Header
-        setNotesSortText={ setNotesSortText }
-        notesSortByFavorite={ notesSortByFavorite }
-        setNotesSortByFavorite={ toggleSortByFavorite }
-      />
-      <NoteList
-        notes={ notes }
-        deleteNote={ deleteNote }
-        updateTitle={ updateTitle }
-        updateText={ updateText }
-        updateFavourite={ updateFavourite }
-        updateColor={ updateColor }
-        updateLock={ updateLock }
-        reorderNotes={ reorderNotes }
-        duplicateNote={ duplicateNote }
-        openEditor={ setEditingNoteId }
-        sortText={ notesSortText }
-        sortFavorite={ notesSortByFavorite }
-      />
+    <>
+      {/* The page recedes while the focus editor is open — a cheap,
+          compositor-only depth cue that replaces the old backdrop blur.
+          The fixed layers below live outside this div so the transform
+          never becomes their containing block. */}
+      <div className={ `home custom-scroll ${ editingNote ? "receded" : "" }` }>
+        <Navigation
+          addNote={ addNote }
+        />
+        <GooeyEffectSvg
+          id="colorSelectors"
+        />
+        <Header
+          setNotesSortText={ setNotesSortText }
+          notesSortByFavorite={ notesSortByFavorite }
+          setNotesSortByFavorite={ toggleSortByFavorite }
+        />
+        <NoteList
+          notes={ notes }
+          deleteNote={ deleteNote }
+          updateTitle={ updateTitle }
+          updateText={ updateText }
+          updateFavourite={ updateFavourite }
+          updateColor={ updateColor }
+          updateLock={ updateLock }
+          reorderNotes={ reorderNotes }
+          duplicateNote={ duplicateNote }
+          openEditor={ setEditingNoteId }
+          sortText={ notesSortText }
+          sortFavorite={ notesSortByFavorite }
+        />
+      </div>
       <AnimatePresence>
         {
           editingNote && (
@@ -233,7 +239,7 @@ const Home = () => {
           }
         </AnimatePresence>
       </div>
-    </div>
+    </>
   );
 }
 

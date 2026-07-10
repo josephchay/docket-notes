@@ -9,9 +9,9 @@ import "./NoteEditor.css";
 
 const debounceTimer = 500;
 
-// The editor's three papers: cozy for a quick line, roomy for writing,
-// grand for spreading out.
-const EDITOR_SIZES = ["cozy", "roomy", "grand"];
+// The editor's papers: cozy for a quick line, roomy for writing, grand for
+// spreading out, epic for filling the screen.
+const EDITOR_SIZES = ["cozy", "roomy", "grand", "epic"];
 
 const sizeFor = (name) => {
   const vw = window.innerWidth;
@@ -20,6 +20,7 @@ const sizeFor = (name) => {
   switch (name) {
     case "cozy": return { width: Math.min(520, vw * .94), height: Math.min(470, vh * .86) };
     case "grand": return { width: Math.min(1080, vw * .94), height: Math.min(840, vh * .9) };
+    case "epic": return { width: Math.min(1440, vw * 0.96), height: Math.min(1080, vh * 0.94) };
     default: return { width: Math.min(720, vw * .94), height: Math.min(600, vh * .86) };
   }
 };
@@ -170,24 +171,6 @@ const NoteEditor = ({
                   ))
                 }
               </div>
-              <div className="note-editor-sizes">
-                {
-                  EDITOR_SIZES.map((name, index) => (
-                    <motion.button
-                      key={ name }
-                      type="button"
-                      aria-label={ `Resize the paper to ${ name }` }
-                      className={ `note-editor-size ${ name === size ? "active" : "" }` }
-                      whileHover={{ scale: 1.2 }}
-                      whileTap={{ scale: .8 }}
-                      transition={{ type: "spring", stiffness: 420, damping: 16 }}
-                      onClick={ () => setSize(name) }
-                    >
-                      <span className={ `note-editor-size-box s${ index }` } />
-                    </motion.button>
-                  ))
-                }
-              </div>
               <div className="note-editor-actions">
                 <motion.button
                   type="button"
@@ -217,6 +200,17 @@ const NoteEditor = ({
                       ? <FaPen className="note-editor-action-icon light" />
                       : <FaEye className="note-editor-action-icon light" />
                   }
+                </motion.button>
+                <motion.button
+                  type="button"
+                  aria-label={ `Resize the paper (now ${ size })` }
+                  className="note-editor-action"
+                  whileHover={{ scale: 1.15 }}
+                  whileTap={{ scale: .8 }}
+                  transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                  onClick={ () => setSize(EDITOR_SIZES[(EDITOR_SIZES.indexOf(size) + 1) % EDITOR_SIZES.length]) }
+                >
+                  <span className={ `note-editor-size-box s${ EDITOR_SIZES.indexOf(size) }` } />
                 </motion.button>
                 <motion.button
                   type="button"

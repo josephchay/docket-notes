@@ -9,12 +9,19 @@
   padding: 40px;
 }
 
+/* An ink wash instead of a backdrop blur: a vignette that pools darker at
+   the edges keeps the paper in focus, and animating it is pure compositor
+   work (opacity only) — no per-frame re-blur of the page, so no jitter.
+   The depth cue comes from the page itself receding (see Home.css). */
 .note-editor-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(25, 25, 25, 0.45);
-  backdrop-filter: blur(9px);
-  -webkit-backdrop-filter: blur(9px);
+  background: radial-gradient(
+    ellipse 120% 90% at 50% 45%,
+    rgba(25, 25, 25, 0.38) 0%,
+    rgba(25, 25, 25, 0.52) 62%,
+    rgba(25, 25, 25, 0.66) 100%
+  );
 }
 
 .note-editor-shell,
@@ -51,6 +58,11 @@
   border-radius: 38px;
 }
 
+.note-editor.epic {
+  padding: 46px 62px 36px;
+  border-radius: 42px;
+}
+
 .note-editor-header {
   display: flex;
   align-items: center;
@@ -80,53 +92,39 @@
     0 0 0 3px var(--black-color);
 }
 
-/* Three growing squares: the paper's cozy / roomy / grand sizes. */
-.note-editor-sizes {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.note-editor-size {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  outline: none;
-  border-radius: 50%;
-  background: none;
-}
-
-.note-editor-size .note-editor-size-box {
-  border: 2.5px solid var(--black-more-transclucent-color);
+/* The one-tap resize: a little square inside the circle that grows cozy →
+   roomy → grand with the paper, then snaps back small. */
+.note-editor-size-box {
+  border: 2.5px solid var(--black-color);
   background: transparent;
-  transition: background-color 0.25s ease-in-out, border-color 0.25s ease-in-out;
+  transition:
+    width 0.25s ease-in-out,
+    height 0.25s ease-in-out,
+    border-radius 0.25s ease-in-out;
 }
 
-.note-editor-size .note-editor-size-box.s0 {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
+.note-editor-size-box.s0 {
+  width: 8px;
+  height: 8px;
+  border-radius: 2.5px;
 }
 
-.note-editor-size .note-editor-size-box.s1 {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
+.note-editor-size-box.s1 {
+  width: 12px;
+  height: 12px;
+  border-radius: 3.5px;
 }
 
-.note-editor-size .note-editor-size-box.s2 {
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
+.note-editor-size-box.s2 {
+  width: 16px;
+  height: 16px;
+  border-radius: 4.5px;
 }
 
-.note-editor-size.active .note-editor-size-box {
-  border-color: var(--black-color);
-  background: var(--black-color);
+.note-editor-size-box.s3 {
+  width: 20px;
+  height: 20px;
+  border-radius: 5.5px;
 }
 
 .note-editor-actions {
@@ -258,6 +256,14 @@
   font-size: 21px;
 }
 
+.note-editor.epic .note-editor-title {
+  font-size: 40px;
+}
+
+.note-editor.epic .note-editor-text {
+  font-size: 22px;
+}
+
 /* Cozy shrinks the header's toys so everything still fits on the small paper. */
 .note-editor.cozy .note-editor-header,
 .note-editor.cozy .note-editor-palette,
@@ -273,8 +279,4 @@
 .note-editor.cozy .note-editor-action {
   width: 34px;
   height: 34px;
-}
-
-.note-editor.cozy .note-editor-sizes {
-  gap: 2px;
 }
