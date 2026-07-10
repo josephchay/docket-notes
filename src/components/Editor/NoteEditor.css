@@ -64,6 +64,7 @@
 }
 
 .note-editor-header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -213,9 +214,50 @@
   margin-top: 18px;
 }
 
+.note-editor-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .note-editor-date {
   font-size: 14px;
   font-weight: 400;
+}
+
+/* Deals a fresh inspiration quote while the page is still blank. */
+.note-editor-quote {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--black-color);
+  background: var(--black-even-more-transclucent-color);
+}
+
+.note-editor-quote .note-editor-quote-icon {
+  font-size: 10px;
+}
+
+/* The copy confirmation, floating just under the action buttons. */
+.note-editor-copied {
+  position: absolute;
+  top: 52px;
+  right: 0;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--white-color);
+  background: var(--black-color);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .note-editor-meta {

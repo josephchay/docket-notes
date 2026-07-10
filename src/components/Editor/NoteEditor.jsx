@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { motion, useAnimationControls } from "framer-motion";
-import { FaStar, FaPen, FaXmark } from "react-icons/fa6";
+import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
+import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle } from "react-icons/fa6";
 import { FaEye } from "react-icons/fa";
 
 import { NOTE_COLORS } from "../../constants/colors";
@@ -38,10 +38,12 @@ const NoteEditor = ({
   updateFavorite,
   updateLock,
   setNoteColor,
+  updateQuote,
 }) => {
   const [draftTitle, setDraftTitle] = useState(note.title);
   const [draftText, setDraftText] = useState(note.text);
   const [size, setSize] = useState("roomy");
+  const [copied, setCopied] = useState(false);
 
   // The gluey wobble: whenever the paper opens or changes size it squashes
   // and stretches like jelly while the bouncy size spring overshoots.
@@ -63,6 +65,7 @@ const NoteEditor = ({
   const textRef = useRef(null);
   const titleTimerRef = useRef(null);
   const textTimerRef = useRef(null);
+  const copiedTimerRef = useRef(null);
 
   // Adopt outside changes to the note unless that field is being typed in
   // right now — a self-made edit round-trips as the same value anyway.
@@ -81,7 +84,7 @@ const NoteEditor = ({
 
     window.addEventListener("keydown", handleKey);
 
-    const timers = [titleTimerRef, textTimerRef];
+    const timers = [titleTimerRef, textTimerRef, copiedTimerRef];
     return () => {
       window.removeEventListener("keydown", handleKey);
       timers.forEach((timer) => clearTimeout(timer.current));
@@ -107,6 +110,22 @@ const NoteEditor = ({
     setDraftText(value);
     clearTimeout(textTimerRef.current);
     textTimerRef.current = setTimeout(() => updateText(value, note.id), debounceTimer);
+  };
+
+  // Copy the whole note as plain text, with a small sparkle of confirmation.
+  const handleCopy = async () => {
+    const body = draftText?.trim() ? draftText : note.placeholder;
+    const content = `${ draftTitle?.trim() || "Untitled note" }\n\n${ body }`;
+
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch {
+      return;
+    }
+
+    setCopied(true);
+    clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = setTimeout(() => setCopied(false), 1400);
   };
 
   const words = draftText.trim() ? draftText.trim().split(/\s+/).length : 0;
@@ -203,6 +222,17 @@ const NoteEditor = ({
                 </motion.button>
                 <motion.button
                   type="button"
+                  aria-label="Copy the note to the clipboard"
+                  className="note-editor-action dark"
+                  whileHover={{ scale: 1.15 }}
+                  whileTap={{ scale: .9 }}
+                  transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                  onClick={ handleCopy }
+                >
+                  <FaCopy className="note-editor-action-icon light" />
+                </motion.button>
+                <motion.button
+                  type="button"
                   aria-label={ `Resize the paper (now ${ size })` }
                   className="note-editor-action"
                   whileHover={{ scale: 1.15 }}
@@ -224,6 +254,21 @@ const NoteEditor = ({
                   <FaXmark className="note-editor-action-icon light" />
                 </motion.button>
               </div>
+              <AnimatePresence>
+                {
+                  copied && (
+                    <motion.span
+                      className="note-editor-copied"
+                      initial={{ opacity: 0, scale: .8, y: -6 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: .8, y: -6 }}
+                      transition={{ type: "spring", stiffness: 380, damping: 20 }}
+                    >
+                      Copied ✦
+                    </motion.span>
+                  )
+                }
+              </AnimatePresence>
             </div>
             <input
               ref={ titleRef }
@@ -242,7 +287,31 @@ const NoteEditor = ({
               className={ `note-editor-text custom-scroll ${ note.color }-highlight` }
             ></textarea>
             <div className="note-editor-footer">
-              <span className="note-editor-date">{ note.time }</span>
+              <div className="note-editor-footer-left">
+                <span className="note-editor-date">{ note.time }</span>
+                <AnimatePresence>
+                  {
+                    !draftText.trim() && (
+                      <motion.button
+                        key="quote"
+                        type="button"
+                        aria-label="Deal a new inspiration quote"
+                        className="note-editor-quote"
+                        initial={{ opacity: 0, scale: .8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: .8 }}
+                        whileHover={{ scale: 1.08 }}
+                        whileTap={{ scale: .92 }}
+                        transition={{ type: "spring", stiffness: 420, damping: 18 }}
+                        onClick={ () => updateQuote(note.id) }
+                      >
+                        <FaShuffle className="note-editor-quote-icon" />
+                        new quote
+                      </motion.button>
+                    )
+                  }
+                </AnimatePresence>
+              </div>
               <div className="note-editor-meta">
                 <motion.span
                   key={ words }

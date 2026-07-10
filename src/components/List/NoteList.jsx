@@ -105,6 +105,27 @@ const NoteList = ({
         >
           Notes
         </motion.h2>
+        <motion.span
+          key={ filteredNotes.length }
+          className="notes-count"
+          initial={{
+            opacity: 0,
+            scale: .6,
+            translateY: 8,
+          }}
+          animate={{
+            opacity: 1,
+            scale: 1,
+            translateY: 0,
+          }}
+          transition={{
+            type: "spring",
+            stiffness: 500,
+            damping: 20,
+          }}
+        >
+          { filteredNotes.length }
+        </motion.span>
       </div>
       <div
         ref={ ref }

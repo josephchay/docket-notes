@@ -18,6 +18,11 @@ Effortlessly organize your notes, set reminders, and access your snippets anytim
 4. **Starred Notes**: Mark your favorite notes with a star to easily access them later.
 5. **Quick Search**: Easily find your notes with a quick search feature that lets you filter through your snippets.
 6. **Delete Notes**: Remove notes you no longer need with a simple hold.
+7. **Undo Deletes**: Deleted notes pile into a colorful toast deck for a few seconds — press Undo to spring one back into place.
+8. **Elastic Pull-Strings**: Stretch a note's strings to recolor, duplicate, download, open, or swap it — release past the threshold to fire.
+9. **Focus Editor**: Pull a note open into a full writing surface with four jelly-springy paper sizes, a direct color palette, live word count, copy-to-clipboard, and quote shuffling.
+10. **Quick Capture Shortcuts**: Press `N` anywhere to jot a new note in a random color, or `/` to jump straight into search.
+11. **Lasting Notes**: Everything is kept in your browser's local storage, so your notes are still on the desk when you come back.
 
 # Tech Stack
 1. React

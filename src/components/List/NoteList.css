@@ -2,10 +2,27 @@ main {
   grid-area: main;
 }
 
+main .header {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
 main .header h2 {
   font-size: 54px;
   margin: 70px 0 0;
   line-height: 1;
+}
+
+/* The tally pops with a spring every time a note joins or leaves. */
+main .header .notes-count {
+  margin-bottom: 6px;
+  padding: 3px 14px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--white-color);
+  background: var(--black-color);
 }
 
 main .notes {

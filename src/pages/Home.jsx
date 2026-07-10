@@ -17,8 +17,12 @@ import quotes from "../assets/data/quotes.json";
 import "./Home.css";
 
 const Home = () => {
+  // Notes live in localStorage so they survive closing the tab; the
+  // sessionStorage read migrates anything saved by older versions.
   const [notes, setNotes] = useState(() => {
-    return JSON.parse(sessionStorage.getItem('DocketNoteProject')) || [];
+    return JSON.parse(localStorage.getItem('DocketNoteProject'))
+      || JSON.parse(sessionStorage.getItem('DocketNoteProject'))
+      || [];
   });
 
   const [notesSortText, setNotesSortText] = useState("");
@@ -167,8 +171,36 @@ const Home = () => {
     setNotes(newNotes);
   }
 
+  // Deal a fresh inspiration quote into an empty note's placeholder.
+  const updateQuote = (noteId) => {
+    const newNotes = notes.map((note) =>
+      note.id === noteId ? { ...note, placeholder: randomQuote(quotes) } : note
+    );
+    setNotes(newNotes);
+  }
+
+  // Quick-capture shortcuts: N jots a new note in a random color, / jumps to
+  // the search field. Both stand down while any field has the caret.
   useEffect(() => {
-    sessionStorage.setItem("DocketNoteProject", JSON.stringify(notes));
+    const handleKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.target instanceof Element && e.target.closest("input, textarea")) return;
+
+      if (e.key === "/") {
+        e.preventDefault();
+        document.querySelector(".search input")?.focus();
+      } else if ((e.key === "n" || e.key === "N") && !editingNoteId) {
+        const palette = Object.keys(NOTE_COLORS);
+        addNote(palette[Math.floor(Math.random() * palette.length)]);
+      }
+    };
+
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  });
+
+  useEffect(() => {
+    localStorage.setItem("DocketNoteProject", JSON.stringify(notes));
   }, [notes]);
 
   const closeEditor = useCallback(() => setEditingNoteId(null), []);
@@ -220,6 +252,7 @@ const Home = () => {
               updateFavorite={ updateFavourite }
               updateLock={ updateLock }
               setNoteColor={ setNoteColor }
+              updateQuote={ updateQuote }
             />
           )
         }
