@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion, useMotionValue, useTransform } from "framer-motion";
 
-import { FaPen, FaStar, FaPalette, FaDownload, FaUpDownLeftRight } from "react-icons/fa6";
+import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRight } from "react-icons/fa6";
 import { FaEye, FaTrash } from "react-icons/fa";
 
 import useLongPress from "../../hooks/useLongPress";
@@ -10,7 +10,7 @@ import MoveString from "./MoveString";
 
 import "./Note.css";
 
-let debounceTimer = 500, debounceTextTimeout, debounceTitleTimeout;
+const debounceTimer = 500;
 
 const NOTE_WIDTH = 340;   // matches the .note CSS width and the rope svg viewBox
 
@@ -24,6 +24,8 @@ const Note = ({
   updateColor,
   updateLock,
   reorderNotes,
+  duplicateNote,
+  openEditor,
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteConfirmed, setDeleteConfirmed] = useState(false);
@@ -31,14 +33,43 @@ const Note = ({
 
   const [deleteTimeout, setDeleteTimeout] = useState(null);
 
-  const handleTitleUpdate = (title, id) => {
-    clearTimeout(debounceTitleTimeout);
-    debounceTitleTimeout = setTimeout(() => updateTitle(title, id), debounceTimer);
+  // The fields are controlled through these drafts so edits made in the
+  // focus editor land on the card too; commits back to the list are
+  // debounced per note.
+  const [draftTitle, setDraftTitle] = useState(note.title);
+  const [draftText, setDraftText] = useState(note.text);
+  const [isTyping, setIsTyping] = useState(false);
+
+  const titleRef = useRef(null);
+  const textRef = useRef(null);
+  const titleTimerRef = useRef(null);
+  const textTimerRef = useRef(null);
+
+  // Adopt outside changes unless the field is being typed in right now — a
+  // self-made edit round-trips as the same value anyway.
+  useEffect(() => {
+    if (document.activeElement !== titleRef.current) setDraftTitle(note.title);
+  }, [note.title]);
+
+  useEffect(() => {
+    if (document.activeElement !== textRef.current) setDraftText(note.text);
+  }, [note.text]);
+
+  useEffect(() => {
+    const timers = [titleTimerRef, textTimerRef];
+    return () => timers.forEach((timer) => clearTimeout(timer.current));
+  }, []);
+
+  const handleTitleUpdate = (title) => {
+    setDraftTitle(title);
+    clearTimeout(titleTimerRef.current);
+    titleTimerRef.current = setTimeout(() => updateTitle(title, note.id), debounceTimer);
   }
 
-  const handleTextUpdate = (text, id) => {
-    clearTimeout(debounceTextTimeout);
-    debounceTextTimeout = setTimeout(() => updateText(text, id), debounceTimer);
+  const handleTextUpdate = (text) => {
+    setDraftText(text);
+    clearTimeout(textTimerRef.current);
+    textTimerRef.current = setTimeout(() => updateText(text, note.id), debounceTimer);
   }
 
   const handlePressHold = () => {
@@ -83,13 +114,13 @@ const Note = ({
 
   // Save the note to a plain text file the visitor can keep.
   const handleDownload = () => {
-    const body = note.text?.trim() ? note.text : note.placeholder;
-    const content = `${ note.title?.trim() || "Untitled note" }\n\n${ body }\n\n— ${ note.time }`;
+    const body = draftText?.trim() ? draftText : note.placeholder;
+    const content = `${ draftTitle?.trim() || "Untitled note" }\n\n${ body }\n\n— ${ note.time }`;
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
 
     const link = document.createElement("a");
-    const safeName = (note.title || "note").trim().replace(/[^\w-]+/g, "_").slice(0, 40) || "note";
+    const safeName = (draftTitle || "note").trim().replace(/[^\w-]+/g, "_").slice(0, 40) || "note";
     link.href = url;
     link.download = `${ safeName }.txt`;
     document.body.appendChild(link);
@@ -115,7 +146,9 @@ const Note = ({
   const pullStrings = [
     // { key: "favorite", icon: <FaStar className="pull-grip-icon" />, verb: note.favorite ? "unpin" : "pin", onTrigger: handleFavorite },
     { key: "recolor", icon: <FaPalette className="pull-grip-icon" />, verb: "recolor", onTrigger: () => updateColor(note.id) },
+    { key: "duplicate", icon: <FaCopy className="pull-grip-icon" />, verb: "duplicate", onTrigger: () => duplicateNote(note.id) },
     { key: "download", icon: <FaDownload className="pull-grip-icon" />, verb: "download", onTrigger: handleDownload },
+    { key: "open", icon: <FaExpand className="pull-grip-icon" />, verb: "open", onTrigger: () => openEditor(note.id) },
   ];
 
   const anchorFor = (index) => Math.round((NOTE_WIDTH / (pullStrings.length + 2)) * (index + 1));
@@ -210,7 +243,7 @@ const Note = ({
         style={{
           borderRadius: isDeleting ? "50%" : "24px",
         }}
-        className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" }` }
+        className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" } ${ isTyping ? "editing" : "" }` }
       >
         <div className="header">
           <motion.div
@@ -265,10 +298,13 @@ const Note = ({
               scale: 1,
             }
           }
+          ref={ titleRef }
           readOnly={ note.lock }
           placeholder="Title"
-          defaultValue={ note.title }
-          onInput={ (e) => handleTitleUpdate(e.target.value, note.id) }
+          value={ draftTitle }
+          onChange={ (e) => handleTitleUpdate(e.target.value) }
+          onFocus={ () => setIsTyping(true) }
+          onBlur={ () => setIsTyping(false) }
           style={{
             color: note.lock ? "var(--black-transclucent-color)" : "var(--black-color)",
           }}
@@ -288,10 +324,13 @@ const Note = ({
               scale: 1,
             }
           }
+          ref={ textRef }
           readOnly={ note.lock }
           placeholder={ note.placeholder }
-          defaultValue={ note.text }
-          onInput={ (e) => handleTextUpdate(e.target.value, note.id) }
+          value={ draftText }
+          onChange={ (e) => handleTextUpdate(e.target.value) }
+          onFocus={ () => setIsTyping(true) }
+          onBlur={ () => setIsTyping(false) }
           style={{
             color: note.lock ? "var(--black-transclucent-color)" : "var(--black-color)",
           }}

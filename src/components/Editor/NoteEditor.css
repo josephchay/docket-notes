@@ -1,0 +1,171 @@
+/* --- Focus editor: a note stretched into a full writing surface ---------- */
+.note-editor-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.note-editor-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(25, 25, 25, 0.45);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+}
+
+.note-editor {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 94vw);
+  height: min(600px, 86vh);
+  padding: 32px 44px 26px;
+  border-radius: 32px;
+  box-shadow:
+    0 0 0 4px var(--white-transclucent-color),
+    0 40px 90px -30px rgba(25, 25, 25, 0.55);
+}
+
+.note-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.note-editor-palette {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.note-editor-dot {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--white-transclucent-color);
+  transition: box-shadow 0.25s ease-in-out;
+}
+
+.note-editor-dot.active {
+  box-shadow:
+    inset 0 0 0 2px var(--white-transclucent-color),
+    0 0 0 3px var(--black-color);
+}
+
+.note-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.note-editor-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  background: var(--black-even-more-transclucent-color);
+  transition: background-color 0.3s ease-in-out;
+}
+
+.note-editor-action.dark {
+  background: var(--black-color);
+}
+
+.note-editor-action .note-editor-action-icon {
+  font-size: 13px;
+  color: var(--black-color);
+}
+
+.note-editor-action .note-editor-action-icon.light {
+  color: var(--white-color);
+}
+
+.note-editor-title {
+  display: block;
+  background: none;
+  border: none;
+  border-bottom: 2px solid var(--black-even-more-transclucent-color);
+  margin-top: 28px;
+  padding: 0 10px 10px 0;
+  outline: none;
+  width: 100%;
+  font-size: 30px;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--black-color);
+  transition: color 0.3s ease-in-out;
+}
+
+.note-editor-title::placeholder {
+  color: var(--black-more-transclucent-color);
+}
+
+.note-editor-text {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  resize: none;
+  margin-top: 18px;
+  padding-right: 10px;
+  width: 100%;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.6;
+  font-family: inherit;
+  color: var(--black-color);
+  transition: color 0.3s ease-in-out;
+}
+
+.note-editor-text::placeholder {
+  color: var(--black-transclucent-color);
+}
+
+.note-editor.locked .note-editor-title,
+.note-editor.locked .note-editor-text {
+  color: var(--black-transclucent-color);
+}
+
+.note-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18px;
+}
+
+.note-editor-date {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.note-editor-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.note-editor-count {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--white-color);
+  background: var(--black-color);
+}
+
+.note-editor-count.muted {
+  color: var(--black-color);
+  background: var(--black-even-more-transclucent-color);
+}

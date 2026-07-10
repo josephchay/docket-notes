@@ -15,6 +15,8 @@ const NoteList = ({
   updateColor,
   updateLock,
   reorderNotes,
+  duplicateNote,
+  openEditor,
   sortText,
   sortFavorite,
 }) => {
@@ -125,6 +127,8 @@ const NoteList = ({
                       updateColor={ updateColor }
                       updateLock={ updateLock }
                       reorderNotes={ reorderNotes }
+                      duplicateNote={ duplicateNote }
+                      openEditor={ openEditor }
                     />
                   ))
                 }

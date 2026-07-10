@@ -13,6 +13,15 @@
   transition: border-radius 0.3s ease-in-out
 }
 
+/* Live-editing lift: while the title or body has the caret, the paper rises
+   and wears a soft ring — the same language as the swap-target highlight. */
+.note.editing {
+  box-shadow:
+    0 0 0 3px var(--white-transclucent-color),
+    0 1px 1px rgba(25, 25, 25, 0.04),
+    0 18px 40px -12px rgba(25, 25, 25, 0.3);
+}
+
 .note .header,
 .note .footer {
   padding: 24px;
@@ -59,7 +68,7 @@
   z-index: 1;
   background: none;
   border: none;
-  border-bottom: 2px solid var(--black-even-more-transclucent-color);
+  /* border-bottom: 2px solid var(--black-even-more-transclucent-color); */
   margin-top: 44px;
   padding: 0 10px 8px 0;
   outline: none;

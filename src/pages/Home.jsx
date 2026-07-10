@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AnimatePresence } from "framer-motion";
 
 import { id } from "../utils/math";
 import { formattedDateNow } from "../utils/date";
@@ -8,6 +9,8 @@ import Navigation from "../components/Navigation/Navigation";
 import GooeyEffectSvg from "../components/Svg/GooeyEffectSvg";
 import Header from "../components/Header/Header";
 import NoteList from "../components/List/NoteList";
+import NoteEditor from "../components/Editor/NoteEditor";
+import UndoToast from "../components/Toast/UndoToast";
 
 import quotes from "../assets/data/quotes.json";
 
@@ -20,6 +23,13 @@ const Home = () => {
 
   const [notesSortText, setNotesSortText] = useState("");
   const [notesSortByFavorite, setNotesSortByFavorite] = useState(false);
+
+  // The last long-press-deleted note and where it sat, kept around for the
+  // undo toast's window.
+  const [lastDeleted, setLastDeleted] = useState(null);
+
+  // Which note is stretched open in the focus editor, if any.
+  const [editingNoteId, setEditingNoteId] = useState(null);
 
   const toggleSortByFavorite = () => {
     setNotesSortByFavorite(!notesSortByFavorite);
@@ -42,9 +52,46 @@ const Home = () => {
     setNotes(newNotes);
   }
 
-  const deleteNote = (id) => {
-    const newNotes = notes.filter((note) => note.id !== id);
-    setNotes(newNotes);
+  const deleteNote = (noteId) => {
+    const index = notes.findIndex((note) => note.id === noteId);
+    if (index === -1) return;
+
+    setLastDeleted({ note: notes[index], index });
+    setNotes(notes.filter((note) => note.id !== noteId));
+
+    if (editingNoteId === noteId) setEditingNoteId(null);
+  }
+
+  const undoDelete = () => {
+    if (!lastDeleted) return;
+
+    setNotes((prev) => {
+      const next = [...prev];
+      next.splice(Math.min(lastDeleted.index, next.length), 0, lastDeleted.note);
+      return next;
+    });
+    setLastDeleted(null);
+  }
+
+  const dismissUndo = useCallback(() => setLastDeleted(null), []);
+
+  // The copy lands right beside its source in the grid, starting unstarred.
+  const duplicateNote = (noteId) => {
+    setNotes((prev) => {
+      const index = prev.findIndex((note) => note.id === noteId);
+      if (index === -1) return prev;
+
+      const copy = {
+        ...prev[index],
+        id: id(),
+        time: formattedDateNow(),
+        favorite: false,
+      };
+
+      const next = [...prev];
+      next.splice(index + 1, 0, copy);
+      return next;
+    });
   }
 
   const updateTitle = (title, id) => {
@@ -71,6 +118,15 @@ const Home = () => {
       return { ...note, color: palette[nextIndex] };
     });
 
+    setNotes(newNotes);
+  }
+
+  // Paint a note a specific color — the focus editor's palette picks
+  // directly instead of cycling.
+  const setNoteColor = (color, noteId) => {
+    const newNotes = notes.map((note) =>
+      note.id === noteId ? { ...note, color } : note
+    );
     setNotes(newNotes);
   }
 
@@ -107,6 +163,10 @@ const Home = () => {
     sessionStorage.setItem("DocketNoteProject", JSON.stringify(notes));
   }, [notes]);
 
+  const closeEditor = useCallback(() => setEditingNoteId(null), []);
+
+  const editingNote = notes.find((note) => note.id === editingNoteId);
+
   return (
     <div className="home custom-scroll">
       <Navigation
@@ -129,9 +189,39 @@ const Home = () => {
         updateColor={ updateColor }
         updateLock={ updateLock }
         reorderNotes={ reorderNotes }
+        duplicateNote={ duplicateNote }
+        openEditor={ setEditingNoteId }
         sortText={ notesSortText }
         sortFavorite={ notesSortByFavorite }
       />
+      <AnimatePresence>
+        {
+          editingNote && (
+            <NoteEditor
+              key={ editingNote.id }
+              note={ editingNote }
+              onClose={ closeEditor }
+              updateTitle={ updateTitle }
+              updateText={ updateText }
+              updateFavorite={ updateFavourite }
+              updateLock={ updateLock }
+              setNoteColor={ setNoteColor }
+            />
+          )
+        }
+      </AnimatePresence>
+      <AnimatePresence>
+        {
+          lastDeleted && (
+            <UndoToast
+              key={ lastDeleted.note.id }
+              note={ lastDeleted.note }
+              onUndo={ undoDelete }
+              onDismiss={ dismissUndo }
+            />
+          )
+        }
+      </AnimatePresence>
     </div>
   );
 }

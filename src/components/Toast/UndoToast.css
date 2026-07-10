@@ -1,0 +1,73 @@
+/* --- Undo toast: a second chance after a long-press delete --------------- */
+.undo-toast-layer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 34px;
+  z-index: 700;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.undo-toast {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  overflow: hidden;
+  pointer-events: auto;
+  background: var(--black-color);
+  color: var(--white-color);
+  box-shadow: 0 18px 44px -12px rgba(25, 25, 25, 0.5);
+}
+
+.undo-toast-swatch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.undo-toast-swatch .undo-toast-trash {
+  font-size: 13px;
+  color: var(--black-color);
+}
+
+.undo-toast-label {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.undo-toast-button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--black-color);
+}
+
+.undo-toast-button .undo-toast-undo-icon {
+  font-size: 11px;
+}
+
+.undo-toast-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  transform-origin: left;
+}
