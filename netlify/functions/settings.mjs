@@ -5,7 +5,10 @@ import { getDatabase } from "@netlify/database";
 // GET -> every setting as one object, e.g. { "theme": "dark" }.
 // PUT -> an object of settings to upsert; only the keys sent are touched.
 
-const db = getDatabase();
+// Created lazily inside the handler so a missing database surfaces as a
+// readable JSON error instead of a function that fails to load.
+let cachedDb;
+const database = () => (cachedDb ??= getDatabase());
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -15,6 +18,7 @@ const json = (body, status = 200) =>
 
 export default async (req) => {
   try {
+    const db = database();
     if (req.method === "GET") {
       const rows = await db.sql`SELECT key, value FROM settings`;
       return json(Object.fromEntries(rows.map((row) => [row.key, row.value])));

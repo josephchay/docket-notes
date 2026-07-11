@@ -22,6 +22,50 @@
   overflow: hidden;
 }
 
+/* The database heartbeat, bottom-left: green when every record is in the
+   table, amber while a write is in flight, red when the API is unreachable
+   (which also means changes are NOT being kept). */
+.sync-status {
+  position: fixed;
+  left: 148px;
+  bottom: 20px;
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--page-bg-color);
+  background: var(--page-ink-color);
+  box-shadow: 0 10px 24px -10px rgba(25, 25, 25, 0.4);
+  pointer-events: none;
+}
+
+.sync-status .sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9be29b;
+}
+
+.sync-status.connecting .sync-dot,
+.sync-status.syncing .sync-dot {
+  background: var(--yellow-color);
+  animation: sync-dot-pulse 1s ease-in-out infinite;
+}
+
+.sync-status.offline .sync-dot {
+  background: var(--red-color);
+  animation: sync-dot-pulse 1s ease-in-out infinite;
+}
+
+@keyframes sync-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
+
 /* An ink drop that floats the desk back to the top of the pile. */
 .back-to-top {
   position: fixed;

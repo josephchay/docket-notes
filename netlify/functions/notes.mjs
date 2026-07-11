@@ -10,7 +10,11 @@ import { getDatabase } from "@netlify/database";
 // same array it keeps in localStorage), which suits a personal jotting app
 // where the list stays small.
 
-const db = getDatabase();
+// Created lazily inside the handler so a missing database (not yet
+// provisioned, no NETLIFY_DATABASE_URL) surfaces as a readable JSON error
+// instead of a function that fails to load.
+let cachedDb;
+const database = () => (cachedDb ??= getDatabase());
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -20,6 +24,7 @@ const json = (body, status = 200) =>
 
 export default async (req) => {
   try {
+    const db = database();
     if (req.method === "GET") {
       const rows = await db.sql`
         SELECT id, title, "text", placeholder, "time", color, favorite, "lock"

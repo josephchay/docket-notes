@@ -295,8 +295,10 @@ const Home = () => {
 
   // Hydrate from the notes table, and keep knocking until the database
   // answers — there is no local fallback, so nothing may sync (or be
-  // overwritten) before the real records have arrived.
+  // overwritten) before the real records have arrived. syncState drives the
+  // little status pill: connecting | syncing | saved | offline.
   const [remoteReady, setRemoteReady] = useState(false);
+  const [syncState, setSyncState] = useState("connecting");
 
   useEffect(() => {
     let cancelled = false;
@@ -308,9 +310,17 @@ const Home = () => {
           if (cancelled) return;
           setNotes(remote);
           setRemoteReady(true);
+          setSyncState("saved");
         })
-        .catch(() => {
-          if (!cancelled) retryTimer = setTimeout(hydrate, 8000);
+        .catch((error) => {
+          if (cancelled) return;
+          console.warn(
+            "Docket: cannot reach the notes database (is the app running through `netlify dev` " +
+            "or a deploy with the database provisioned?). Retrying in 8s.",
+            error
+          );
+          setSyncState("offline");
+          retryTimer = setTimeout(hydrate, 8000);
         });
     };
 
@@ -328,10 +338,13 @@ const Home = () => {
     if (!remoteReady) return;
 
     const timer = setTimeout(() => {
-      syncNotes(notes).catch(() => {
-        // A dropped sync is retried by the next change; the local cache
-        // still has everything.
-      });
+      setSyncState("syncing");
+      syncNotes(notes)
+        .then(() => setSyncState("saved"))
+        .catch((error) => {
+          console.warn("Docket: saving notes to the database failed; the next change retries.", error);
+          setSyncState("offline");
+        });
     }, 800);
 
     return () => clearTimeout(timer);
@@ -416,6 +429,20 @@ const Home = () => {
           }
         </AnimatePresence>
       </div>
+      <motion.div
+        className={ `sync-status ${ syncState }` }
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 24, delay: 1 }}
+      >
+        <span className="sync-dot" />
+        {
+          syncState === "connecting" ? "Connecting to database…"
+            : syncState === "syncing" ? "Saving…"
+            : syncState === "saved" ? "Saved"
+            : "Not saving — database unreachable"
+        }
+      </motion.div>
       <AnimatePresence>
         {
           showScrollTop && (
