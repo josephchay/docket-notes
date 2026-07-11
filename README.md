@@ -11,6 +11,9 @@ and to-dos on the fly with **Docket**'s intuitive interface. Whether you're on t
 Effortlessly organize your notes, set reminders, and access your snippets anytime, anywhere. 
 **Docket** - where note-taking meets speed and simplicity, making every thought a quick, memorable note!
 
+# Hosting Status
+[![Netlify Status](https://api.netlify.com/api/v1/badges/b91f9f52-5727-4bd5-bd4d-320e61757e1f/deploy-status)](https://app.netlify.com/projects/docketnotes/deploys)
+
 # Application Features
 1. **Choice of Themes**: Personalize your note-taking experience with a range of color plate themes to suit your mood and style.
 2. **Random Quote Generation**: Get inspired with a random quote generator that appears every time you create a new note.
