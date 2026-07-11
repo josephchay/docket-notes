@@ -1,0 +1,14 @@
+# Netlify build settings for the Docket app (Create React App).
+[build]
+  command = "npm run build"
+  publish = "build"
+
+[dev]
+  framework = "create-react-app"
+
+# Single-page app: every path serves the app shell. Function routes such as
+# /api/notes are matched before redirects, so this never shadows the API.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

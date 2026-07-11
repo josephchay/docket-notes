@@ -5,6 +5,7 @@ import { FaArrowUp } from "react-icons/fa6";
 import { id } from "../utils/math";
 import { formattedDateNow } from "../utils/date";
 import { randomQuote } from "../utils/data";
+import { fetchNotes, syncNotes, fetchSettings, saveSettings } from "../utils/api";
 import { NOTE_COLORS } from "../constants/colors";
 import Navigation from "../components/Navigation/Navigation";
 import GooeyEffectSvg from "../components/Svg/GooeyEffectSvg";
@@ -18,27 +19,44 @@ import quotes from "../assets/data/quotes.json";
 import "./Home.css";
 
 const Home = () => {
-  // Notes live in localStorage so they survive closing the tab; the
-  // sessionStorage read migrates anything saved by older versions.
-  const [notes, setNotes] = useState(() => {
-    return JSON.parse(localStorage.getItem('DocketNoteProject'))
-      || JSON.parse(sessionStorage.getItem('DocketNoteProject'))
-      || [];
-  });
+  // The Netlify database is the only store; the list starts empty and is
+  // hydrated from the notes table as soon as it answers.
+  const [notes, setNotes] = useState([]);
 
   const [notesSortText, setNotesSortText] = useState("");
   const [notesSortByFavorite, setNotesSortByFavorite] = useState(false);
   const [notesSortColor, setNotesSortColor] = useState(null);
 
-  // Fresh paper or the Ink theme, remembered between visits.
-  const [theme, setTheme] = useState(() => localStorage.getItem("DocketNoteTheme") || "light");
+  // Fresh paper or the Ink theme — kept in the database's settings table.
+  const [theme, setTheme] = useState("light");
 
-  const toggleTheme = () => setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      saveSettings({ theme: next }).catch(() => {});
+      return next;
+    });
+  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("DocketNoteTheme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchSettings()
+      .then((settings) => {
+        if (!cancelled && (settings.theme === "dark" || settings.theme === "light")) {
+          setTheme(settings.theme);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // The scrollable page, and the ink ball that floats back up it.
   const homeRef = useRef(null);
@@ -275,9 +293,49 @@ const Home = () => {
     return () => window.removeEventListener("keydown", handleKey);
   });
 
+  // Hydrate from the notes table, and keep knocking until the database
+  // answers — there is no local fallback, so nothing may sync (or be
+  // overwritten) before the real records have arrived.
+  const [remoteReady, setRemoteReady] = useState(false);
+
   useEffect(() => {
-    localStorage.setItem("DocketNoteProject", JSON.stringify(notes));
-  }, [notes]);
+    let cancelled = false;
+    let retryTimer;
+
+    const hydrate = () => {
+      fetchNotes()
+        .then((remote) => {
+          if (cancelled) return;
+          setNotes(remote);
+          setRemoteReady(true);
+        })
+        .catch(() => {
+          if (!cancelled) retryTimer = setTimeout(hydrate, 8000);
+        });
+    };
+
+    hydrate();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+    };
+  }, []);
+
+  // Push every change up to the notes table, debounced so bursts of typing
+  // land as one write.
+  useEffect(() => {
+    if (!remoteReady) return;
+
+    const timer = setTimeout(() => {
+      syncNotes(notes).catch(() => {
+        // A dropped sync is retried by the next change; the local cache
+        // still has everything.
+      });
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [notes, remoteReady]);
 
   const closeEditor = useCallback(() => setEditingNoteId(null), []);
 
