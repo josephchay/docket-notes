@@ -21,8 +21,38 @@ main .header .notes-count {
   border-radius: 999px;
   font-size: 16px;
   font-weight: 600;
-  color: var(--white-color);
-  background: var(--black-color);
+  color: var(--page-bg-color);
+  background: var(--page-ink-color);
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+/* One dot per palette color; tap to see only that color, tap again to
+   let every note back onto the desk. */
+main .header .color-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px 10px;
+}
+
+main .header .color-filters .color-filter {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  opacity: .55;
+  transition: opacity 0.25s ease-in-out, box-shadow 0.25s ease-in-out;
+}
+
+main .header .color-filters .color-filter:hover {
+  opacity: 1;
+}
+
+main .header .color-filters .color-filter.active {
+  opacity: 1;
+  box-shadow: 0 0 0 3px var(--page-ink-color);
 }
 
 main .notes {

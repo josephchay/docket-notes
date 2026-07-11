@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { FaStar } from "react-icons/fa6";
+import { FaStar, FaMoon, FaSun } from "react-icons/fa6";
 
 import searchIcon from '../../assets/icons/search.svg';
 
@@ -9,6 +9,8 @@ const Header = ({
   setNotesSortText,
   notesSortByFavorite,
   setNotesSortByFavorite,
+  theme,
+  toggleTheme,
 }) => {
   const handleSearch = (e) => {
     setNotesSortText((e.target.value).toLowerCase());
@@ -66,6 +68,32 @@ const Header = ({
           />
         </motion.div>
       </div>
+      <motion.div
+        role="button"
+        aria-label={ theme === "dark" ? "Switch to the light theme" : "Switch to the Ink theme" }
+        whileHover={{
+          scale: 1.14,
+          rotate: 24,
+        }}
+        whileTap={{
+          scale: 0.9,
+        }}
+        transition={{
+          type: "spring",
+          stiffness: 400,
+          damping: 17,
+        }}
+        onClick={ toggleTheme }
+        className="theme"
+      >
+        {
+          theme === "dark" ? (
+            <FaSun className="theme-icon" />
+          ) : (
+            <FaMoon className="theme-icon" />
+          )
+        }
+      </motion.div>
     </motion.header>
   );
 }

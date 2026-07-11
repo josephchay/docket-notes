@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion } from "framer-motion";
 import { interpret } from "xstate";
 import anime from "animejs";
+import { FaFileArrowDown, FaFileArrowUp } from "react-icons/fa6";
 
 import { toggleMachine } from "./NavigationState";
 import plusIcon from "../../assets/icons/plus.svg";
@@ -23,9 +24,18 @@ const colorSelectors = [
 
 const Navigation = ({
   addNote,
+  exportNotes,
+  importNotes,
 }) => {
   const navActivator = useRef(null);
+  const fileInput = useRef(null);
   const [toggleService, setToggleService] = useState(null);
+
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (file) importNotes(file);
+    e.target.value = "";   // allow re-importing the same file
+  }
 
   const disableActivator = () => {
     navActivator.current.setAttribute('disabled', '');
@@ -189,6 +199,53 @@ const Navigation = ({
           }
         </motion.div>
       </div>
+      <motion.div
+        initial={{
+          opacity: 0,
+          translateY: 40,
+        }}
+        animate={{
+          opacity: 1,
+          translateY: 0,
+        }}
+        transition={{
+          duration: 0.6,
+          type: "spring",
+          stiffness: 160,
+          delay: 1,
+        }}
+        className="nav-tools"
+      >
+        <motion.button
+          type="button"
+          aria-label="Save all notes to a backup file"
+          className="nav-tool"
+          whileHover={{ scale: 1.15 }}
+          whileTap={{ scale: .9 }}
+          transition={{ type: "spring", stiffness: 400, damping: 17 }}
+          onClick={ exportNotes }
+        >
+          <FaFileArrowDown className="nav-tool-icon" />
+        </motion.button>
+        <motion.button
+          type="button"
+          aria-label="Bring notes in from a backup file"
+          className="nav-tool"
+          whileHover={{ scale: 1.15 }}
+          whileTap={{ scale: .9 }}
+          transition={{ type: "spring", stiffness: 400, damping: 17 }}
+          onClick={ () => fileInput.current?.click() }
+        >
+          <FaFileArrowUp className="nav-tool-icon" />
+        </motion.button>
+        <input
+          ref={ fileInput }
+          type="file"
+          accept="application/json"
+          hidden
+          onChange={ handleImportFile }
+        />
+      </motion.div>
     </div>
   );
 }

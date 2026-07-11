@@ -5,8 +5,11 @@
   grid-template-areas: "nav header" "nav main";
   height: 100vh;
   overflow-y: scroll;
+  background-color: var(--page-bg-color);
   transform-origin: 50% 42%;
-  transition: transform 0.5s cubic-bezier(0.22, 1.3, 0.36, 1);
+  transition:
+    transform 0.5s cubic-bezier(0.22, 1.3, 0.36, 1),
+    background-color 0.4s ease-in-out;
 }
 
 /* While the focus editor is open the whole page eases back a step, with a
@@ -14,4 +17,33 @@
    so unlike the old backdrop blur it costs nothing per frame. */
 .home.receded {
   transform: scale(0.976);
+  /* The desk behind the editor holds still; this also keeps the fixed nav
+     rail from drifting while the transform makes .home its containing block. */
+  overflow: hidden;
+}
+
+/* An ink drop that floats the desk back to the top of the pile. */
+.back-to-top {
+  position: fixed;
+  right: 34px;
+  bottom: 34px;
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  background: var(--page-ink-color);
+  box-shadow: 0 14px 30px -10px rgba(25, 25, 25, 0.4);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.back-to-top .back-to-top-icon {
+  font-size: 15px;
+  color: var(--page-bg-color);
+  transition: color 0.4s ease-in-out;
 }

@@ -1,4 +1,11 @@
 :root {
+  /* The page's own ink and paper — flipped by the Ink (dark) theme, while
+     the note colors and their black ink stay exactly as they are. */
+  --page-bg-color: #fffeff;
+  --page-ink-color: #191919;
+  --page-surface-color: rgb(245, 245, 245);
+  --page-line-color: #ececec;
+
   --black-color: #191919;
   --black-transclucent-color: rgba(25, 25, 25, 0.6);
   --black-more-transclucent-color: rgba(25, 25, 25, 0.4);
@@ -15,4 +22,11 @@
   --purple-color: #b79cff;
   --pink-color: #ffa1d8;
   --red-color: #ff9494;
+}
+
+:root[data-theme="dark"] {
+  --page-bg-color: #161616;
+  --page-ink-color: #fffeff;
+  --page-surface-color: #242424;
+  --page-line-color: #2c2c2c;
 }

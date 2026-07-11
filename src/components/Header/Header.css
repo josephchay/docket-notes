@@ -10,9 +10,10 @@
   align-items: center;
   justify-content: center;
   margin-top: 6px;
-  background-color: rgb(245, 245, 245);
+  background-color: var(--page-surface-color);
   border-radius: 10px;
   padding: 6px 10px;
+  transition: background-color 0.4s ease-in-out;
 }
 
 .header .search .icon {
@@ -27,13 +28,19 @@
   width: 18px;
 }
 
+:root[data-theme="dark"] .header .search .icon img {
+  filter: invert(1);
+}
+
 .header .search input {
   background-color: transparent;
   height: 32px;
   border: none;
   outline: none;
   font-size: 20px;
-  caret-color: var(--black-color);
+  font-family: inherit;
+  color: var(--page-ink-color);
+  caret-color: var(--page-ink-color);
 }
 
 .header .search input::placeholder {
@@ -52,5 +59,24 @@
 }
 
 .header .search .star .star-icon {
-  color: rgb(245, 245, 245);
+  color: var(--page-surface-color);
+}
+
+/* Flips the page between fresh paper and the Ink (dark) theme. */
+.header .theme {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 6px 0 0 14px;
+  border-radius: 10px;
+  height: 40px;
+  width: 40px;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.header .theme .theme-icon {
+  font-size: 15px;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
 }

@@ -54,8 +54,28 @@
 }
 
 .note .header .star {
+  position: relative;
   height: 34px;
   width: 34px;
+}
+
+/* The handful of sparks thrown when a note is starred. */
+.note .header .star .star-burst {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.note .header .star .star-burst .spark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--black-color);
 }
 
 .note .header .star .star-icon {
@@ -175,6 +195,11 @@
 .note .pull-rope-line {
   stroke: var(--black-more-transclucent-color);
   transition: stroke 0.25s ease-in-out;
+}
+
+/* Slack ropes hang over the page, not the note, so they lighten with it. */
+:root[data-theme="dark"] .note .pull-rope-line {
+  stroke: rgba(255, 254, 255, 0.35);
 }
 
 .note .pull-string.yellow .pull-rope-line.taut { stroke: var(--yellow-color); }

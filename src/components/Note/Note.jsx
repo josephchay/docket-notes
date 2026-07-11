@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { motion, useMotionValue, useTransform } from "framer-motion";
+import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 
 import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRight } from "react-icons/fa6";
 import { FaEye, FaTrash } from "react-icons/fa";
@@ -104,8 +104,35 @@ const Note = ({
     delay: 800,
   });
 
+  // Starring a note throws a little handful of sparks off the star.
+  const [starBurst, setStarBurst] = useState(false);
+
   const handleFavorite = () => {
+    if (!note.favorite) {
+      setStarBurst(true);
+      setTimeout(() => setStarBurst(false), 700);
+    }
     updateFavorite(note.id);
+  }
+
+  // The paper tilts under the pointer like it is resting on a soft desk,
+  // springing flat again when the pointer leaves.
+  const tiltSourceX = useMotionValue(0);
+  const tiltSourceY = useMotionValue(0);
+  const tiltX = useSpring(useTransform(tiltSourceY, [-0.5, 0.5], [6, -6]), { stiffness: 300, damping: 22 });
+  const tiltY = useSpring(useTransform(tiltSourceX, [-0.5, 0.5], [-6, 6]), { stiffness: 300, damping: 22 });
+
+  const handleTiltMove = (e) => {
+    if (isDeleting) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    tiltSourceX.set((e.clientX - rect.left) / rect.width - 0.5);
+    tiltSourceY.set((e.clientY - rect.top) / rect.height - 0.5);
+  }
+
+  const handleTiltLeave = () => {
+    tiltSourceX.set(0);
+    tiltSourceY.set(0);
   }
 
   const handleEditable = () => {
@@ -242,7 +269,12 @@ const Note = ({
         }}
         style={{
           borderRadius: isDeleting ? "50%" : "24px",
+          rotateX: tiltX,
+          rotateY: tiltY,
+          transformPerspective: 900,
         }}
+        onPointerMove={ handleTiltMove }
+        onPointerLeave={ handleTiltLeave }
         className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" } ${ isTyping ? "editing" : "" }` }
       >
         <div className="header">
@@ -282,6 +314,41 @@ const Note = ({
             <FaStar
               className={ `star-icon ${ note.color }` }
             />
+            <AnimatePresence>
+              {
+                starBurst && (
+                  <motion.span
+                    className="star-burst"
+                    initial={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    {
+                      Array.from({ length: 6 }).map((_, i) => {
+                        const angle = (Math.PI * 2 * i) / 6;
+                        const distance = 30 + (i % 2) * 10;
+
+                        return (
+                          <motion.span
+                            key={ i }
+                            className="spark"
+                            initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
+                            animate={{
+                              x: Math.cos(angle) * distance,
+                              y: Math.sin(angle) * distance,
+                              scale: [0, 1, 0],
+                              opacity: [1, 1, 0],
+                            }}
+                            transition={{ duration: .6, ease: "easeOut" }}
+                          >
+                            ✦
+                          </motion.span>
+                        );
+                      })
+                    }
+                  </motion.span>
+                )
+              }
+            </AnimatePresence>
           </motion.div>
         </div>
         <motion.input

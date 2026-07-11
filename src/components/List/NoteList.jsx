@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 
 import Note from "../Note/Note";
+import { NOTE_COLORS } from "../../constants/colors";
 
 import "./NoteList.css";
 import { itemsPerFlexRow } from "../../utils/math";
@@ -19,6 +20,8 @@ const NoteList = ({
   openEditor,
   sortText,
   sortFavorite,
+  sortColor,
+  setSortColor,
 }) => {
   const ref = useRef(null);
 
@@ -34,8 +37,7 @@ const NoteList = ({
     return reversed;
   }
 
-  const [reverseNotes, setReverseNotes] = useState(reverse(notes));
-  const [filteredNotes, setFilteredNotes] = useState([...reverseNotes]);
+  const [filteredNotes, setFilteredNotes] = useState(reverse(notes));
 
   const sortByText = (arr, text) => {
     return arr.filter((note) =>
@@ -47,27 +49,24 @@ const NoteList = ({
     return arr.filter((note) => note.favorite);
   }
 
-  useEffect(() => {
-    let filtered = reverse(notes);
+  const sortByColor = (arr, color) => {
+    return arr.filter((note) => note.color === color);
+  }
 
-    setReverseNotes(filtered);
+  // Every lens over the list — search text, starred, color — stacks here.
+  useEffect(() => {
+    let filtered = sortByText(reverse(notes), sortText);
 
     if (sortFavorite) {
       filtered = sortByFavorite(filtered);
     }
 
-    setFilteredNotes(filtered);
-  }, [notes, sortFavorite]);
-
-  useEffect(() => {
-    let sorted = sortByText(reverseNotes, sortText);
-
-    if (sortFavorite) {
-      sorted = sortByFavorite(sorted);
+    if (sortColor) {
+      filtered = sortByColor(filtered, sortColor);
     }
 
-    setFilteredNotes(sorted);
-  }, [sortText, sortFavorite, reverseNotes]);
+    setFilteredNotes(filtered);
+  }, [notes, sortText, sortFavorite, sortColor]);
 
   useEffect(() => {
     const delayTimer = setTimeout(() => {
@@ -126,6 +125,38 @@ const NoteList = ({
         >
           { filteredNotes.length }
         </motion.span>
+        <motion.div
+          className="color-filters"
+          initial={{
+            opacity: 0,
+            translateY: 40,
+          }}
+          animate={{
+            opacity: 1,
+            translateY: 0,
+          }}
+          transition={{
+            duration: 0.8,
+            type: "spring",
+            stiffness: 160,
+            delay: .7,
+          }}
+        >
+          {
+            Object.keys(NOTE_COLORS).map((name) => (
+              <motion.button
+                key={ name }
+                type="button"
+                aria-label={ sortColor === name ? "Show every color" : `Show only ${ name } notes` }
+                className={ `color-filter ${ name }-bg ${ sortColor === name ? "active" : "" }` }
+                whileHover={{ scale: 1.3 }}
+                whileTap={{ scale: .85 }}
+                transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                onClick={ () => setSortColor(sortColor === name ? null : name) }
+              />
+            ))
+          }
+        </motion.div>
       </div>
       <div
         ref={ ref }

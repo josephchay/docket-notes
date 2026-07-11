@@ -23,6 +23,10 @@ Effortlessly organize your notes, set reminders, and access your snippets anytim
 9. **Focus Editor**: Pull a note open into a full writing surface with four jelly-springy paper sizes, a direct color palette, live word count, copy-to-clipboard, and quote shuffling.
 10. **Quick Capture Shortcuts**: Press `N` anywhere to jot a new note in a random color, or `/` to jump straight into search.
 11. **Lasting Notes**: Everything is kept in your browser's local storage, so your notes are still on the desk when you come back.
+12. **Ink Theme**: Flip the whole desk to dark with the moon in the header — the paper goes dark while your notes keep their colors.
+13. **Color Filters**: Tap a palette dot above the list to see only notes of that color; tap it again to bring every color back.
+14. **Backup & Restore**: Save all your notes to a JSON file and pour them back in later, from the buttons at the foot of the nav rail.
+15. **Tactile Touches**: Notes tilt under your pointer like paper on a soft desk, starring throws a burst of sparks, and an ink drop floats you back to the top of a long list.
 
 # Tech Stack
 1. React

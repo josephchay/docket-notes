@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { AnimatePresence } from "framer-motion";
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from "framer-motion";
+import { FaArrowUp } from "react-icons/fa6";
 
 import { id } from "../utils/math";
 import { formattedDateNow } from "../utils/date";
@@ -27,6 +28,26 @@ const Home = () => {
 
   const [notesSortText, setNotesSortText] = useState("");
   const [notesSortByFavorite, setNotesSortByFavorite] = useState(false);
+  const [notesSortColor, setNotesSortColor] = useState(null);
+
+  // Fresh paper or the Ink theme, remembered between visits.
+  const [theme, setTheme] = useState(() => localStorage.getItem("DocketNoteTheme") || "light");
+
+  const toggleTheme = () => setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("DocketNoteTheme", theme);
+  }, [theme]);
+
+  // The scrollable page, and the ink ball that floats back up it.
+  const homeRef = useRef(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  const handleScroll = (e) => {
+    const show = e.currentTarget.scrollTop > 600;
+    setShowScrollTop((prev) => (prev === show ? prev : show));
+  }
 
   // Long-press-deleted notes and where each sat, kept around as a toast deck
   // for their undo windows. Oldest first; only the freshest few are shown.
@@ -54,6 +75,9 @@ const Home = () => {
     });
 
     setNotes(newNotes);
+
+    // New notes land at the front of the list — bring the desk back up to it.
+    homeRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   const deleteNote = (noteId) => {
@@ -171,6 +195,58 @@ const Home = () => {
     setNotes(newNotes);
   }
 
+  // Save the whole desk as a JSON backup the visitor can keep or move.
+  const exportNotes = () => {
+    const blob = new Blob([JSON.stringify(notes, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `docket-notes-${ new Date().toISOString().slice(0, 10) }.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // Pour a backup file back onto the desk. Incoming notes are scrubbed field
+  // by field and appended; colliding ids get fresh ones so nothing is lost.
+  const importNotes = (file) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      try {
+        const incoming = JSON.parse(reader.result);
+        if (!Array.isArray(incoming)) return;
+
+        setNotes((prev) => {
+          const existing = new Set(prev.map((note) => note.id));
+
+          const cleaned = incoming
+            .filter((note) => note && typeof note === "object" && typeof note.text === "string")
+            .map((note) => ({
+              id: !note.id || existing.has(note.id) ? id() : note.id,
+              title: typeof note.title === "string" ? note.title : "",
+              text: note.text,
+              placeholder: typeof note.placeholder === "string" && note.placeholder
+                ? note.placeholder
+                : randomQuote(quotes),
+              time: typeof note.time === "string" ? note.time : formattedDateNow(),
+              color: NOTE_COLORS[note.color] ? note.color : "yellow",
+              favorite: !!note.favorite,
+              lock: !!note.lock,
+            }));
+
+          return [...prev, ...cleaned];
+        });
+      } catch {
+        // Not a Docket backup; leave the desk untouched.
+      }
+    };
+
+    reader.readAsText(file);
+  }
+
   // Deal a fresh inspiration quote into an empty note's placeholder.
   const updateQuote = (noteId) => {
     const newNotes = notes.map((note) =>
@@ -213,9 +289,15 @@ const Home = () => {
           compositor-only depth cue that replaces the old backdrop blur.
           The fixed layers below live outside this div so the transform
           never becomes their containing block. */}
-      <div className={ `home custom-scroll ${ editingNote ? "receded" : "" }` }>
+      <div
+        ref={ homeRef }
+        onScroll={ handleScroll }
+        className={ `home custom-scroll ${ editingNote ? "receded" : "" }` }
+      >
         <Navigation
           addNote={ addNote }
+          exportNotes={ exportNotes }
+          importNotes={ importNotes }
         />
         <GooeyEffectSvg
           id="colorSelectors"
@@ -224,6 +306,8 @@ const Home = () => {
           setNotesSortText={ setNotesSortText }
           notesSortByFavorite={ notesSortByFavorite }
           setNotesSortByFavorite={ toggleSortByFavorite }
+          theme={ theme }
+          toggleTheme={ toggleTheme }
         />
         <NoteList
           notes={ notes }
@@ -238,6 +322,8 @@ const Home = () => {
           openEditor={ setEditingNoteId }
           sortText={ notesSortText }
           sortFavorite={ notesSortByFavorite }
+          sortColor={ notesSortColor }
+          setSortColor={ setNotesSortColor }
         />
       </div>
       <AnimatePresence>
@@ -272,6 +358,27 @@ const Home = () => {
           }
         </AnimatePresence>
       </div>
+      <AnimatePresence>
+        {
+          showScrollTop && (
+            <motion.button
+              key="backToTop"
+              type="button"
+              aria-label="Float back to the top"
+              className="back-to-top"
+              initial={{ opacity: 0, scale: 0, y: 40 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0, y: 40 }}
+              whileHover={{ scale: 1.12 }}
+              whileTap={{ scale: .9 }}
+              transition={{ type: "spring", stiffness: 360, damping: 20 }}
+              onClick={ () => homeRef.current?.scrollTo({ top: 0, behavior: "smooth" }) }
+            >
+              <FaArrowUp className="back-to-top-icon" />
+            </motion.button>
+          )
+        }
+      </AnimatePresence>
     </>
   );
 }
