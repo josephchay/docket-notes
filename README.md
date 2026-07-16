@@ -29,11 +29,13 @@
 15. **Tactile Touches**: Notes tilt under your pointer like paper on a soft desk, starring throws a burst of sparks, and an ink drop floats you back to the top of a long list.
 
 # Tech Stack
-1. NextJS
-2. React
-3. xState
-4. Framer motion
-5. Anime.js
+1. React
+2. xState
+3. Framer motion
+4. Anime.js
+
+# Storage
+Session Storage is being used temporarily.
 
 # Acknowledgements
 - Design inspired from <a href="https://dribbble.com/shots/14037848-Docket-note-Side-menu" target="_blank">Docket Note</a>
