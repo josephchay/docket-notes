@@ -1,39 +1,61 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from "framer-motion";
 import { FaArrowUp } from "react-icons/fa6";
 
-import { id } from "../utils/math";
-import { formattedDateNow } from "../utils/date";
-import { randomQuote } from "../utils/data";
-import { fetchNotes, syncNotes, fetchSettings, saveSettings } from "../utils/api";
-import { NOTE_COLORS } from "../constants/colors";
-import Navigation from "../components/Navigation/Navigation";
-import GooeyEffectSvg from "../components/Svg/GooeyEffectSvg";
-import Header from "../components/Header/Header";
-import NoteList from "../components/List/NoteList";
-import NoteEditor from "../components/Editor/NoteEditor";
-import UndoToast from "../components/Toast/UndoToast";
+import { id } from "./utils/math";
+import { formattedDateNow } from "./utils/date";
+import { randomQuote } from "./utils/data";
+import { loadNotes, saveNotes, loadSettings, saveSettings } from "./utils/storage";
+import { NOTE_COLORS } from "./constants/colors";
+import Navigation from "./components/Navigation/Navigation";
+import GooeyEffectSvg from "./components/Svg/GooeyEffectSvg";
+import Header from "./components/Header/Header";
+import NoteList from "./components/List/NoteList";
+import NoteEditor from "./components/Editor/NoteEditor";
+import UndoToast from "./components/Toast/UndoToast";
 
-import quotes from "../assets/data/quotes.json";
+import quotes from "./assets/data/quotes.json";
 
-import "./Home.css";
+import "./home.css";
+
+// Note shape:
+// {
+//   id: string,
+//   title: string,
+//   text: string,
+//   placeholder: string,
+//   time: string,
+//   color: string,
+//   favorite: boolean,
+//   lock: boolean
+// }
+
+// DeletedEntry shape:
+// {
+//   note: Note,
+//   index: number
+// }
 
 const Home = () => {
-  // The Netlify database is the only store; the list starts empty and is
-  // hydrated from the notes table as soon as it answers.
+  // Notes live in sessionStorage only — they survive reloads within this
+  // tab and reset when the tab closes. The list starts empty and is
+  // hydrated in an effect so SSR never touches sessionStorage.
   const [notes, setNotes] = useState([]);
+  const [hydrated, setHydrated] = useState(false);
 
   const [notesSortText, setNotesSortText] = useState("");
   const [notesSortByFavorite, setNotesSortByFavorite] = useState(false);
   const [notesSortColor, setNotesSortColor] = useState(null);
 
-  // Fresh paper or the Ink theme — kept in the database's settings table.
+  // Fresh paper or the Ink theme — kept in sessionStorage alongside the notes.
   const [theme, setTheme] = useState("light");
 
   const toggleTheme = () => {
     setTheme((prev) => {
       const next = prev === "dark" ? "light" : "dark";
-      saveSettings({ theme: next }).catch(() => {});
+      saveSettings({ theme: next });
       return next;
     });
   }
@@ -42,21 +64,25 @@ const Home = () => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
+  // Hydrate notes and settings from sessionStorage once, on mount.
   useEffect(() => {
-    let cancelled = false;
+    const stored = loadNotes();
+    if (stored.length > 0) setNotes(stored);
 
-    fetchSettings()
-      .then((settings) => {
-        if (!cancelled && (settings.theme === "dark" || settings.theme === "light")) {
-          setTheme(settings.theme);
-        }
-      })
-      .catch(() => {});
+    const settings = loadSettings();
+    if (settings.theme === "dark" || settings.theme === "light") {
+      setTheme(settings.theme);
+    }
 
-    return () => {
-      cancelled = true;
-    };
+    setHydrated(true);
   }, []);
+
+  // Mirror every change back into sessionStorage — but only after hydration,
+  // so the initial empty list never overwrites what the session already holds.
+  useEffect(() => {
+    if (!hydrated) return;
+    saveNotes(notes);
+  }, [notes, hydrated]);
 
   // The scrollable page, and the ink ball that floats back up it.
   const homeRef = useRef(null);
@@ -233,6 +259,8 @@ const Home = () => {
     const reader = new FileReader();
 
     reader.onload = () => {
+      if (typeof reader.result !== "string") return;
+
       try {
         const incoming = JSON.parse(reader.result);
         if (!Array.isArray(incoming)) return;
@@ -243,14 +271,14 @@ const Home = () => {
           const cleaned = incoming
             .filter((note) => note && typeof note === "object" && typeof note.text === "string")
             .map((note) => ({
-              id: !note.id || existing.has(note.id) ? id() : note.id,
+              id: typeof note.id !== "string" || !note.id || existing.has(note.id) ? id() : note.id,
               title: typeof note.title === "string" ? note.title : "",
               text: note.text,
               placeholder: typeof note.placeholder === "string" && note.placeholder
                 ? note.placeholder
                 : randomQuote(quotes),
               time: typeof note.time === "string" ? note.time : formattedDateNow(),
-              color: NOTE_COLORS[note.color] ? note.color : "yellow",
+              color: typeof note.color === "string" && note.color in NOTE_COLORS ? note.color : "yellow",
               favorite: !!note.favorite,
               lock: !!note.lock,
             }));
@@ -292,63 +320,6 @@ const Home = () => {
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   });
-
-  // Hydrate from the notes table, and keep knocking until the database
-  // answers — there is no local fallback, so nothing may sync (or be
-  // overwritten) before the real records have arrived. syncState drives the
-  // little status pill: connecting | syncing | saved | offline.
-  const [remoteReady, setRemoteReady] = useState(false);
-  const [syncState, setSyncState] = useState("connecting");
-
-  useEffect(() => {
-    let cancelled = false;
-    let retryTimer;
-
-    const hydrate = () => {
-      fetchNotes()
-        .then((remote) => {
-          if (cancelled) return;
-          setNotes(remote);
-          setRemoteReady(true);
-          setSyncState("saved");
-        })
-        .catch((error) => {
-          if (cancelled) return;
-          console.warn(
-            "Docket: cannot reach the notes database (is the app running through `netlify dev` " +
-            "or a deploy with the database provisioned?). Retrying in 8s.",
-            error
-          );
-          setSyncState("offline");
-          retryTimer = setTimeout(hydrate, 8000);
-        });
-    };
-
-    hydrate();
-
-    return () => {
-      cancelled = true;
-      clearTimeout(retryTimer);
-    };
-  }, []);
-
-  // Push every change up to the notes table, debounced so bursts of typing
-  // land as one write.
-  useEffect(() => {
-    if (!remoteReady) return;
-
-    const timer = setTimeout(() => {
-      setSyncState("syncing");
-      syncNotes(notes)
-        .then(() => setSyncState("saved"))
-        .catch((error) => {
-          console.warn("Docket: saving notes to the database failed; the next change retries.", error);
-          setSyncState("offline");
-        });
-    }, 800);
-
-    return () => clearTimeout(timer);
-  }, [notes, remoteReady]);
 
   const closeEditor = useCallback(() => setEditingNoteId(null), []);
 
@@ -429,20 +400,6 @@ const Home = () => {
           }
         </AnimatePresence>
       </div>
-      <motion.div
-        className={ `sync-status ${ syncState }` }
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: "spring", stiffness: 300, damping: 24, delay: 1 }}
-      >
-        <span className="sync-dot" />
-        {
-          syncState === "connecting" ? "Connecting to database…"
-            : syncState === "syncing" ? "Saving…"
-            : syncState === "saved" ? "Saved"
-            : "Not saving — database unreachable"
-        }
-      </motion.div>
       <AnimatePresence>
         {
           showScrollTop && (

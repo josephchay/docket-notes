@@ -1,15 +1,11 @@
 # Docket
 
-![image](https://github.com/josephchay/docket-note/assets/136827046/e6b96caf-627f-4ea5-9e76-bba76a5aa2a4)
+![image](https://github.com/user-attachments/assets/2e7d9b75-82b2-4e4a-88ae-e3eff6fbb430)
+![image](https://github.com/user-attachments/assets/5012fe0d-892f-43d1-9444-c3035cacbff4)
+![image](https://github.com/user-attachments/assets/8ec7383b-2ba1-4b33-b538-a71364480b5d)
+![image](https://github.com/user-attachments/assets/7b966e05-7433-4d5c-8208-c2a5a9d2805f)
 
 ---
-
-# About
-
-Welcome to **Docket**, your go-to quick note jotting app! Swiftly capture your thoughts, ideas, 
-and to-dos on the fly with **Docket**'s intuitive interface. Whether you're on the move or struck by inspiration, our app ensures you never miss a beat. 
-Effortlessly organize your notes, set reminders, and access your snippets anytime, anywhere. 
-**Docket** - where note-taking meets speed and simplicity, making every thought a quick, memorable note!
 
 # Application Features
 1. **Choice of Themes**: Personalize your note-taking experience with a range of color plate themes to suit your mood and style.
@@ -29,45 +25,13 @@ Effortlessly organize your notes, set reminders, and access your snippets anytim
 15. **Tactile Touches**: Notes tilt under your pointer like paper on a soft desk, starring throws a burst of sparks, and an ink drop floats you back to the top of a long list.
 
 # Tech Stack
-1. React
-2. xState
-3. Framer motion
-4. Anime.js
-5. Netlify Functions + Netlify Database (Postgres)
-
-# Deploying to Netlify (with the notes database)
-
-The app keeps all records in a [Netlify Database](https://docs.netlify.com/build/data-and-storage/netlify-database/):
-every note attribute (id, title, text, placeholder, time, color, favorite,
-lock, and list position) lives in a `notes` table, and preferences such as
-the theme live in a `settings` table. No browser storage is used. The schema
-lives in `netlify/database/migrations/`, the API in `netlify/functions/`
-(`/api/notes` and `/api/settings`), and the browser syncs through
-`src/utils/api.js`. Because there is no local fallback, run the app through
-`netlify dev` (or the deployed site) — plain `npm start` has no database and
-will show an empty desk that cannot save.
-
-One-time setup:
-
-```bash
-npm install -g netlify-cli   # or use npx netlify
-netlify login                # opens the browser to authenticate
-netlify init                 # create/link the Netlify site
-netlify database init        # provisions the database and installs @netlify/database
-                             # (choose plain SQL; the migration is already written)
-```
-
-Develop locally against a local Postgres:
-
-```bash
-netlify dev
-```
-
-Deploy (migrations are applied automatically during the deploy):
-
-```bash
-netlify deploy --prod
-```
+1. NextJS
+2. React
+3. xState
+4. Framer motion
+5. Anime.js
 
 # Acknowledgements
 - Design inspired from <a href="https://dribbble.com/shots/14037848-Docket-note-Side-menu" target="_blank">Docket Note</a>
+- Side menu animation inspiration and code from <a href="https://www.youtube.com/watch?v=lSzfYAQYKU0" target="_blank">Micro Interactions using Anime.js | HTML, CSS & Javascript</a>
+- Code and "Application Features" details description helped with <a href="https://claude.ai/" target="_blank">Claude AI</a> (Paid - invoice can be shared upon request), after commit <a href="https://github.com/josephchay/docket-notes-old/tree/5fcc14fe8b9dcf6bce6d23789cacaa6043f80d08" target="_blank">5fcc14fe8b9dcf6bce6d23789cacaa6043f80d08</a>
