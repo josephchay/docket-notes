@@ -88,7 +88,7 @@ header.header {
   background-color: var(--page-line-color);
   color: var(--page-ink-color);
   font-size: 12px;
-  cursor: pointer;
+  /* cursor: pointer; */
   transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
 }
 
@@ -115,7 +115,7 @@ header.header {
   width: 32px;
   flex-shrink: 0;
   background-color: var(--page-line-color);
-  cursor: pointer;
+  /* cursor: pointer; */
   transition: background-color 0.3s ease-in-out;
 }
 
@@ -175,7 +175,7 @@ header.header {
   outline: none;
   border-radius: 10px;
   background-color: var(--page-surface-color);
-  cursor: pointer;
+  /* cursor: pointer; */
   transition: background-color 0.4s ease-in-out, box-shadow 0.25s ease-in-out;
 }
 
@@ -215,7 +215,7 @@ header.header {
   font-weight: 600;
   color: var(--page-bg-color);
   background-color: var(--page-ink-color);
-  cursor: pointer;
+  /* cursor: pointer; */
   transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
 }
 
@@ -234,7 +234,7 @@ header.header {
   width: 40px;
   flex-shrink: 0;
   background-color: var(--page-surface-color);
-  cursor: pointer;
+  /* cursor: pointer; */
   transition: background-color 0.4s ease-in-out;
 }
 
