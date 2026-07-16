@@ -2,13 +2,16 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 
 import Note from "../Note/Note";
-import { NOTE_COLORS } from "../../constants/colors";
 
 import "./NoteList.css";
 import { itemsPerFlexRow } from "../../utils/math";
 
+// Receives the notes already filtered and ordered by Home — the search
+// text, star, and color lenses all live up in the toolbar now.
 const NoteList = ({
   notes,
+  hasNotes,
+  clearFilters,
   deleteNote,
   updateTitle,
   updateText,
@@ -18,55 +21,11 @@ const NoteList = ({
   reorderNotes,
   duplicateNote,
   openEditor,
-  sortText,
-  sortFavorite,
-  sortColor,
-  setSortColor,
 }) => {
   const ref = useRef(null);
 
   const [numPerRow, setNumPerRow] = useState(0);
   const [renderFirstRow, setRenderFirstRow] = useState(false);  // To delay the rendering of the notes list group.
-
-  const reverse = (arr) => {
-    const reversed = [];
-    for (let i = arr.length - 1; i >= 0; i--) {
-      reversed.push(arr[i]);
-    }
-
-    return reversed;
-  }
-
-  const [filteredNotes, setFilteredNotes] = useState(reverse(notes));
-
-  const sortByText = (arr, text) => {
-    return arr.filter((note) =>
-      `${ note.title ?? "" } ${ note.text }`.toLowerCase().includes(text)
-    );
-  }
-
-  const sortByFavorite = (arr) => {
-    return arr.filter((note) => note.favorite);
-  }
-
-  const sortByColor = (arr, color) => {
-    return arr.filter((note) => note.color === color);
-  }
-
-  // Every lens over the list — search text, starred, color — stacks here.
-  useEffect(() => {
-    let filtered = sortByText(reverse(notes), sortText);
-
-    if (sortFavorite) {
-      filtered = sortByFavorite(filtered);
-    }
-
-    if (sortColor) {
-      filtered = sortByColor(filtered, sortColor);
-    }
-
-    setFilteredNotes(filtered);
-  }, [notes, sortText, sortFavorite, sortColor]);
 
   useEffect(() => {
     const delayTimer = setTimeout(() => {
@@ -104,59 +63,6 @@ const NoteList = ({
         >
           Notes
         </motion.h2>
-        <motion.span
-          key={ filteredNotes.length }
-          className="notes-count"
-          initial={{
-            opacity: 0,
-            scale: .6,
-            translateY: 8,
-          }}
-          animate={{
-            opacity: 1,
-            scale: 1,
-            translateY: 0,
-          }}
-          transition={{
-            type: "spring",
-            stiffness: 500,
-            damping: 20,
-          }}
-        >
-          { filteredNotes.length }
-        </motion.span>
-        <motion.div
-          className="color-filters"
-          initial={{
-            opacity: 0,
-            translateY: 40,
-          }}
-          animate={{
-            opacity: 1,
-            translateY: 0,
-          }}
-          transition={{
-            duration: 0.8,
-            type: "spring",
-            stiffness: 160,
-            delay: .7,
-          }}
-        >
-          {
-            Object.keys(NOTE_COLORS).map((name) => (
-              <motion.button
-                key={ name }
-                type="button"
-                aria-label={ sortColor === name ? "Show every color" : `Show only ${ name } notes` }
-                className={ `color-filter ${ name }-bg ${ sortColor === name ? "active" : "" }` }
-                whileHover={{ scale: 1.3 }}
-                whileTap={{ scale: .85 }}
-                transition={{ type: "spring", stiffness: 420, damping: 16 }}
-                onClick={ () => setSortColor(sortColor === name ? null : name) }
-              />
-            ))
-          }
-        </motion.div>
       </div>
       <div
         ref={ ref }
@@ -164,10 +70,10 @@ const NoteList = ({
       >
         {
           renderFirstRow && (
-            filteredNotes?.length > 0 ? (
+            notes?.length > 0 ? (
               <AnimatePresence>
                 {
-                  filteredNotes.map((item, index) => (
+                  notes.map((item, index) => (
                     <Note
                       key={ item.id }
                       delay={ (index % numPerRow + 1) * 0.16 }
@@ -185,6 +91,71 @@ const NoteList = ({
                   ))
                 }
               </AnimatePresence>
+            ) : hasNotes ? (
+              // Notes exist, the filters just hid them all — offer the way back.
+              <div
+                className="empty-state"
+              >
+                <motion.h3
+                  initial={{
+                    opacity: 0,
+                    translateY: 40,
+                  }}
+                  animate={{
+                    opacity: 1,
+                    translateY: 0,
+                  }}
+                  transition={{
+                    duration: 0.6,
+                    type: "spring",
+                    stiffness: 180,
+                    delay: 0.1,
+                  }}
+                >
+                  No matching notes
+                </motion.h3>
+                <motion.p
+                  initial={{
+                    opacity: 0,
+                    translateY: 40,
+                  }}
+                  animate={{
+                    opacity: 1,
+                    translateY: 0,
+                  }}
+                  transition={{
+                    duration: 0.6,
+                    type: "spring",
+                    stiffness: 180,
+                    delay: 0.2,
+                  }}
+                >
+                  Nothing on the desk matches these filters
+                </motion.p>
+                <motion.button
+                  type="button"
+                  className="empty-clear"
+                  initial={{
+                    opacity: 0,
+                    translateY: 40,
+                  }}
+                  animate={{
+                    opacity: 1,
+                    translateY: 0,
+                  }}
+                  whileHover={{ scale: 1.06 }}
+                  whileTap={{ scale: .94 }}
+                  transition={{
+                    duration: 0.6,
+                    type: "spring",
+                    stiffness: 180,
+                    delay: 0.3,
+                  }}
+                  onClick={ clearFilters }
+                >
+                  Show all notes
+                </motion.button>
+              </div>
             ) : (
               <div
                 className="empty-state"

@@ -1,24 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from "framer-motion";
 import { FaArrowUp } from "react-icons/fa6";
 
-import { id } from "./utils/math";
-import { formattedDateNow } from "./utils/date";
-import { randomQuote } from "./utils/data";
-import { loadNotes, saveNotes, loadSettings, saveSettings } from "./utils/storage";
-import { NOTE_COLORS } from "./constants/colors";
-import Navigation from "./components/Navigation/Navigation";
-import GooeyEffectSvg from "./components/Svg/GooeyEffectSvg";
-import Header from "./components/Header/Header";
-import NoteList from "./components/List/NoteList";
-import NoteEditor from "./components/Editor/NoteEditor";
-import UndoToast from "./components/Toast/UndoToast";
+import { id } from "../utils/math";
+import { formattedDateNow } from "../utils/date";
+import { randomQuote } from "../utils/data";
+import { loadNotes, saveNotes, loadSettings, saveSettings } from "../utils/storage";
+import { NOTE_COLORS } from "../constants/colors";
+import Navigation from "../components/Navigation/Navigation";
+import GooeyEffectSvg from "../components/Svg/GooeyEffectSvg";
+import Header from "../components/Header/Header";
+import NoteList from "../components/List/NoteList";
+import NoteEditor from "../components/Editor/NoteEditor";
+import UndoToast from "../components/Toast/UndoToast";
 
-import quotes from "./assets/data/quotes.json";
+import quotes from "../assets/data/quotes.json";
 
-import "./home.css";
+import "./Home.css";
 
 // Note shape:
 // {
@@ -103,6 +103,37 @@ const Home = () => {
   const toggleSortByFavorite = () => {
     setNotesSortByFavorite(!notesSortByFavorite);
   }
+
+  // One motion to lift every lens off the desk at once — search text,
+  // the star, and the color filter.
+  const clearFilters = useCallback(() => {
+    setNotesSortText("");
+    setNotesSortByFavorite(false);
+    setNotesSortColor(null);
+  }, []);
+
+  // Every lens over the list — search text, starred, color — stacks here.
+  // Newest notes first, same as the desk renders them.
+  const filteredNotes = useMemo(() => {
+    const query = notesSortText.trim().toLowerCase();
+    let filtered = [...notes].reverse();
+
+    if (query) {
+      filtered = filtered.filter((note) =>
+        `${ note.title ?? "" } ${ note.text }`.toLowerCase().includes(query)
+      );
+    }
+
+    if (notesSortByFavorite) {
+      filtered = filtered.filter((note) => note.favorite);
+    }
+
+    if (notesSortColor) {
+      filtered = filtered.filter((note) => note.color === notesSortColor);
+    }
+
+    return filtered;
+  }, [notes, notesSortText, notesSortByFavorite, notesSortColor]);
 
   const addNote = (color) => {
     const newNotes = [...notes];
@@ -345,14 +376,22 @@ const Home = () => {
           id="colorSelectors"
         />
         <Header
+          searchText={ notesSortText }
           setNotesSortText={ setNotesSortText }
           notesSortByFavorite={ notesSortByFavorite }
           setNotesSortByFavorite={ toggleSortByFavorite }
+          sortColor={ notesSortColor }
+          setSortColor={ setNotesSortColor }
+          notesCount={ filteredNotes.length }
+          totalCount={ notes.length }
+          clearFilters={ clearFilters }
           theme={ theme }
           toggleTheme={ toggleTheme }
         />
         <NoteList
-          notes={ notes }
+          notes={ filteredNotes }
+          hasNotes={ notes.length > 0 }
+          clearFilters={ clearFilters }
           deleteNote={ deleteNote }
           updateTitle={ updateTitle }
           updateText={ updateText }
@@ -362,10 +401,6 @@ const Home = () => {
           reorderNotes={ reorderNotes }
           duplicateNote={ duplicateNote }
           openEditor={ setEditingNoteId }
-          sortText={ notesSortText }
-          sortFavorite={ notesSortByFavorite }
-          sortColor={ notesSortColor }
-          setSortColor={ setNotesSortColor }
         />
       </div>
       <AnimatePresence>

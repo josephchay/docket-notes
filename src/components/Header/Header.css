@@ -5,15 +5,29 @@
   grid-area: header;
 }
 
+/* The top toolbar only — NoteList reuses the .header class for its own
+   heading row, so everything toolbar-specific hangs off header.header. */
+header.header {
+  gap: 12px;
+  row-gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
 .header .search {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 6px;
   background-color: var(--page-surface-color);
   border-radius: 10px;
-  padding: 6px 10px;
-  transition: background-color 0.4s ease-in-out;
+  padding: 4px 10px;
+  transition: background-color 0.4s ease-in-out, box-shadow 0.25s ease-in-out;
+}
+
+.header .search:focus-within {
+  box-shadow: 0 0 0 2px var(--page-line-color);
 }
 
 .header .search .icon {
@@ -47,19 +61,166 @@
   color: #a1a7b6;
 }
 
+/* A fixed slot at the end of the field, so the "/" hint and the clear
+   button can trade places without the search bar changing width. */
+.header .search .search-extra {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.header .search .search-clear,
+.header .search .search-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+}
+
+.header .search .search-clear {
+  padding: 0;
+  border: none;
+  outline: none;
+  background-color: var(--page-line-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.header .search .search-hint {
+  border: 1.5px solid var(--page-line-color);
+  color: #a1a7b6;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  pointer-events: none;
+  transition: border-color 0.4s ease-in-out;
+}
+
 .header .search .star {
   display: flex;
   align-items: center;
   justify-content: center;
   margin-left: 8px;
+  padding: 0;
+  border: none;
+  outline: none;
   border-radius: 8px;
-  height: 28px;
-  width: 28px;
+  height: 32px;
+  width: 32px;
+  flex-shrink: 0;
+  background-color: var(--page-line-color);
+  cursor: pointer;
   transition: background-color 0.3s ease-in-out;
 }
 
 .header .search .star .star-icon {
-  color: var(--page-surface-color);
+  color: #a1a7b6;
+  transition: color 0.3s ease-in-out;
+}
+
+.header .search .star.active {
+  background-color: var(--page-ink-color);
+}
+
+.header .search .star.active .star-icon {
+  color: var(--yellow-color);
+}
+
+/* The tally, squared off to match the theme button; springs with every
+   change and reads "shown / total" while a filter is narrowing the desk. */
+.header .notes-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.header .notes-count small {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: .55;
+}
+
+/* One square per palette color, cut from the same cloth as the theme
+   button; the active one wears an ink ring. */
+.header .color-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header .color-filters .color-filter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 10px;
+  background-color: var(--page-surface-color);
+  cursor: pointer;
+  transition: background-color 0.4s ease-in-out, box-shadow 0.25s ease-in-out;
+}
+
+.header .color-filters .color-filter .color-chip {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  opacity: .65;
+  transition: opacity 0.25s ease-in-out, transform 0.25s ease-in-out;
+}
+
+.header .color-filters .color-filter:hover .color-chip {
+  opacity: 1;
+}
+
+.header .color-filters .color-filter.active {
+  box-shadow: inset 0 0 0 2px var(--page-ink-color);
+}
+
+.header .color-filters .color-filter.active .color-chip {
+  opacity: 1;
+  transform: scale(1.2);
+}
+
+/* Appears only while a filter is on, and lifts every lens at once. */
+.header .clear-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border: none;
+  outline: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  cursor: pointer;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.header .clear-filters .clear-filters-icon {
+  font-size: 12px;
 }
 
 /* Flips the page between fresh paper and the Ink (dark) theme. */
@@ -67,11 +228,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 6px 0 0 14px;
+  margin-left: auto;
   border-radius: 10px;
   height: 40px;
   width: 40px;
+  flex-shrink: 0;
   background-color: var(--page-surface-color);
+  cursor: pointer;
   transition: background-color 0.4s ease-in-out;
 }
 

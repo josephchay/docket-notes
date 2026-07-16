@@ -14,47 +14,6 @@ main .header h2 {
   line-height: 1;
 }
 
-/* The tally pops with a spring every time a note joins or leaves. */
-main .header .notes-count {
-  margin-bottom: 6px;
-  padding: 3px 14px;
-  border-radius: 999px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--page-bg-color);
-  background: var(--page-ink-color);
-  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
-}
-
-/* One dot per palette color; tap to see only that color, tap again to
-   let every note back onto the desk. */
-main .header .color-filters {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 10px 10px;
-}
-
-main .header .color-filters .color-filter {
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  outline: none;
-  border-radius: 50%;
-  opacity: .55;
-  transition: opacity 0.25s ease-in-out, box-shadow 0.25s ease-in-out;
-}
-
-main .header .color-filters .color-filter:hover {
-  opacity: 1;
-}
-
-main .header .color-filters .color-filter.active {
-  opacity: 1;
-  box-shadow: 0 0 0 3px var(--page-ink-color);
-}
-
 main .notes {
   display: flex;
   flex-wrap: wrap;
@@ -72,4 +31,21 @@ main .notes .empty-state p {
 main .notes .empty-state strong {
   font-size: 20px;
   margin: 0 4px
+}
+
+/* Shown when the filters have hidden every note — one press brings the
+   whole desk back. */
+main .notes .empty-state .empty-clear {
+  margin-top: 18px;
+  padding: 10px 18px;
+  border: none;
+  outline: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  cursor: pointer;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
 }

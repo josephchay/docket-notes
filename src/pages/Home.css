@@ -1,7 +1,8 @@
 .home {
   display: grid;
   grid-template-columns: 128px 1fr;
-  grid-template-rows: 80px 1fr;
+  /* The header row can grow if the toolbar has to wrap on narrow windows. */
+  grid-template-rows: minmax(80px, auto) 1fr;
   grid-template-areas: "nav header" "nav main";
   height: 100vh;
   overflow-y: scroll;
