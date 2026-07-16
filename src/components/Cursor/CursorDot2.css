@@ -1,0 +1,107 @@
+/* A single ink drop: solid ink as a free dot, translucent ink while it wraps
+   a control. Position, size, and shape are driven per-frame from JS; only
+   color and visibility transition here. The layer also carries --pen-ink,
+   the color the pen last dipped into — trail and ripples write with it. */
+.cursor-ink {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background-color: var(--black-color);
+  pointer-events: none;
+  z-index: 999999;
+  will-change: transform, width, height;
+  transition:
+    background-color 0.3s ease-in-out,
+    opacity 0.35s ease-in-out;
+}
+
+.cursor-ink.is-wrap {
+  background-color: var(--black-even-more-transclucent-color);
+}
+
+/* On dark paper the ink drop writes in white... */
+:root[data-theme="dark"] .cursor-ink {
+  background-color: var(--white-color);
+}
+
+:root[data-theme="dark"] .cursor-ink.is-wrap {
+  background-color: rgba(255, 254, 255, 0.22);
+}
+
+/* ...except over a note, whose paper stays light and whose ink stays black
+   in either theme — so the drop does too. */
+.cursor-ink.on-note,
+:root[data-theme="dark"] .cursor-ink.on-note {
+  background-color: var(--black-color);
+}
+
+.cursor-ink.on-note.is-wrap,
+:root[data-theme="dark"] .cursor-ink.on-note.is-wrap {
+  background-color: var(--black-even-more-transclucent-color);
+}
+
+/* Narrowed into a caret over text, the drop blinks like one. */
+@keyframes caret-blink {
+  0%, 55% { opacity: 1; }
+  70%, 85% { opacity: .25; }
+  100% { opacity: 1; }
+}
+
+.cursor-ink.is-caret:not(.is-hidden) {
+  animation: caret-blink 1.15s ease-in-out 0.4s infinite;
+}
+
+.cursor-ink.is-hidden {
+  opacity: 0;
+}
+
+/* Droplets towed behind the moving drop — a short drawn stroke. They carry
+   the dipped note ink and dry back to page ink; opacity is JS-driven from
+   pointer speed, so at rest they vanish. */
+.cursor-trail {
+  position: fixed;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  background-color: var(--pen-ink, var(--page-ink-color));
+  pointer-events: none;
+  z-index: 999998;
+  opacity: 0;
+  will-change: transform, opacity;
+  transition: background-color 0.5s ease-in-out;
+}
+
+/* A press lands a drop on the paper: a ring of the current ink swells
+   outward and soaks in. */
+@keyframes cursor-ripple {
+  from {
+    transform: translate(-50%, -50%) scale(0.15);
+    opacity: .5;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+.cursor-ripple {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 48px;
+  height: 48px;
+  border: 2px solid var(--pen-ink, var(--page-ink-color));
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 999997;
+  animation: cursor-ripple 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+/* When the effect steps aside (touch, reduced motion), the OS cursor returns. */
+body.native-cursor,
+body.native-cursor * {
+  cursor: auto;
+}
