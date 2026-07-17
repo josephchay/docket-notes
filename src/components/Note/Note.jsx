@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useAnimationControls, useMotionValue, useSpring, useTransform } from "framer-motion";
 
 import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRight } from "react-icons/fa6";
 import { FaEye, FaTrash } from "react-icons/fa";
@@ -17,6 +17,8 @@ const NOTE_WIDTH = 340;   // matches the .note CSS width and the rope svg viewBo
 const Note = ({
   delay,
   note,
+  spawnOrigin,
+  clearSpawn,
   deleteNote,
   updateTitle,
   updateText,
@@ -139,6 +141,48 @@ const Note = ({
     updateLock(note.id);
   }
 
+  // A freshly poured note doesn't float in from nowhere — it morphs out of
+  // the ink pot that made it: a dot-sized circle at the pot's position that
+  // springs across the desk, swelling and squaring off into paper with a
+  // starchy overshoot. Only the mount that created the note plays this.
+  const [spawning, setSpawning] = useState(() => !!spawnOrigin);
+  const spawnControls = useAnimationControls();
+  const cardRef = useRef(null);
+
+  useLayoutEffect(() => {
+    if (!spawning || !cardRef.current) return;
+
+    const rect = cardRef.current.getBoundingClientRect();
+
+    // Start as the 32px pot itself, centered where it was tapped.
+    spawnControls.set({
+      x: spawnOrigin.x - (rect.left + rect.width / 2),
+      y: spawnOrigin.y - (rect.top + rect.height / 2),
+      scale: 32 / rect.width,
+      borderRadius: "50%",
+      opacity: 1,
+    });
+
+    spawnControls.start({
+      x: 0,
+      y: 0,
+      scale: 1,
+      borderRadius: "24px",
+      opacity: 1,
+      transition: {
+        type: "spring",
+        stiffness: 230,
+        damping: 18,
+        mass: .9,
+      },
+    }).then(() => {
+      setSpawning(false);
+      clearSpawn?.();
+    });
+    // Runs once, for the mount that poured the note.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Save the note to a plain text file the visitor can keep.
   const handleDownload = () => {
     const body = draftText?.trim() ? draftText : note.placeholder;
@@ -189,7 +233,7 @@ const Note = ({
         x: noteLeanX,
         y: noteLeanY,
         rotate: noteTilt,
-        zIndex: isPulling ? 40 : 1,
+        zIndex: isPulling ? 40 : spawning ? 30 : 1,
         position: "relative",
       }}
       animate={
@@ -225,19 +269,29 @@ const Note = ({
       { ...longPressEvent }
     >
       <motion.div
-        initial={{
-          opacity: 0,
-          translateY: 80,
-          scale: 1.04,
-        }}
-        whileInView={{
-          opacity: 1,
-          translateY: 0,
-          scale: 1,
-        }}
-        viewport={{
-          once: true,
-        }}
+        ref={ cardRef }
+        {
+          ...(spawning ? {
+            // The morph drives this mount from the ink pot; see the spawn
+            // layout effect above.
+            initial: false,
+            animate: spawnControls,
+          } : {
+            initial: {
+              opacity: 0,
+              translateY: 80,
+              scale: 1.04,
+            },
+            whileInView: {
+              opacity: 1,
+              translateY: 0,
+              scale: 1,
+            },
+            viewport: {
+              once: true,
+            },
+          })
+        }
         exit={
           deleteCompleted ? {} : {
             opacity: 0,
@@ -250,12 +304,8 @@ const Note = ({
             }
           }
         }
-        whileHover={{
-          scale: 1.06
-        }}
-        whileTap={{
-          scale: 0.96
-        }}
+        whileHover={ spawning ? undefined : { scale: 1.06 } }
+        whileTap={ spawning ? undefined : { scale: 0.96 } }
         transition={{
           duration: 0.6,
           type: "spring",

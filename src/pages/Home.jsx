@@ -135,11 +135,18 @@ const Home = () => {
     return filtered;
   }, [notes, notesSortText, notesSortByFavorite, notesSortColor]);
 
-  const addNote = (color) => {
+  // The dot a fresh note should morph out of: the ink pot that was tapped,
+  // or the nav activator for keyboard-born notes. Cleared once the morph
+  // has played.
+  const [spawn, setSpawn] = useState(null);
+  const clearSpawn = useCallback(() => setSpawn(null), []);
+
+  const addNote = (color, origin) => {
+    const noteId = id();
     const newNotes = [...notes];
 
     newNotes.push({
-      id: id(),
+      id: noteId,
       title: "",
       text: "",
       placeholder: randomQuote(quotes),
@@ -150,6 +157,16 @@ const Home = () => {
     });
 
     setNotes(newNotes);
+
+    let spawnOrigin = origin;
+    if (!spawnOrigin) {
+      const activator = document.getElementById("navActivator");
+      if (activator) {
+        const rect = activator.getBoundingClientRect();
+        spawnOrigin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      }
+    }
+    setSpawn(spawnOrigin ? { id: noteId, ...spawnOrigin } : null);
 
     // New notes land at the front of the list — bring the desk back up to it.
     homeRef.current?.scrollTo({ top: 0, behavior: "smooth" });
@@ -392,6 +409,8 @@ const Home = () => {
           notes={ filteredNotes }
           hasNotes={ notes.length > 0 }
           clearFilters={ clearFilters }
+          spawn={ spawn }
+          clearSpawn={ clearSpawn }
           deleteNote={ deleteNote }
           updateTitle={ updateTitle }
           updateText={ updateText }

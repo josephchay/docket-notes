@@ -27,11 +27,12 @@ const UndoToast = ({ note, depth, onUndo, onDismiss }) => {
     <motion.div
       className="undo-toast"
       style={{ zIndex: 10 - depth }}
-      initial={{ opacity: 0, y: 90, scale: .9 }}
+      initial={{ opacity: 0, y: 90, scale: .9, rotate: -6 }}
       animate={{
         opacity: 1 - depth * .18,
         y: depth * -14,
         scale: 1 - depth * .06,
+        rotate: 0,
       }}
       exit={{
         opacity: 0,

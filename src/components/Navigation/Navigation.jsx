@@ -29,7 +29,35 @@ const Navigation = ({
 }) => {
   const navActivator = useRef(null);
   const fileInput = useRef(null);
+  const logoRef = useRef(null);
   const [toggleService, setToggleService] = useState(null);
+
+  // The wordmark's letters spring up one by one with an elastic overshoot,
+  // and do a little wave again whenever the pointer greets them.
+  useEffect(() => {
+    anime({
+      targets: logoRef.current?.querySelectorAll(".logo-letter"),
+      translateY: [26, 0],
+      delay: anime.stagger(55, { start: 250 }),
+      duration: 1100,
+      easing: "easeOutElastic(1, .55)",
+    });
+  }, []);
+
+  const waveLogo = () => {
+    const letters = logoRef.current?.querySelectorAll(".logo-letter");
+    if (!letters) return;
+
+    anime.remove(letters);
+    anime({
+      targets: letters,
+      translateY: [
+        { value: -8, duration: 160, easing: "easeOutQuad" },
+        { value: 0, duration: 650, easing: "easeOutElastic(1, .5)" },
+      ],
+      delay: anime.stagger(45),
+    });
+  }
 
   const handleImportFile = (e) => {
     const file = e.target.files?.[0];
@@ -142,8 +170,21 @@ const Navigation = ({
           stiffness: 120,
         }}
         className="logo"
+        ref={ logoRef }
+        onMouseEnter={ waveLogo }
       >
-        <h4>Docket</h4>
+        <h4>
+          {
+            "Docket".split("").map((letter, index) => (
+              <span
+                key={ index }
+                className="logo-letter"
+              >
+                { letter }
+              </span>
+            ))
+          }
+        </h4>
       </motion.div>
       <div
         className="activator-container"

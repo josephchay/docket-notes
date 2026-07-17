@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
 import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft } from "react-icons/fa6";
 
@@ -10,6 +11,36 @@ const springy = {
   type: "spring",
   stiffness: 400,
   damping: 17,
+};
+
+// The color squares bounce in one after another, each with a starchy
+// overshoot, once the toolbar itself has landed.
+const filterRowVariants = {
+  hidden: {},
+  shown: {
+    transition: {
+      delayChildren: .55,
+      staggerChildren: .055,
+    },
+  },
+};
+
+const filterChipVariants = {
+  hidden: {
+    opacity: 0,
+    scale: 0,
+    translateY: 16,
+  },
+  shown: {
+    opacity: 1,
+    scale: 1,
+    translateY: 0,
+    transition: {
+      type: "spring",
+      stiffness: 380,
+      damping: 15,
+    },
+  },
 };
 
 const Header = ({
@@ -37,6 +68,22 @@ const Header = ({
       setNotesSortText("");
       e.target.blur();
     }
+  }
+
+  // Turning the star filter on throws a little handful of sparks, the same
+  // celebration a note gives when it is starred.
+  const [starBurst, setStarBurst] = useState(false);
+  const burstTimerRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(burstTimerRef.current), []);
+
+  const handleStarFilter = () => {
+    if (!notesSortByFavorite) {
+      setStarBurst(true);
+      clearTimeout(burstTimerRef.current);
+      burstTimerRef.current = setTimeout(() => setStarBurst(false), 700);
+    }
+    setNotesSortByFavorite();
   }
 
   return (
@@ -112,10 +159,45 @@ const Header = ({
           whileHover={{ scale: 1.14 }}
           whileTap={{ scale: 0.96 }}
           transition={ springy }
-          onClick={ setNotesSortByFavorite }
+          onClick={ handleStarFilter }
           className={ `star ${ notesSortByFavorite ? "active" : "" }` }
         >
           <FaStar className="star-icon" />
+          <AnimatePresence>
+            {
+              starBurst && (
+                <motion.span
+                  className="star-burst"
+                  initial={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  {
+                    Array.from({ length: 6 }).map((_, i) => {
+                      const angle = (Math.PI * 2 * i) / 6;
+                      const distance = 26 + (i % 2) * 8;
+
+                      return (
+                        <motion.span
+                          key={ i }
+                          className="spark"
+                          initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
+                          animate={{
+                            x: Math.cos(angle) * distance,
+                            y: Math.sin(angle) * distance,
+                            scale: [0, 1, 0],
+                            opacity: [1, 1, 0],
+                          }}
+                          transition={{ duration: .6, ease: "easeOut" }}
+                        >
+                          ✦
+                        </motion.span>
+                      );
+                    })
+                  }
+                </motion.span>
+              )
+            }
+          </AnimatePresence>
         </motion.button>
       </div>
       {/* The tally pops with a spring every time a note joins, leaves, or a
@@ -141,7 +223,7 @@ const Header = ({
         transition={{
           type: "spring",
           stiffness: 500,
-          damping: 20,
+          damping: 13,
         }}
       >
         { notesCount }
@@ -152,8 +234,15 @@ const Header = ({
         }
       </motion.span>
       {/* One square per palette color; tap to see only that color, tap
-          again to let every note back onto the desk. */}
-      <div className="color-filters">
+          again to let every note back onto the desk. The ink ring is a
+          single shared element, so it slides — and stretches, gooily —
+          from square to square. */}
+      <motion.div
+        className="color-filters"
+        variants={ filterRowVariants }
+        initial="hidden"
+        animate="shown"
+      >
         {
           Object.keys(NOTE_COLORS).map((name) => (
             <motion.button
@@ -163,16 +252,31 @@ const Header = ({
               aria-label={ sortColor === name ? "Show every color" : `Show only ${ name } notes` }
               aria-pressed={ sortColor === name }
               className={ `color-filter ${ sortColor === name ? "active" : "" }` }
+              variants={ filterChipVariants }
               whileHover={{ scale: 1.1, translateY: -2 }}
               whileTap={{ scale: .88 }}
               transition={ springy }
               onClick={ () => setSortColor(sortColor === name ? null : name) }
             >
               <span className={ `color-chip ${ name }-bg` } />
+              {
+                sortColor === name && (
+                  <motion.span
+                    layoutId="colorFilterRing"
+                    className="color-ring"
+                    style={{ borderRadius: 10 }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 500,
+                      damping: 28,
+                    }}
+                  />
+                )
+              }
             </motion.button>
           ))
         }
-      </div>
+      </motion.div>
       <AnimatePresence>
         {
           filtersActive && (
@@ -208,13 +312,35 @@ const Header = ({
         onClick={ toggleTheme }
         className="theme"
       >
-        {
-          theme === "dark" ? (
-            <FaSun className="theme-icon" />
-          ) : (
-            <FaMoon className="theme-icon" />
-          )
-        }
+        {/* The old icon spins out, the new one springs in — a tiny
+            celestial changeover. */}
+        <AnimatePresence mode="wait" initial={ false }>
+          <motion.span
+            key={ theme }
+            className="theme-icon-wrap"
+            initial={{ rotate: -140, scale: 0, opacity: 0 }}
+            animate={{ rotate: 0, scale: 1, opacity: 1 }}
+            exit={{
+              rotate: 140,
+              scale: 0,
+              opacity: 0,
+              transition: { duration: .15, ease: "easeIn" },
+            }}
+            transition={{
+              type: "spring",
+              stiffness: 380,
+              damping: 16,
+            }}
+          >
+            {
+              theme === "dark" ? (
+                <FaSun className="theme-icon" />
+              ) : (
+                <FaMoon className="theme-icon" />
+              )
+            }
+          </motion.span>
+        </AnimatePresence>
       </motion.div>
     </motion.header>
   );

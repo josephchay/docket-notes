@@ -45,6 +45,16 @@
 
 .nav .logo h4 {
   font-size: 20px;
+  /* Masks the letters so they rise up into view; a touch of padding gives
+     the elastic overshoot room to breathe. */
+  overflow: hidden;
+  padding: 6px 2px;
+}
+
+.nav .logo .logo-letter {
+  display: inline-block;
+  transform: translateY(26px);
+  will-change: transform;
 }
 
 .nav .activator-container {

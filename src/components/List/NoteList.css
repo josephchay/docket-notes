@@ -14,6 +14,11 @@ main .header h2 {
   line-height: 1;
 }
 
+main .header h2 span {
+  display: inline-block;
+  will-change: transform;
+}
+
 main .notes {
   display: flex;
   flex-wrap: wrap;
@@ -21,6 +26,31 @@ main .notes {
   margin-top: 100px;
   margin-bottom: 46px;
   padding: 0 70px;
+}
+
+main .notes .empty-state {
+  position: relative;
+  padding: 30px 10px;
+}
+
+/* The lava-lamp drops behind the empty desk, melted together by the same
+   gooey filter the nav rail uses. */
+main .notes .empty-state .gooey-blobs {
+  position: absolute;
+  inset: -60px -80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: url(#gooey-effect);
+  opacity: .5;
+  z-index: -1;
+  pointer-events: none;
+}
+
+main .notes .empty-state .gooey-blobs .gooey-blob {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform;
 }
 
 main .notes .empty-state p {

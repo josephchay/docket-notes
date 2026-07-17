@@ -186,7 +186,18 @@ const NoteEditor = ({
                       whileTap={{ scale: .85 }}
                       transition={{ type: "spring", stiffness: 420, damping: 16 }}
                       onClick={ () => setNoteColor(name, note.id) }
-                    />
+                    >
+                      {
+                        name === note.color && (
+                          <motion.span
+                            layoutId="editorPaletteRing"
+                            className="note-editor-dot-ring"
+                            style={{ borderRadius: "50%" }}
+                            transition={{ type: "spring", stiffness: 450, damping: 24 }}
+                          />
+                        )
+                      }
+                    </motion.button>
                   ))
                 }
               </div>
