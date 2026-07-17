@@ -37,6 +37,9 @@
 # Storage
 Session Storage is being used temporarily.
 
+# TODO
+1. some or all notes during delete animation the note became shrinked-square like the note shape itself since <a href="https://github.com/josephchay/docket-notes/tree/71dbccb3d8b35017268a152894c92bc2065bcac1" target="_blank">71dbccb3d8b35017268a152894c92bc2065bcac1</a>, instead of circle instead like in commit: <a href="https://github.com/josephchay/docket-notes/tree/6d44f9e460ce52f49906022e3bc3965baf9c896c" target="_blank">6d44f9e460ce52f49906022e3bc3965baf9c896c</a>
+
 # Acknowledgements
 - Design inspired from <a href="https://dribbble.com/shots/14037848-Docket-note-Side-menu" target="_blank">Docket Note</a>
 - Side menu animation inspiration and code from <a href="https://www.youtube.com/watch?v=lSzfYAQYKU0" target="_blank">Micro Interactions using Anime.js | HTML, CSS & Javascript</a>
