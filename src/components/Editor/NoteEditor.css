@@ -156,6 +156,12 @@
   background: var(--black-color);
 }
 
+.note-editor-action .note-editor-action-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .note-editor-action .note-editor-action-icon {
   font-size: 13px;
   color: var(--black-color);

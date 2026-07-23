@@ -108,6 +108,15 @@ const Header = ({
   const paletteNames = Object.keys(NOTE_COLORS);
   const maxCount = Math.max(1, ...paletteNames.map((name) => colorCounts?.[name] ?? 0));
 
+  // The ink wash washes out from wherever the theme button actually sits,
+  // not the pointer — so it looks the same whether it was clicked, tapped,
+  // or triggered from the command palette.
+  const themeRef = useRef(null);
+  const handleThemeToggle = () => {
+    const rect = themeRef.current?.getBoundingClientRect();
+    toggleTheme(rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : undefined);
+  }
+
   return (
     <motion.header
       initial={{
@@ -427,6 +436,7 @@ const Header = ({
         <FaWandMagicSparkles className="wand-icon" />
       </motion.div>
       <motion.div
+        ref={ themeRef }
         role="button"
         aria-label={ theme === "dark" ? "Switch to the light theme" : "Switch to the Ink theme" }
         whileHover={{
@@ -437,7 +447,7 @@ const Header = ({
           scale: 0.9,
         }}
         transition={ springy }
-        onClick={ toggleTheme }
+        onClick={ handleThemeToggle }
         className="theme"
       >
         {/* The old icon spins out, the new one springs in — a tiny

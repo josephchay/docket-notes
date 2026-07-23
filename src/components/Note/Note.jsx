@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useAnimationControls, useMotionValue, useSpring, useTransform } from "framer-motion";
+import anime from "animejs";
 
 import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRight } from "react-icons/fa6";
 import { FaEye, FaTrash } from "react-icons/fa";
@@ -13,6 +14,8 @@ import "./Note.css";
 const debounceTimer = 500;
 
 const NOTE_WIDTH = 340;   // matches the .note CSS width and the rope svg viewBox
+
+const RING_RADIUS = 68;   // matches the delete-ring svg below
 
 const Note = ({
   delay,
@@ -74,6 +77,8 @@ const Note = ({
     textTimerRef.current = setTimeout(() => updateText(text, note.id), debounceTimer);
   }
 
+  const HOLD_FILL_MS = 1000;   // how long the delete ring takes to fill once the hold registers
+
   const handlePressHold = () => {
     setIsDeleting(true);
 
@@ -90,7 +95,7 @@ const Note = ({
           setDeleteCompleted(false);
         }, 600);
       }, 600);
-    }, 1000);
+    }, HOLD_FILL_MS);
 
     setDeleteTimeout(timeoutId);
   }
@@ -105,6 +110,32 @@ const Note = ({
     shouldPreventDefault: true,
     delay: 800,
   });
+
+  // The moment the hold-ring finishes filling, it doesn't just vanish — it
+  // splats into an irregular blot of ink that wobbles through a couple of
+  // organic shapes before soaking away, right as the note itself starts
+  // shrinking out of existence.
+  const blobRef = useRef(null);
+
+  useEffect(() => {
+    if (!deleteConfirmed || !blobRef.current) return;
+
+    const el = blobRef.current;
+    anime.remove(el);
+    anime.set(el, { opacity: 1, scale: 0 });
+    anime({
+      targets: el,
+      scale: [0, 1.28, 1.05],
+      borderRadius: [
+        "50% 50% 50% 50% / 50% 50% 50% 50%",
+        "63% 37% 54% 46% / 44% 56% 41% 59%",
+        "40% 60% 46% 54% / 58% 42% 55% 45%",
+      ],
+      opacity: [1, 1, 0],
+      duration: 600,
+      easing: "easeOutElastic(1, .6)",
+    });
+  }, [deleteConfirmed]);
 
   // Starring a note throws a little handful of sparks off the star.
   const [starBurst, setStarBurst] = useState(false);
@@ -327,6 +358,25 @@ const Note = ({
         onPointerLeave={ handleTiltLeave }
         className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" } ${ isTyping ? "editing" : "" }` }
       >
+        {/* A soft breathing halo in the note's own ink while it has the
+            caret — the same live-editing moment the static ring already
+            marks, just given a pulse instead of a flat line. */}
+        <AnimatePresence>
+          {
+            isTyping && (
+              <motion.span
+                className={ `note-focus-halo ${ note.color }-bg` }
+                initial={{ opacity: 0, scale: .94 }}
+                animate={{ opacity: [0, .55, .3, .55], scale: [.94, 1.015, 1, 1.015] }}
+                exit={{ opacity: 0, scale: .94, transition: { duration: .3, ease: "easeIn" } }}
+                transition={{
+                  opacity: { duration: 2.6, repeat: Infinity, ease: "easeInOut", times: [0, .3, .6, 1] },
+                  scale: { duration: 2.6, repeat: Infinity, ease: "easeInOut", times: [0, .3, .6, 1] },
+                }}
+              />
+            )
+          }
+        </AnimatePresence>
         <div className="header">
           <motion.div
             initial={{
@@ -459,6 +509,51 @@ const Note = ({
             display: isDeleting ? "flex" : "none",
           }}
         >
+          {/* Fills over exactly the hold's inner window (HOLD_FILL_MS) so it
+              reads as a real countdown, not just a decoration; releasing
+              early recoils it away with an elastic snap instead of a plain
+              cut. */}
+          <AnimatePresence>
+            {
+              isDeleting && !deleteConfirmed && (
+                <motion.svg
+                  className="delete-ring"
+                  viewBox="0 0 160 160"
+                  initial={{ opacity: 0, scale: .55, rotate: -90 }}
+                  animate={{ opacity: 1, scale: 1, rotate: -90 }}
+                  exit={{
+                    opacity: 0,
+                    scale: .4,
+                    transition: { type: "spring", stiffness: 480, damping: 15 },
+                  }}
+                  transition={{ type: "spring", stiffness: 260, damping: 16 }}
+                >
+                  <circle
+                    className="delete-ring-track"
+                    cx="80"
+                    cy="80"
+                    r={ RING_RADIUS }
+                  />
+                  <motion.circle
+                    className="delete-ring-fill"
+                    style={{ stroke: `var(--${ note.color }-color)` }}
+                    cx="80"
+                    cy="80"
+                    r={ RING_RADIUS }
+                    strokeDasharray="1 1"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ duration: HOLD_FILL_MS / 1000, ease: "linear" }}
+                  />
+                </motion.svg>
+              )
+            }
+          </AnimatePresence>
+          <span
+            ref={ blobRef }
+            className="delete-blob"
+            style={{ opacity: 0, backgroundColor: "var(--black-color)" }}
+          />
           <motion.div
             initial={{
               opacity: 0,
@@ -546,20 +641,39 @@ const Note = ({
               stiffness: 240,
             }}
             onClick={ handleEditable }
+            style={{ transformPerspective: 300 }}
             className="edit"
           >
-            {
-              note.lock ? (
-                <FaPen
-                  className="edit-icon"
-                />
-              ) : (
-                <FaEye
-                  size={ 14 }
-                  className="edit-icon"
-                />
-              )
-            }
+            {/* The lock flips like a coin between pen and eye instead of
+                just cutting from one to the other. */}
+            <AnimatePresence mode="wait" initial={ false }>
+              <motion.span
+                key={ note.lock ? "pen" : "eye" }
+                className="edit-icon-wrap"
+                initial={{ rotateY: -130, scale: .3, opacity: 0 }}
+                animate={{ rotateY: 0, scale: 1, opacity: 1 }}
+                exit={{
+                  rotateY: 130,
+                  scale: .3,
+                  opacity: 0,
+                  transition: { duration: .16, ease: "easeIn" },
+                }}
+                transition={{ type: "spring", stiffness: 420, damping: 17 }}
+              >
+                {
+                  note.lock ? (
+                    <FaPen
+                      className="edit-icon"
+                    />
+                  ) : (
+                    <FaEye
+                      size={ 14 }
+                      className="edit-icon"
+                    />
+                  )
+                }
+              </motion.span>
+            </AnimatePresence>
           </motion.div>
         </div>
         <motion.div

@@ -220,16 +220,33 @@ const NoteEditor = ({
                   type="button"
                   aria-label={ note.lock ? "Unlock this note for editing" : "Lock this note" }
                   className="note-editor-action dark"
+                  style={{ transformPerspective: 300 }}
                   whileHover={{ scale: 1.15 }}
                   whileTap={{ scale: .9 }}
                   transition={{ type: "spring", stiffness: 420, damping: 16 }}
                   onClick={ () => updateLock(note.id) }
                 >
-                  {
-                    note.lock
-                      ? <FaPen className="note-editor-action-icon light" />
-                      : <FaEye className="note-editor-action-icon light" />
-                  }
+                  <AnimatePresence mode="wait" initial={ false }>
+                    <motion.span
+                      key={ note.lock ? "pen" : "eye" }
+                      className="note-editor-action-icon-wrap"
+                      initial={{ rotateY: -130, scale: .3, opacity: 0 }}
+                      animate={{ rotateY: 0, scale: 1, opacity: 1 }}
+                      exit={{
+                        rotateY: 130,
+                        scale: .3,
+                        opacity: 0,
+                        transition: { duration: .16, ease: "easeIn" },
+                      }}
+                      transition={{ type: "spring", stiffness: 420, damping: 17 }}
+                    >
+                      {
+                        note.lock
+                          ? <FaPen className="note-editor-action-icon light" />
+                          : <FaEye className="note-editor-action-icon light" />
+                      }
+                    </motion.span>
+                  </AnimatePresence>
                 </motion.button>
                 <motion.button
                   type="button"

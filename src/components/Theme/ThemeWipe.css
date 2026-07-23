@@ -1,0 +1,11 @@
+.theme-wipe {
+  position: fixed;
+  z-index: 998000;
+  width: 56px;
+  height: 56px;
+  margin-left: -28px;
+  margin-top: -28px;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform, opacity;
+}

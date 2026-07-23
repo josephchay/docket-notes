@@ -25,6 +25,8 @@ import NoteList from "../components/List/NoteList";
 import NoteEditor from "../components/Editor/NoteEditor";
 import UndoToast from "../components/Toast/UndoToast";
 import CommandPalette from "../components/Command/CommandPalette";
+import ThemeWipe from "../components/Theme/ThemeWipe";
+import InkCelebration from "../components/Celebration/InkCelebration";
 
 import quotes from "../assets/data/quotes.json";
 
@@ -48,6 +50,9 @@ import "./Home.css";
 //   index: number
 // }
 
+// The note counts worth a little ink shower over the desk.
+const MILESTONES = [5, 10, 25, 50, 100, 200, 500];
+
 const Home = () => {
   // Notes live in sessionStorage only — they survive reloads within this
   // tab and reset when the tab closes. The list starts empty and is
@@ -62,10 +67,24 @@ const Home = () => {
   // Fresh paper or the Ink theme — kept in sessionStorage alongside the notes.
   const [theme, setTheme] = useState("light");
 
-  const toggleTheme = () => {
+  // The drop of ink that washes over the desk when the theme flips — see
+  // ThemeWipe. Cleared once the wash has finished playing.
+  const [wipe, setWipe] = useState(null);
+  const THEME_BG = { light: "#fffeff", dark: "#161616" };
+
+  const toggleTheme = (origin) => {
     setTheme((prev) => {
       const next = prev === "dark" ? "light" : "dark";
       saveSettings({ theme: next });
+
+      if (origin) {
+        const wipeId = id();
+        setWipe({ key: wipeId, x: origin.x, y: origin.y, color: THEME_BG[next] });
+        setTimeout(() => {
+          setWipe((current) => (current?.key === wipeId ? null : current));
+        }, 950);
+      }
+
       return next;
     });
   }
@@ -74,10 +93,18 @@ const Home = () => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
+  // Milestone note counts already celebrated this session — seeded from
+  // whatever the desk already held on load, so restoring a big session
+  // never replays a shower for ground already covered.
+  const celebratedRef = useRef(new Set());
+  const [celebration, setCelebration] = useState(null);
+
   // Hydrate notes and settings from sessionStorage once, on mount.
   useEffect(() => {
     const stored = loadNotes();
     if (stored.length > 0) setNotes(stored);
+
+    celebratedRef.current = new Set(MILESTONES.filter((m) => m <= stored.length));
 
     const settings = loadSettings();
     if (settings.theme === "dark" || settings.theme === "light") {
@@ -86,6 +113,24 @@ const Home = () => {
 
     setHydrated(true);
   }, []);
+
+  // A fresh note crossing a milestone count sends a shower of ink over the
+  // desk — each threshold fires exactly once per session, the moment the
+  // count lands on it.
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const hit = MILESTONES.find((m) => m === notes.length && !celebratedRef.current.has(m));
+    if (!hit) return;
+
+    celebratedRef.current.add(hit);
+
+    const celebrationId = id();
+    setCelebration({ key: celebrationId, count: hit });
+    setTimeout(() => {
+      setCelebration((current) => (current?.key === celebrationId ? null : current));
+    }, 1900);
+  }, [notes.length, hydrated]);
 
   // Mirror every change back into sessionStorage — but only after hydration,
   // so the initial empty list never overwrites what the session already holds.
@@ -520,6 +565,8 @@ const Home = () => {
         }
       </AnimatePresence>
       <CommandPalette actions={ paletteActions } />
+      <ThemeWipe wipe={ wipe } />
+      <InkCelebration celebration={ celebration } />
       <div className="undo-toast-layer">
         <AnimatePresence>
           {

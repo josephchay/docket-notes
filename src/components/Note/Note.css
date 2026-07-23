@@ -22,6 +22,18 @@
     0 18px 40px -12px rgba(25, 25, 25, 0.3);
 }
 
+/* Sits behind the paper's own content and glows outward in the note's own
+   ink while the caret is live inside it — see .note.editing above for the
+   flat ring this complements. */
+.note .note-focus-halo {
+  position: absolute;
+  inset: -14px;
+  z-index: 0;
+  border-radius: 34px;
+  filter: blur(20px);
+  pointer-events: none;
+}
+
 .note .header,
 .note .footer {
   padding: 24px;
@@ -141,6 +153,12 @@
   width: 40px;
 }
 
+.note .footer .edit .edit-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .note .footer .edit .edit-icon {
   color: var(--white-color);
   font-size: 12px;
@@ -162,6 +180,40 @@
 .note .trash-container .trash .trash-icon {
   font-size: 100px;
   color: var(--black-color);
+}
+
+/* The hold-to-delete countdown: a ring in the note's own ink that fills
+   clockwise while the press is held, framing the trash icon. */
+.note .trash-container .delete-ring {
+  position: absolute;
+  width: 160px;
+  height: 160px;
+  overflow: visible;
+}
+
+.note .trash-container .delete-ring-track {
+  fill: none;
+  stroke: var(--black-even-more-transclucent-color);
+  stroke-width: 7;
+}
+
+.note .trash-container .delete-ring-fill {
+  fill: none;
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+
+/* The splat of ink the ring bursts into once the hold completes — an
+   irregular blot morphed by animejs through a couple of organic shapes
+   before it soaks away. Sized and positioned in JS-driven keyframes only;
+   this just anchors it centred behind the trash icon. */
+.note .trash-container .delete-blob {
+  position: absolute;
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform, border-radius, opacity;
 }
 
 /* --- Interactive elastic pull-strings ------------------------------------ */

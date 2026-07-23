@@ -1,0 +1,41 @@
+.ink-celebration {
+  position: fixed;
+  inset: 0;
+  z-index: 997000;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ink-celebration .ink-celebration-drops {
+  position: absolute;
+  inset: 0;
+}
+
+.ink-celebration .ink-drop {
+  position: absolute;
+  top: 0;
+  border-radius: 50%;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.ink-celebration .ink-celebration-pill-slot {
+  position: absolute;
+  top: 90px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+}
+
+/* border-radius is animated by framer during the drop-to-pill morph, so it
+   is deliberately not set here. */
+.ink-celebration .ink-celebration-pill {
+  padding: 12px 22px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  box-shadow: 0 20px 44px -18px rgba(25, 25, 25, 0.5);
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
