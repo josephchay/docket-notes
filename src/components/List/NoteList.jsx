@@ -1,10 +1,27 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
+import anime from "animejs";
+import { FaShuffle } from "react-icons/fa6";
 
 import Note from "../Note/Note";
+import QuoteCard from "../Quote/QuoteCard";
 
 import "./NoteList.css";
 import { itemsPerFlexRow } from "../../utils/math";
+
+const springy = {
+  type: "spring",
+  stiffness: 400,
+  damping: 17,
+};
+
+// The desk's layouts: freshest first, grouped by ink color, or starred to
+// the front. The active label wears a sliding ink thumb.
+const SORT_MODES = [
+  { key: "fresh", label: "Fresh" },
+  { key: "color", label: "Color" },
+  { key: "starred", label: "Starred" },
+];
 
 // Slow drifting drops of note ink behind the empty desk; the page's gooey
 // filter melts them into one lava-lamp blob as their paths cross.
@@ -58,6 +75,9 @@ const NoteList = ({
   clearFilters,
   spawn,
   clearSpawn,
+  sortMode,
+  setSortMode,
+  shuffleNotes,
   deleteNote,
   updateTitle,
   updateText,
@@ -72,6 +92,25 @@ const NoteList = ({
 
   const [numPerRow, setNumPerRow] = useState(0);
   const [renderFirstRow, setRenderFirstRow] = useState(false);  // To delay the rendering of the notes list group.
+
+  // The shuffle die does an elastic tumble while the layout springs riffle
+  // the notes into their new random order.
+  const shuffleIconRef = useRef(null);
+
+  const handleShuffle = () => {
+    shuffleNotes?.();
+
+    if (shuffleIconRef.current) {
+      anime.remove(shuffleIconRef.current);
+      anime({
+        targets: shuffleIconRef.current,
+        rotate: "+=360",
+        scale: [1, 1.4, 1],
+        duration: 900,
+        easing: "easeOutElastic(1, .5)",
+      });
+    }
+  }
 
   useEffect(() => {
     const delayTimer = setTimeout(() => {
@@ -116,7 +155,75 @@ const NoteList = ({
             ))
           }
         </h2>
+        <motion.div
+          className="desk-tools"
+          initial={{
+            opacity: 0,
+            translateY: 40,
+          }}
+          animate={{
+            opacity: 1,
+            translateY: 0,
+          }}
+          transition={{
+            type: "spring",
+            stiffness: 200,
+            damping: 18,
+            delay: .85,
+          }}
+        >
+          <div className="sort-modes">
+            {
+              SORT_MODES.map((mode) => (
+                <motion.button
+                  key={ mode.key }
+                  type="button"
+                  aria-pressed={ sortMode === mode.key }
+                  className={ `sort-mode ${ sortMode === mode.key ? "active" : "" }` }
+                  whileHover={{ scale: 1.06 }}
+                  whileTap={{ scale: .92 }}
+                  transition={ springy }
+                  onClick={ () => setSortMode?.(mode.key) }
+                >
+                  {
+                    sortMode === mode.key && (
+                      <motion.span
+                        layoutId="sortThumb"
+                        className="sort-thumb"
+                        style={{ borderRadius: 8 }}
+                        transition={{
+                          type: "spring",
+                          stiffness: 480,
+                          damping: 30,
+                        }}
+                      />
+                    )
+                  }
+                  <span className="sort-label">{ mode.label }</span>
+                </motion.button>
+              ))
+            }
+          </div>
+          <motion.button
+            type="button"
+            aria-label="Shuffle the notes"
+            title="Shuffle the notes"
+            className="shuffle"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: .88 }}
+            transition={ springy }
+            onClick={ handleShuffle }
+          >
+            <span
+              ref={ shuffleIconRef }
+              className="shuffle-icon"
+            >
+              <FaShuffle />
+            </span>
+          </motion.button>
+        </motion.div>
       </div>
+      <QuoteCard />
       <div
         ref={ ref }
         className="notes"

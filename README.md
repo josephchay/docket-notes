@@ -9,6 +9,11 @@
 ![image](https://github.com/user-attachments/assets/98276bd1-61a4-490e-92d2-86996f905824)
 ![image](https://github.com/user-attachments/assets/a993c9bd-6689-4313-ad18-daf8805550da)
 
+## Sites
+
+- <a href="https://docketsnotes.vercel.app" target="_blank">docketsnotes.vercel.app</a>
+- <a href="https://docketnotes.netlify.app" target="_blank">docketnotes.netlify.app</a>
+
 ---
 
 # Application Features

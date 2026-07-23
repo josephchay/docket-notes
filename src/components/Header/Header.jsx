@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
-import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft } from "react-icons/fa6";
+import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaWandMagicSparkles } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
+import { COMMAND_EVENT } from "../Command/CommandPalette";
 import searchIcon from '../../assets/icons/search.svg';
 
 import './Header.css';
@@ -53,6 +54,7 @@ const Header = ({
   notesCount,
   totalCount,
   clearFilters,
+  colorCounts,
   theme,
   toggleTheme,
 }) => {
@@ -85,6 +87,26 @@ const Header = ({
     }
     setNotesSortByFavorite();
   }
+
+  // The ink-levels chart: how much of each ink the desk holds, as springy
+  // bars. Clicking a bar borrows the color filter, so the chart doubles as
+  // a control. Closes on any press outside it.
+  const [inkOpen, setInkOpen] = useState(false);
+  const inkRef = useRef(null);
+
+  useEffect(() => {
+    if (!inkOpen) return;
+
+    const close = (e) => {
+      if (inkRef.current && !inkRef.current.contains(e.target)) setInkOpen(false);
+    };
+
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [inkOpen]);
+
+  const paletteNames = Object.keys(NOTE_COLORS);
+  const maxCount = Math.max(1, ...paletteNames.map((name) => colorCounts?.[name] ?? 0));
 
   return (
     <motion.header
@@ -298,6 +320,112 @@ const Header = ({
           )
         }
       </AnimatePresence>
+      <div
+        className="ink-levels"
+        ref={ inkRef }
+      >
+        <motion.button
+          type="button"
+          aria-expanded={ inkOpen }
+          aria-label="Show how much of each ink the desk holds"
+          title="Ink levels"
+          className={ `ink-button ${ inkOpen ? "open" : "" }` }
+          whileHover={{ scale: 1.14 }}
+          whileTap={{ scale: .9 }}
+          transition={ springy }
+          onClick={ () => setInkOpen((prev) => !prev) }
+        >
+          <FaChartSimple className="ink-button-icon" />
+        </motion.button>
+        <AnimatePresence>
+          {
+            inkOpen && (
+              <motion.div
+                key="inkPopover"
+                className="ink-popover"
+                style={{ originX: .85, originY: 0 }}
+                initial={{ opacity: 0, scale: .2, translateY: -8, borderRadius: 40 }}
+                animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 16 }}
+                exit={{
+                  opacity: 0,
+                  scale: .3,
+                  translateY: -8,
+                  borderRadius: 40,
+                  transition: { duration: .18, ease: "easeIn" },
+                }}
+                transition={{ type: "spring", stiffness: 240, damping: 15 }}
+              >
+                <div className="ink-row">
+                  {
+                    paletteNames.map((name, index) => {
+                      const count = colorCounts?.[name] ?? 0;
+                      const label = `${ count } ${ name } ${ count === 1 ? "note" : "notes" }`;
+
+                      return (
+                        <button
+                          key={ name }
+                          type="button"
+                          title={ label }
+                          aria-label={
+                            sortColor === name
+                              ? `${ label } — showing only these; press to show every color`
+                              : `${ label } — press to show only these`
+                          }
+                          aria-pressed={ sortColor === name }
+                          className={ `ink-column ${ sortColor === name ? "active" : "" }` }
+                          onClick={ () => setSortColor(sortColor === name ? null : name) }
+                        >
+                          <motion.span
+                            key={ `${ name }-${ count }` }
+                            className="ink-count"
+                            initial={{ opacity: 0, scale: .5 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 500,
+                              damping: 20,
+                              delay: .1 + index * .045,
+                            }}
+                          >
+                            { count }
+                          </motion.span>
+                          <motion.span
+                            className={ `ink-bar ${ name }-bg` }
+                            style={{
+                              height: 8 + Math.round((count / maxCount) * 56),
+                              originY: 1,
+                            }}
+                            initial={{ scaleY: 0 }}
+                            animate={{ scaleY: 1 }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 320,
+                              damping: 13,
+                              delay: .06 + index * .045,
+                            }}
+                          />
+                        </button>
+                      );
+                    })
+                  }
+                </div>
+              </motion.div>
+            )
+          }
+        </AnimatePresence>
+      </div>
+      <motion.div
+        role="button"
+        aria-label="Open the command palette"
+        title="Command ink (Ctrl K)"
+        whileHover={{ scale: 1.14, rotate: -10 }}
+        whileTap={{ scale: .9 }}
+        transition={ springy }
+        onClick={ () => window.dispatchEvent(new CustomEvent(COMMAND_EVENT)) }
+        className="wand"
+      >
+        <FaWandMagicSparkles className="wand-icon" />
+      </motion.div>
       <motion.div
         role="button"
         aria-label={ theme === "dark" ? "Switch to the light theme" : "Switch to the Ink theme" }

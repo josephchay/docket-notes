@@ -44,6 +44,35 @@ const Navigation = ({
     });
   }, []);
 
+  // The rail tools are gently magnetic: their icons lean toward the pointer
+  // while it hovers, then snap home with an elastic wobble. Only the inner
+  // icon span moves, so framer keeps the button's own scale to itself.
+  const magnetMove = (e) => {
+    const icon = e.currentTarget.querySelector(".magnet");
+    if (!icon) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    anime.remove(icon);
+    anime.set(icon, {
+      translateX: (e.clientX - rect.left - rect.width / 2) * .4,
+      translateY: (e.clientY - rect.top - rect.height / 2) * .4,
+    });
+  }
+
+  const magnetLeave = (e) => {
+    const icon = e.currentTarget.querySelector(".magnet");
+    if (!icon) return;
+
+    anime.remove(icon);
+    anime({
+      targets: icon,
+      translateX: 0,
+      translateY: 0,
+      duration: 650,
+      easing: "easeOutElastic(1, .4)",
+    });
+  }
+
   const waveLogo = () => {
     const letters = logoRef.current?.querySelectorAll(".logo-letter");
     if (!letters) return;
@@ -264,9 +293,13 @@ const Navigation = ({
           whileHover={{ scale: 1.15 }}
           whileTap={{ scale: .9 }}
           transition={{ type: "spring", stiffness: 400, damping: 17 }}
+          onMouseMove={ magnetMove }
+          onMouseLeave={ magnetLeave }
           onClick={ exportNotes }
         >
-          <FaFileArrowDown className="nav-tool-icon" />
+          <span className="magnet">
+            <FaFileArrowDown className="nav-tool-icon" />
+          </span>
         </motion.button>
         <motion.button
           type="button"
@@ -275,9 +308,13 @@ const Navigation = ({
           whileHover={{ scale: 1.15 }}
           whileTap={{ scale: .9 }}
           transition={{ type: "spring", stiffness: 400, damping: 17 }}
+          onMouseMove={ magnetMove }
+          onMouseLeave={ magnetLeave }
           onClick={ () => fileInput.current?.click() }
         >
-          <FaFileArrowUp className="nav-tool-icon" />
+          <span className="magnet">
+            <FaFileArrowUp className="nav-tool-icon" />
+          </span>
         </motion.button>
         <input
           ref={ fileInput }

@@ -247,12 +247,113 @@ header.header {
   font-size: 12px;
 }
 
+/* The ink-levels chart lives at the right edge with the wand and theme
+   buttons; its popover hangs off this anchor. */
+.header .ink-levels {
+  position: relative;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.header .ink-levels .ink-button,
+.header .wand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  height: 40px;
+  width: 40px;
+  padding: 0;
+  border: none;
+  outline: none;
+  flex-shrink: 0;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.header .ink-levels .ink-button .ink-button-icon,
+.header .wand .wand-icon {
+  font-size: 15px;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.header .ink-levels .ink-button.open {
+  background-color: var(--page-ink-color);
+}
+
+.header .ink-levels .ink-button.open .ink-button-icon {
+  color: var(--page-bg-color);
+}
+
+/* border-radius is animated by framer during the popover morph, so it is
+   deliberately not set here. */
+.header .ink-levels .ink-popover {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  z-index: 700;
+  padding: 14px 16px 12px;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 18px 40px -18px rgba(25, 25, 25, 0.35);
+  will-change: transform;
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+}
+
+.header .ink-levels .ink-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  border-bottom: 1.5px solid var(--page-line-color);
+  padding-bottom: 2px;
+  transition: border-color 0.4s ease-in-out;
+}
+
+.header .ink-levels .ink-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 4px 2px 0;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background: transparent;
+}
+
+/* Counts wear ink, never the bar's color. */
+.header .ink-levels .ink-count {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.header .ink-levels .ink-bar {
+  display: block;
+  width: 18px;
+  border-radius: 4px 4px 2px 2px;
+  opacity: .85;
+  transition: opacity 0.25s ease-in-out, box-shadow 0.25s ease-in-out;
+}
+
+.header .ink-levels .ink-column:hover .ink-bar {
+  opacity: 1;
+}
+
+.header .ink-levels .ink-column.active .ink-bar {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--page-ink-color);
+}
+
 /* Flips the page between fresh paper and the Ink (dark) theme. */
 .header .theme {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-left: auto;
   border-radius: 10px;
   height: 40px;
   width: 40px;

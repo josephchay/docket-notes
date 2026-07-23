@@ -1,0 +1,72 @@
+/* The daily-ink strip sits between the heading row and the notes, sharing
+   the desk's 70px gutters. */
+.quote-card-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 26px 70px 0;
+}
+
+.quote-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  outline: none;
+  border-radius: 10px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.quote-tab.open {
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
+}
+
+.quote-tab .quote-tab-icon {
+  font-size: 12px;
+}
+
+/* border-radius is animated by framer during the fold morph, so it is
+   deliberately not set here. */
+.quote-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 660px;
+  padding: 16px 20px;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+  will-change: transform;
+}
+
+.quote-card .quote-line {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.quote-card .quote-deal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: none;
+  outline: none;
+  border-radius: 10px;
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}

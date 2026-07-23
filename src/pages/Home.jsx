@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from "framer-motion";
-import { FaArrowUp } from "react-icons/fa6";
+import {
+  FaArrowUp,
+  FaPlus,
+  FaShuffle,
+  FaMoon,
+  FaSun,
+  FaFileArrowDown,
+  FaRotateLeft,
+  FaMagnifyingGlass,
+} from "react-icons/fa6";
 
 import { id } from "../utils/math";
 import { formattedDateNow } from "../utils/date";
@@ -15,6 +24,7 @@ import Header from "../components/Header/Header";
 import NoteList from "../components/List/NoteList";
 import NoteEditor from "../components/Editor/NoteEditor";
 import UndoToast from "../components/Toast/UndoToast";
+import CommandPalette from "../components/Command/CommandPalette";
 
 import quotes from "../assets/data/quotes.json";
 
@@ -112,6 +122,25 @@ const Home = () => {
     setNotesSortColor(null);
   }, []);
 
+  // How the desk lays its papers out: freshest first, grouped by ink color,
+  // or with the starred ones brought to the front. Switching modes lets the
+  // notes' layout springs fly everything to its new spot.
+  const [sortMode, setSortMode] = useState("fresh");
+
+  // A quick riffle of the whole desk — the layout springs turn the new
+  // random order into a bouncy mid-air reshuffle.
+  const shuffleNotes = () => {
+    setSortMode("fresh");
+    setNotes((prev) => {
+      const next = [...prev];
+      for (let i = next.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [next[i], next[j]] = [next[j], next[i]];
+      }
+      return next;
+    });
+  }
+
   // Every lens over the list — search text, starred, color — stacks here.
   // Newest notes first, same as the desk renders them.
   const filteredNotes = useMemo(() => {
@@ -132,8 +161,15 @@ const Home = () => {
       filtered = filtered.filter((note) => note.color === notesSortColor);
     }
 
+    if (sortMode === "color") {
+      const order = Object.keys(NOTE_COLORS);
+      filtered = [...filtered].sort((a, b) => order.indexOf(a.color) - order.indexOf(b.color));
+    } else if (sortMode === "starred") {
+      filtered = [...filtered].sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
+    }
+
     return filtered;
-  }, [notes, notesSortText, notesSortByFavorite, notesSortColor]);
+  }, [notes, notesSortText, notesSortByFavorite, notesSortColor, sortMode]);
 
   // The dot a fresh note should morph out of: the ink pot that was tapped,
   // or the nav activator for keyboard-born notes. Cleared once the morph
@@ -373,6 +409,46 @@ const Home = () => {
 
   const editingNote = notes.find((note) => note.id === editingNoteId);
 
+  // How much of each ink the desk holds — the toolbar's ink-levels chart
+  // draws these as springy bars.
+  const colorCounts = useMemo(() => {
+    const counts = {};
+    for (const note of notes) {
+      counts[note.color] = (counts[note.color] || 0) + 1;
+    }
+    return counts;
+  }, [notes]);
+
+  // Everything the command palette can cast, in its shelf order.
+  const paletteActions = [
+    {
+      key: "new",
+      label: "Pour a new note",
+      hint: "N",
+      icon: <FaPlus />,
+      perform: () => {
+        const palette = Object.keys(NOTE_COLORS);
+        addNote(palette[Math.floor(Math.random() * palette.length)]);
+      },
+    },
+    { key: "shuffle", label: "Shuffle the desk", icon: <FaShuffle />, perform: shuffleNotes },
+    {
+      key: "theme",
+      label: theme === "dark" ? "Switch to fresh paper" : "Switch to Ink",
+      icon: theme === "dark" ? <FaSun /> : <FaMoon />,
+      perform: toggleTheme,
+    },
+    { key: "export", label: "Export a backup", icon: <FaFileArrowDown />, perform: exportNotes },
+    { key: "clear", label: "Clear every filter", icon: <FaRotateLeft />, perform: clearFilters },
+    {
+      key: "search",
+      label: "Jump to search",
+      hint: "/",
+      icon: <FaMagnifyingGlass />,
+      perform: () => document.querySelector(".search input")?.focus(),
+    },
+  ];
+
   return (
     <>
       {/* The page recedes while the focus editor is open — a cheap,
@@ -402,6 +478,7 @@ const Home = () => {
           notesCount={ filteredNotes.length }
           totalCount={ notes.length }
           clearFilters={ clearFilters }
+          colorCounts={ colorCounts }
           theme={ theme }
           toggleTheme={ toggleTheme }
         />
@@ -411,6 +488,9 @@ const Home = () => {
           clearFilters={ clearFilters }
           spawn={ spawn }
           clearSpawn={ clearSpawn }
+          sortMode={ sortMode }
+          setSortMode={ setSortMode }
+          shuffleNotes={ shuffleNotes }
           deleteNote={ deleteNote }
           updateTitle={ updateTitle }
           updateText={ updateText }
@@ -439,6 +519,7 @@ const Home = () => {
           )
         }
       </AnimatePresence>
+      <CommandPalette actions={ paletteActions } />
       <div className="undo-toast-layer">
         <AnimatePresence>
           {
