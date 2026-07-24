@@ -47,7 +47,10 @@
 }
 
 .nav .logo {
-  height: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 80px;
 }
 
 .nav .logo h4 {
@@ -62,6 +65,61 @@
   display: inline-block;
   transform: translateY(26px);
   will-change: transform;
+}
+
+/* A deliberately unmissable credit for the AI that helped build this desk —
+   dressed in the same palette the notes themselves wear, with a slow
+   shimmer so it stays lively rather than fading into the rail. */
+.nav .logo .ai-credit {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  padding: 5px 10px 5px 8px;
+  border-radius: 999px;
+  background: linear-gradient(120deg, var(--blue-color), var(--purple-color) 55%, var(--pink-color));
+  background-size: 200% 200%;
+  box-shadow: 0 6px 16px -6px rgba(176, 149, 246, 0.65);
+  animation: ai-credit-shimmer 5s ease-in-out infinite;
+}
+
+@keyframes ai-credit-shimmer {
+  0%, 100% {
+    background-position: 0% 50%;
+    box-shadow: 0 6px 16px -6px rgba(85, 207, 250, 0.6);
+  }
+  50% {
+    background-position: 100% 50%;
+    box-shadow: 0 8px 20px -6px rgba(246, 161, 211, 0.7);
+  }
+}
+
+.nav .logo .ai-credit .ai-credit-spark {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--black-color);
+}
+
+.nav .logo .ai-credit .ai-credit-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.nav .logo .ai-credit .ai-credit-made {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: rgba(25, 25, 25, 0.7);
+}
+
+.nav .logo .ai-credit .ai-credit-name {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  color: var(--black-color);
+  white-space: nowrap;
 }
 
 .nav .activator-container {

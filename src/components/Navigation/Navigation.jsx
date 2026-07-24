@@ -214,6 +214,21 @@ const Navigation = ({
             ))
           }
         </h4>
+        {/* An unmissable little credit for the AI that helped build this
+            desk — pops in right after the wordmark lands, then keeps a
+            slow shimmer of its own so it never quite fades into the rail. */}
+        <motion.div
+          className="ai-credit"
+          initial={{ opacity: 0, scale: 0, rotate: -10 }}
+          animate={{ opacity: 1, scale: [0, 1.22, .94, 1.06, 1], rotate: 0 }}
+          transition={{ duration: 1, type: "spring", stiffness: 220, damping: 11, delay: 1.05 }}
+        >
+          <span className="ai-credit-spark">✦</span>
+          <span className="ai-credit-text">
+            <span className="ai-credit-made">Made with</span>
+            <span className="ai-credit-name">Claude AI</span>
+          </span>
+        </motion.div>
       </motion.div>
       <div
         className="activator-container"
