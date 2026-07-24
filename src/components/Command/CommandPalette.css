@@ -89,6 +89,13 @@
   z-index: 1;
 }
 
+.command-item .command-item-label mark {
+  background: transparent;
+  color: var(--page-ink-color);
+  font-weight: 800;
+  display: inline-block;
+}
+
 .command-item .command-item-icon {
   display: flex;
   align-items: center;

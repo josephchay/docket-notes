@@ -122,6 +122,23 @@
   transition: color 0.4s ease-in-out;
 }
 
+/* A slow breathing halo behind the + activator while the desk is empty,
+   coaxing a first note out of it. Positioned in JS (see Navigation.jsx) —
+   it needs to sit outside the gooey-filtered group below, so pure CSS
+   layout math would have to fight that same filter for nothing. */
+.nav-invite {
+  position: fixed;
+  z-index: 5;
+  width: 84px;
+  height: 84px;
+  margin-left: -42px;
+  margin-top: -42px;
+  border-radius: 50%;
+  background-color: var(--page-ink-color);
+  pointer-events: none;
+  transition: background-color 0.4s ease-in-out;
+}
+
 .nav .activator-container {
   filter: url(#gooey-effect);
 }

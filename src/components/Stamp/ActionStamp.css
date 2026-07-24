@@ -1,0 +1,19 @@
+.action-stamp-slot {
+  position: fixed;
+  left: 148px;
+  bottom: 20px;
+  z-index: 650;
+  pointer-events: none;
+}
+
+.action-stamp {
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  box-shadow: 0 14px 32px -14px rgba(25, 25, 25, 0.5);
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}

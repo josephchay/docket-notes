@@ -48,6 +48,21 @@
     0 40px 90px -30px rgba(25, 25, 25, 0.55);
 }
 
+/* The corner grip: drags freely (see NoteEditor.jsx), but stays visually
+   pinned in place itself — dragConstraints hold it at (0,0) while its
+   pointer offset resizes the paper instead. */
+.note-editor-resize {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: var(--black-even-more-transclucent-color);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
 .note-editor.cozy {
   padding: 24px 30px 20px;
   border-radius: 26px;

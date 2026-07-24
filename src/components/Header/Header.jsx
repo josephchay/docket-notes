@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
-import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles } from "react-icons/fa6";
+import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { COMMAND_EVENT } from "../Command/CommandPalette";
@@ -58,6 +58,8 @@ const Header = ({
   colorCounts,
   theme,
   toggleTheme,
+  focusMode,
+  toggleFocusMode,
 }) => {
   const filtersActive = searchText !== "" || notesSortByFavorite || sortColor !== null;
 
@@ -136,6 +138,17 @@ const Header = ({
       }}
       className="header"
     >
+      {/* A separate inner wrapper for the focus-mode slide, so it doesn't
+          have to fight the entrance animation above (which only ever plays
+          once, with its own one-time delay) for control of translateY. */}
+      <motion.div
+        className="header-toolbar"
+        animate={{
+          translateY: focusMode ? -90 : 0,
+          opacity: focusMode ? 0 : 1,
+        }}
+        transition={{ type: "spring", stiffness: 260, damping: 24 }}
+      >
       <div className="search">
         <div className="icon">
           <img src={ searchIcon } alt="Search Icon" />
@@ -449,6 +462,18 @@ const Header = ({
         <FaWandMagicSparkles className="wand-icon" />
       </motion.div>
       <motion.div
+        role="button"
+        aria-label="Enter focus mode"
+        title="Focus mode (F)"
+        whileHover={{ scale: 1.14 }}
+        whileTap={{ scale: .9 }}
+        transition={ springy }
+        onClick={ toggleFocusMode }
+        className="wand"
+      >
+        <FaExpand className="wand-icon" />
+      </motion.div>
+      <motion.div
         ref={ themeRef }
         role="button"
         aria-label={ theme === "dark" ? "Switch to the light theme" : "Switch to the Ink theme" }
@@ -492,6 +517,7 @@ const Header = ({
             }
           </motion.span>
         </AnimatePresence>
+      </motion.div>
       </motion.div>
     </motion.header>
   );

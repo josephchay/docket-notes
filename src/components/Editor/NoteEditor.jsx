@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
+import { AnimatePresence, motion, useAnimationControls, useMotionValue } from "framer-motion";
 import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle, FaTag } from "react-icons/fa6";
 import { FaEye } from "react-icons/fa";
 
@@ -88,6 +88,54 @@ const NoteEditor = ({
   useEffect(() => {
     wobble();
   }, [size, wobble]);
+
+  // The corner grip drags the paper freely, then lets go and snaps
+  // elastically to whichever preset (cozy/roomy/grand/epic) it landed
+  // nearest — the wobble effect above catches it as size changes, so the
+  // snap itself already reads as jelly settling into shape.
+  const editorRef = useRef(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const dragStartSize = useRef({ width: 0, height: 0 });
+  const liveWidth = useMotionValue(0);
+  const liveHeight = useMotionValue(0);
+
+  const handleResizeStart = () => {
+    const rect = editorRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    dragStartSize.current = { width: rect.width, height: rect.height };
+    liveWidth.set(rect.width);
+    liveHeight.set(rect.height);
+    setIsResizing(true);
+  };
+
+  const handleResizeDrag = (_e, info) => {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    liveWidth.set(Math.min(Math.max(dragStartSize.current.width + info.offset.x, 360), vw * .96));
+    liveHeight.set(Math.min(Math.max(dragStartSize.current.height + info.offset.y, 320), vh * .94));
+  };
+
+  const handleResizeEnd = () => {
+    setIsResizing(false);
+
+    const w = liveWidth.get();
+    const h = liveHeight.get();
+
+    let nearest = size;
+    let bestDistance = Infinity;
+    EDITOR_SIZES.forEach((name) => {
+      const target = sizeFor(name);
+      const distance = Math.hypot(target.width - w, target.height - h);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        nearest = name;
+      }
+    });
+
+    setSize(nearest);
+  };
 
   const titleRef = useRef(null);
   const textRef = useRef(null);
@@ -191,9 +239,14 @@ const NoteEditor = ({
           animate={ jelly }
         >
           <motion.div
-            className={ `note-editor ${ size } ${ note.color }-bg ${ note.lock ? "locked" : "" }` }
+            ref={ editorRef }
+            className={ `note-editor ${ size } ${ note.color }-bg ${ note.lock ? "locked" : "" } ${ isResizing ? "resizing" : "" }` }
             initial={ sizeFor("roomy") }
-            animate={ sizeFor(size) }
+            {
+              ...(isResizing
+                ? { style: { width: liveWidth, height: liveHeight } }
+                : { animate: sizeFor(size) })
+            }
             transition={{
               type: "spring",
               stiffness: 260,
@@ -425,6 +478,21 @@ const NoteEditor = ({
                 <span className="note-editor-count muted">{ draftText.length } chars</span>
               </div>
             </div>
+            {/* Drags freely, then lets go and springs to whichever preset
+                size it landed nearest — see the resize handlers above. */}
+            <motion.div
+              className="note-editor-resize"
+              drag
+              dragMomentum={ false }
+              dragElastic={ 0 }
+              dragConstraints={{ top: 0, left: 0, right: 0, bottom: 0 }}
+              onDragStart={ handleResizeStart }
+              onDrag={ handleResizeDrag }
+              onDragEnd={ handleResizeEnd }
+              whileHover={{ scale: 1.3 }}
+              whileDrag={{ scale: 1.6 }}
+              transition={{ type: "spring", stiffness: 500, damping: 20 }}
+            />
           </motion.div>
         </motion.div>
       </motion.div>

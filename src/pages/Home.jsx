@@ -13,6 +13,9 @@ import {
   FaMagnifyingGlass,
   FaQuestion,
   FaChartLine,
+  FaClockRotateLeft,
+  FaArrowRotateRight,
+  FaCompress,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -33,6 +36,9 @@ import ShortcutsSheet, { SHORTCUTS_EVENT } from "../components/Shortcuts/Shortcu
 import TourGuide from "../components/Tour/TourGuide";
 import BulkActionBar from "../components/Bulk/BulkActionBar";
 import InsightsPanel, { INSIGHTS_EVENT } from "../components/Insights/InsightsPanel";
+import ActionStamp from "../components/Stamp/ActionStamp";
+import ScrollProgress from "../components/Scroll/ScrollProgress";
+import DropZoneOverlay from "../components/DropZone/DropZoneOverlay";
 
 import quotes from "../assets/data/quotes.json";
 
@@ -178,6 +184,13 @@ const Home = () => {
     setShowScrollTop((prev) => (prev === show ? prev : show));
   }
 
+  // Focus mode slides the nav rail and toolbar away with a bouncy spring,
+  // leaving just the notes. The dedicated floating exit button (rendered
+  // below, outside the header it hides) is what keeps a way back always
+  // reachable regardless of what's currently slid off-screen.
+  const [focusMode, setFocusMode] = useState(false);
+  const toggleFocusMode = () => setFocusMode((prev) => !prev);
+
   // Long-press-deleted notes and where each sat, kept around as a toast deck
   // for their undo windows. Oldest first; only the freshest few are shown.
   const [deletedNotes, setDeletedNotes] = useState([]);
@@ -216,6 +229,7 @@ const Home = () => {
   // same stale snapshot and clobber one another.
   const bulkStar = () => {
     const allFavorited = notes.every((note) => !selectedIds.has(note.id) || note.favorite);
+    pushUndo("starred the selection");
     setNotes((prev) => prev.map((note) =>
       selectedIds.has(note.id) ? { ...note, favorite: !allFavorited } : note
     ));
@@ -223,6 +237,7 @@ const Home = () => {
 
   const bulkRecolor = () => {
     const palette = Object.keys(NOTE_COLORS);
+    pushUndo("recolored the selection");
     setNotes((prev) => prev.map((note) => {
       if (!selectedIds.has(note.id)) return note;
       const nextIndex = (palette.indexOf(note.color) + 1) % palette.length;
@@ -244,6 +259,8 @@ const Home = () => {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+
+    showStamp(`Backup saved · ${ selected.length } ${ selected.length === 1 ? "note" : "notes" }`);
   }
 
   const bulkDelete = () => {
@@ -291,6 +308,7 @@ const Home = () => {
   // A quick riffle of the whole desk — the layout springs turn the new
   // random order into a bouncy mid-air reshuffle.
   const shuffleNotes = () => {
+    pushUndo("shuffled the desk");
     setSortMode("fresh");
     setNotes((prev) => {
       const next = [...prev];
@@ -405,15 +423,21 @@ const Home = () => {
     setDeletedNotes((prev) => prev.filter((entry) => entry.note.id !== noteId));
   }, []);
 
-  // The copy lands right beside its source in the grid, starting unstarred.
+  // The copy lands right beside its source in the grid, starting unstarred —
+  // and, reusing the same spawn morph a fresh note plays, peels out from the
+  // original's own position instead of just fading in in its new slot.
   const duplicateNote = (noteId) => {
+    const sourceRect = document.querySelector(`[data-note-id="${ noteId }"]`)?.getBoundingClientRect();
+    const copyId = id();
+
+    pushUndo("duplicated a note");
     setNotes((prev) => {
       const index = prev.findIndex((note) => note.id === noteId);
       if (index === -1) return prev;
 
       const copy = {
         ...prev[index],
-        id: id(),
+        id: copyId,
         time: formattedDateNow(),
         favorite: false,
       };
@@ -422,7 +446,74 @@ const Home = () => {
       next.splice(index + 1, 0, copy);
       return next;
     });
+
+    if (sourceRect) {
+      setSpawn({
+        id: copyId,
+        x: sourceRect.left + sourceRect.width / 2,
+        y: sourceRect.top + sourceRect.height / 2,
+      });
+    }
   }
+
+  // A general undo, beyond just deletes (which already have their own
+  // dedicated toast deck above). Ctrl/Cmd+Z pops the last tracked edit and
+  // restores the whole desk to how it looked right before — recoloring,
+  // starring, locking, tagging, shuffling, moving, duplicating, and the
+  // bulk star/recolor actions all push a snapshot here. Typing (title/text)
+  // deliberately doesn't: it's debounced and continuous, so tracking every
+  // committed keystroke would flood the stack and undo would only ever
+  // step back a character or two — "just keep typing" is the real undo
+  // there. Deletes stay on their own toast deck rather than joining this
+  // stack, so the two systems never fight over the same keystroke.
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
+
+  const pushUndo = (label) => {
+    undoStackRef.current = [...undoStackRef.current, { notes, label }].slice(-20);
+    redoStackRef.current = [];   // a fresh edit forks away from any undone branch
+  }
+
+  const performUndo = () => {
+    const stack = undoStackRef.current;
+    if (stack.length === 0) return;
+
+    const last = stack[stack.length - 1];
+    undoStackRef.current = stack.slice(0, -1);
+    redoStackRef.current = [...redoStackRef.current, { notes, label: last.label }].slice(-20);
+    setNotes(last.notes);
+    showStamp(`Undid: ${ last.label }`);
+  }
+
+  const performRedo = () => {
+    const stack = redoStackRef.current;
+    if (stack.length === 0) return;
+
+    const last = stack[stack.length - 1];
+    redoStackRef.current = stack.slice(0, -1);
+    undoStackRef.current = [...undoStackRef.current, { notes, label: last.label }].slice(-20);
+    setNotes(last.notes);
+    showStamp(`Redid: ${ last.label }`);
+  }
+
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (e.target instanceof Element && e.target.closest("input, textarea")) return;
+
+      if (e.key === "y" || e.key === "Y") {
+        e.preventDefault();
+        performRedo();
+      } else if (e.key === "z" || e.key === "Z") {
+        e.preventDefault();
+        if (e.shiftKey) performRedo();
+        else performUndo();
+      }
+    };
+
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  });
 
   const updateTitle = (title, id) => {
     const newNotes = notes.map((note) =>
@@ -439,6 +530,7 @@ const Home = () => {
   }
 
   const updateColor = (id) => {
+    pushUndo("recolored a note");
     const palette = Object.keys(NOTE_COLORS);
 
     const newNotes = notes.map((note) => {
@@ -454,6 +546,7 @@ const Home = () => {
   // Paint a note a specific color — the focus editor's palette picks
   // directly instead of cycling.
   const setNoteColor = (color, noteId) => {
+    pushUndo("recolored a note");
     const newNotes = notes.map((note) =>
       note.id === noteId ? { ...note, color } : note
     );
@@ -463,6 +556,7 @@ const Home = () => {
   const reorderNotes = (sourceId, targetId) => {
     if (sourceId === targetId) return;
 
+    pushUndo("moved a note");
     setNotes((prev) => {
       const next = [...prev];
       const from = next.findIndex((note) => note.id === sourceId);
@@ -476,6 +570,7 @@ const Home = () => {
   }
 
   const updateFavourite = (id) => {
+    pushUndo("starred a note");
     const newNotes = notes.map((note) =>
       note.id === id ? { ...note, favorite: !note.favorite } : note
     );
@@ -483,6 +578,7 @@ const Home = () => {
   }
 
   const updateLock = (id) => {
+    pushUndo("locked a note");
     const newNotes = notes.map((note) =>
       note.id === id ? { ...note, lock: !note.lock } : note
     );
@@ -490,10 +586,25 @@ const Home = () => {
   }
 
   const updateTags = (tags, id) => {
+    pushUndo("edited a tag");
     const newNotes = notes.map((note) =>
       note.id === id ? { ...note, tags } : note
     );
     setNotes(newNotes);
+  }
+
+  // A quick ink stamp confirming an export or import actually happened —
+  // export and import are otherwise silent, and silently doing nothing
+  // (an empty file, a backup with nothing importable) reads the same as
+  // working correctly unless something says so.
+  const [stamp, setStamp] = useState(null);
+
+  const showStamp = (text) => {
+    const stampId = id();
+    setStamp({ key: stampId, text });
+    setTimeout(() => {
+      setStamp((current) => (current?.key === stampId ? null : current));
+    }, 2200);
   }
 
   // Save the whole desk as a JSON backup the visitor can keep or move.
@@ -508,6 +619,8 @@ const Home = () => {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+
+    showStamp(`Backup saved · ${ notes.length } ${ notes.length === 1 ? "note" : "notes" }`);
   }
 
   // Pour a backup file back onto the desk. Incoming notes are scrubbed field
@@ -541,15 +654,72 @@ const Home = () => {
               tags: Array.isArray(note.tags) ? note.tags.filter((tag) => typeof tag === "string") : [],
             }));
 
+          showStamp(
+            cleaned.length > 0
+              ? `${ cleaned.length } ${ cleaned.length === 1 ? "note" : "notes" } poured in`
+              : "Nothing to pour in from that file"
+          );
+
           return [...prev, ...cleaned];
         });
       } catch {
-        // Not a Docket backup; leave the desk untouched.
+        showStamp("That file isn't a Docket backup");
       }
     };
 
     reader.readAsText(file);
   }
+
+  // Dragging a backup file over the window pours it in on drop, not just
+  // the nav's import button. dragenter/dragleave both fire on every
+  // element the pointer crosses, so a counter (rather than a boolean) is
+  // what keeps the overlay from flickering as the drag passes over child
+  // elements on its way across the page.
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const dragDepthRef = useRef(0);
+
+  useEffect(() => {
+    const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+
+    const handleDragEnter = (e) => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      dragDepthRef.current += 1;
+      setIsDraggingFile(true);
+    };
+
+    const handleDragOver = (e) => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+    };
+
+    const handleDragLeave = (e) => {
+      if (!isFileDrag(e)) return;
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) setIsDraggingFile(false);
+    };
+
+    const handleDrop = (e) => {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      dragDepthRef.current = 0;
+      setIsDraggingFile(false);
+
+      const file = e.dataTransfer.files?.[0];
+      if (file) importNotes(file);
+    };
+
+    window.addEventListener("dragenter", handleDragEnter);
+    window.addEventListener("dragover", handleDragOver);
+    window.addEventListener("dragleave", handleDragLeave);
+    window.addEventListener("drop", handleDrop);
+    return () => {
+      window.removeEventListener("dragenter", handleDragEnter);
+      window.removeEventListener("dragover", handleDragOver);
+      window.removeEventListener("dragleave", handleDragLeave);
+      window.removeEventListener("drop", handleDrop);
+    };
+  }, []);
 
   // Deal a fresh inspiration quote into an empty note's placeholder.
   const updateQuote = (noteId) => {
@@ -572,6 +742,8 @@ const Home = () => {
       } else if ((e.key === "n" || e.key === "N") && !editingNoteId) {
         const palette = Object.keys(NOTE_COLORS);
         addNote(palette[Math.floor(Math.random() * palette.length)]);
+      } else if (e.key === "f" || e.key === "F") {
+        toggleFocusMode();
       }
     };
 
@@ -633,6 +805,15 @@ const Home = () => {
     },
     { key: "shuffle", label: "Shuffle the desk", icon: <FaShuffle />, perform: shuffleNotes },
     {
+      key: "focus",
+      label: focusMode ? "Exit focus mode" : "Enter focus mode",
+      hint: "F",
+      icon: <FaCompress />,
+      perform: toggleFocusMode,
+    },
+    { key: "undo", label: "Undo the last edit", hint: "⌘Z", icon: <FaClockRotateLeft />, perform: performUndo },
+    { key: "redo", label: "Redo the last undo", hint: "⌘⇧Z", icon: <FaArrowRotateRight />, perform: performRedo },
+    {
       key: "theme",
       label: theme === "dark" ? "Switch to fresh paper" : "Switch to Ink",
       icon: theme === "dark" ? <FaSun /> : <FaMoon />,
@@ -671,12 +852,14 @@ const Home = () => {
       <div
         ref={ homeRef }
         onScroll={ handleScroll }
-        className={ `home custom-scroll ${ editingNote ? "receded" : "" }` }
+        className={ `home custom-scroll ${ editingNote ? "receded" : "" } ${ focusMode ? "focus" : "" }` }
       >
         <Navigation
           addNote={ addNote }
           exportNotes={ exportNotes }
           importNotes={ importNotes }
+          hasNotes={ notes.length > 0 }
+          focusMode={ focusMode }
         />
         <GooeyEffectSvg
           id="colorSelectors"
@@ -694,11 +877,14 @@ const Home = () => {
           colorCounts={ colorCounts }
           theme={ theme }
           toggleTheme={ toggleTheme }
+          focusMode={ focusMode }
+          toggleFocusMode={ toggleFocusMode }
         />
         <NoteList
           notes={ filteredNotes }
           hasNotes={ notes.length > 0 }
           deskCleared={ deskCleared }
+          addNote={ addNote }
           clearFilters={ clearFilters }
           allTags={ allTags }
           sortTag={ notesSortTag }
@@ -761,8 +947,33 @@ const Home = () => {
         onDelete={ bulkDelete }
         onDone={ endSelection }
       />
+      <AnimatePresence>
+        {
+          focusMode && (
+            <motion.button
+              key="focusExit"
+              type="button"
+              aria-label="Exit focus mode"
+              title="Exit focus mode (F)"
+              className="focus-exit"
+              initial={{ opacity: 0, scale: 0, rotate: -20 }}
+              animate={{ opacity: 1, scale: 1, rotate: 0 }}
+              exit={{ opacity: 0, scale: 0, rotate: 20 }}
+              whileHover={{ scale: 1.12 }}
+              whileTap={{ scale: .88 }}
+              transition={{ type: "spring", stiffness: 380, damping: 16 }}
+              onClick={ toggleFocusMode }
+            >
+              <FaCompress className="focus-exit-icon" />
+            </motion.button>
+          )
+        }
+      </AnimatePresence>
       <ThemeWipe wipe={ wipe } />
       <InkCelebration celebration={ celebration } />
+      <ActionStamp stamp={ stamp } />
+      <ScrollProgress containerRef={ homeRef } />
+      <DropZoneOverlay active={ isDraggingFile } />
       <div className="undo-toast-layer">
         <AnimatePresence>
           {

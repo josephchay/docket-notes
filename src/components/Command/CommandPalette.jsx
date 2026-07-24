@@ -57,9 +57,36 @@ const CommandPalette = ({ actions }) => {
     }
   }, [open]);
 
+  const trimmedQuery = query.trim();
   const filtered = actions.filter((action) =>
-    action.label.toLowerCase().includes(query.trim().toLowerCase())
+    action.label.toLowerCase().includes(trimmedQuery.toLowerCase())
   );
+
+  // Marks the matched stretch of a label with a little pop of ink, instead
+  // of leaving the visitor to guess why a row surfaced.
+  const renderLabel = (label) => {
+    if (!trimmedQuery) return label;
+
+    const start = label.toLowerCase().indexOf(trimmedQuery.toLowerCase());
+    if (start === -1) return label;
+
+    const end = start + trimmedQuery.length;
+
+    return (
+      <>
+        { label.slice(0, start) }
+        <motion.mark
+          key={ trimmedQuery }
+          initial={{ opacity: 0, scale: .5 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: "spring", stiffness: 500, damping: 20 }}
+        >
+          { label.slice(start, end) }
+        </motion.mark>
+        { label.slice(end) }
+      </>
+    );
+  };
 
   const run = (action) => {
     if (phase !== "open") return;
@@ -159,7 +186,7 @@ const CommandPalette = ({ actions }) => {
                         )
                       }
                       <span className="command-item-icon">{ action.icon }</span>
-                      <span className="command-item-label">{ action.label }</span>
+                      <span className="command-item-label">{ renderLabel(action.label) }</span>
                       {
                         action.hint && (
                           <kbd className="command-item-hint">{ action.hint }</kbd>

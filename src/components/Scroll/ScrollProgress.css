@@ -1,0 +1,12 @@
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 128px;
+  right: 0;
+  height: 3px;
+  z-index: 500;
+  transform-origin: 0 0;
+  background-color: var(--page-ink-color);
+  pointer-events: none;
+  transition: background-color 0.4s ease-in-out;
+}

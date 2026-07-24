@@ -1,0 +1,53 @@
+.drop-zone-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 980;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(25, 25, 25, 0.35);
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .drop-zone-layer {
+  background-color: rgba(0, 0, 0, 0.55);
+}
+
+.drop-zone-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: min(360px, 82vw);
+  padding: 44px 30px;
+  border-radius: 28px;
+  border: 3px dashed var(--page-line-color);
+  background-color: var(--page-bg-color);
+  box-shadow: 0 40px 90px -30px rgba(25, 25, 25, 0.5);
+  text-align: center;
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+}
+
+.drop-zone-frame .drop-zone-icon {
+  display: flex;
+  font-size: 34px;
+  color: var(--page-ink-color);
+  margin-bottom: 6px;
+  transition: color 0.4s ease-in-out;
+}
+
+.drop-zone-frame h3 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.drop-zone-frame p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--page-ink-color);
+  opacity: .6;
+  transition: color 0.4s ease-in-out;
+}

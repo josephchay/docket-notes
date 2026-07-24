@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useAnimationControls, useMotionValue, useSpring, useTransform } from "framer-motion";
 import anime from "animejs";
 
@@ -16,6 +17,9 @@ const debounceTimer = 500;
 const NOTE_WIDTH = 340;   // matches the .note CSS width and the rope svg viewBox
 
 const RING_RADIUS = 68;   // matches the delete-ring svg below
+
+const RADIAL_RADIUS = 64;   // how far the radial menu's items spread from the click point
+const RADIAL_MARGIN = 110;  // keeps the fully-spread menu clear of the viewport edge
 
 const Note = ({
   delay,
@@ -186,6 +190,60 @@ const Note = ({
   const handleEditable = () => {
     updateLock(note.id);
   }
+
+  // Right-click blooms a gooey cluster of quick actions out from the click
+  // point — the same melt-together filter the nav rail's ink pots use,
+  // applied here so the buttons visually separate out of one blob instead
+  // of just fading in as a list. Portaled to the document body since the
+  // note's own tree sits under a transform (the tilt, the lean, the desk's
+  // recede-on-editor scale) — any of those would otherwise become the
+  // containing block for a fixed-position menu and throw its position off.
+  const [radialAt, setRadialAt] = useState(null);
+
+  const openRadialMenu = (e) => {
+    e.preventDefault();
+
+    setRadialAt({
+      x: Math.min(Math.max(e.clientX, RADIAL_MARGIN), window.innerWidth - RADIAL_MARGIN),
+      y: Math.min(Math.max(e.clientY, RADIAL_MARGIN), window.innerHeight - RADIAL_MARGIN),
+    });
+  }
+
+  const closeRadialMenu = () => setRadialAt(null);
+
+  useEffect(() => {
+    if (!radialAt) return;
+
+    const handleKey = (e) => {
+      if (e.key === "Escape") closeRadialMenu();
+    };
+    const handleOutside = () => closeRadialMenu();
+
+    window.addEventListener("keydown", handleKey);
+    // A capture-phase pointerdown, delayed to the next tick, so the very
+    // pointerdown that opened the menu (a right-click) doesn't also count
+    // as the outside click that closes it again.
+    const timer = setTimeout(() => document.addEventListener("pointerdown", handleOutside), 0);
+
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", handleOutside);
+    };
+  }, [radialAt]);
+
+  const radialActions = [
+    { key: "star", icon: <FaStar />, label: note.favorite ? "Unstar" : "Star", onRun: handleFavorite },
+    { key: "recolor", icon: <FaPalette />, label: "Recolor", onRun: () => updateColor(note.id) },
+    { key: "duplicate", icon: <FaCopy />, label: "Duplicate", onRun: () => duplicateNote(note.id) },
+    {
+      key: "lock",
+      icon: note.lock ? <FaPen /> : <FaEye size={ 12 } />,
+      label: note.lock ? "Unlock" : "Lock",
+      onRun: handleEditable,
+    },
+    { key: "delete", icon: <FaTrash />, label: "Delete", onRun: () => deleteNote(note.id), danger: true },
+  ];
 
   // A freshly poured note doesn't float in from nowhere — it morphs out of
   // the ink pot that made it: a dot-sized circle at the pot's position that
@@ -372,6 +430,7 @@ const Note = ({
         onPointerMove={ handleTiltMove }
         onPointerLeave={ handleTiltLeave }
         onClick={ handleCardClick }
+        onContextMenu={ openRadialMenu }
         className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" } ${ isTyping ? "editing" : "" } ${ selectMode && selected ? "selected" : "" }` }
       >
         {/* The checkmark badge only exists in select mode, and blooms in
@@ -782,6 +841,63 @@ const Note = ({
           />
         </motion.div>
       </motion.div>
+      {
+        createPortal(
+          <AnimatePresence>
+            {
+              radialAt && (
+                <div className="note-radial-layer">
+                  <div className="note-radial-menu" style={{ left: radialAt.x, top: radialAt.y }}>
+                    {
+                      radialActions.map((action, index) => {
+                        const angle = (index / radialActions.length) * Math.PI * 2 - Math.PI / 2;
+                        const ox = Math.cos(angle) * RADIAL_RADIUS;
+                        const oy = Math.sin(angle) * RADIAL_RADIUS;
+
+                        return (
+                          <motion.button
+                            key={ action.key }
+                            type="button"
+                            aria-label={ action.label }
+                            title={ action.label }
+                            className={ `note-radial-item ${ note.color }-bg ${ action.danger ? "danger" : "" }` }
+                            initial={{ x: 0, y: 0, scale: 0, opacity: 0 }}
+                            animate={{ x: ox, y: oy, scale: 1, opacity: 1 }}
+                            exit={{
+                              x: 0,
+                              y: 0,
+                              scale: 0,
+                              opacity: 0,
+                              transition: {
+                                duration: .18,
+                                delay: (radialActions.length - index) * .015,
+                                ease: "easeIn",
+                              },
+                            }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 260,
+                              damping: 15,
+                              delay: index * .035,
+                            }}
+                            onClick={ () => {
+                              action.onRun();
+                              closeRadialMenu();
+                            } }
+                          >
+                            { action.icon }
+                          </motion.button>
+                        );
+                      })
+                    }
+                  </div>
+                </div>
+              )
+            }
+          </AnimatePresence>,
+          document.body
+        )
+      }
     </motion.div>
   );
 }

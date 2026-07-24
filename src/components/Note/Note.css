@@ -257,6 +257,50 @@
   will-change: transform, border-radius, opacity;
 }
 
+/* --- The right-click quick-actions bloom --------------------------------- */
+/* Portaled to document.body (see Note.jsx), so this sits entirely outside
+   any note's own transformed tree. */
+.note-radial-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 970;
+  pointer-events: none;
+}
+
+/* The gooey filter is what makes the items look like they're melting apart
+   from one blob rather than just fading in as a list — the same trick the
+   nav rail's ink pots use. */
+.note-radial-menu {
+  position: absolute;
+  width: 0;
+  height: 0;
+  filter: url(#gooey-effect);
+}
+
+.note-radial-item {
+  position: absolute;
+  left: 0;
+  top: 0;
+  margin: -19px 0 0 -19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  color: var(--black-color);
+  box-shadow: 0 10px 22px -8px rgba(25, 25, 25, 0.45);
+  pointer-events: auto;
+  font-size: 14px;
+}
+
+.note-radial-item.danger {
+  background-color: var(--red-color) !important;
+}
+
 /* --- Interactive elastic pull-strings ------------------------------------ */
 .note .pull-zone {
   position: absolute;

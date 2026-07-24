@@ -1,13 +1,18 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import anime from "animejs";
 import { FaShuffle, FaSquareCheck } from "react-icons/fa6";
 
 import Note from "../Note/Note";
 import QuoteCard from "../Quote/QuoteCard";
+import { NOTE_COLORS } from "../../constants/colors";
 
 import "./NoteList.css";
 import { itemsPerFlexRow } from "../../utils/math";
+
+const GRID_RADIAL_RADIUS = 58;
+const GRID_RADIAL_MARGIN = 100;
 
 const springy = {
   type: "spring",
@@ -106,6 +111,7 @@ const NoteList = ({
   hasNotes,
   clearFilters,
   deskCleared,
+  addNote,
   allTags,
   sortTag,
   setSortTag,
@@ -147,6 +153,43 @@ const NoteList = ({
     const timer = setTimeout(() => setCelebrateClean(false), 1300);
     return () => clearTimeout(timer);
   }, [deskCleared]);
+
+  // Right-click on empty desk space blooms a gooey ring of every note color
+  // — same recipe as a note's own right-click menu — and picking one pours
+  // a fresh note that morphs straight out of wherever the click landed,
+  // reusing the exact spawn machinery an ink pot triggers.
+  const [gridRadialAt, setGridRadialAt] = useState(null);
+  const paletteNames = Object.keys(NOTE_COLORS);
+
+  const openGridRadialMenu = (e) => {
+    if (e.target.closest(".note, button, input, textarea, a")) return;
+
+    e.preventDefault();
+    setGridRadialAt({
+      x: Math.min(Math.max(e.clientX, GRID_RADIAL_MARGIN), window.innerWidth - GRID_RADIAL_MARGIN),
+      y: Math.min(Math.max(e.clientY, GRID_RADIAL_MARGIN), window.innerHeight - GRID_RADIAL_MARGIN),
+    });
+  };
+
+  const closeGridRadialMenu = () => setGridRadialAt(null);
+
+  useEffect(() => {
+    if (!gridRadialAt) return;
+
+    const handleKey = (event) => {
+      if (event.key === "Escape") closeGridRadialMenu();
+    };
+    const handleOutside = () => closeGridRadialMenu();
+
+    window.addEventListener("keydown", handleKey);
+    const timer = setTimeout(() => document.addEventListener("pointerdown", handleOutside), 0);
+
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", handleOutside);
+    };
+  }, [gridRadialAt]);
 
   // The shuffle die does an elastic tumble while the layout springs riffle
   // the notes into their new random order.
@@ -350,6 +393,7 @@ const NoteList = ({
       <div
         ref={ ref }
         className="notes"
+        onContextMenu={ openGridRadialMenu }
       >
         {
           renderFirstRow && (
@@ -534,6 +578,61 @@ const NoteList = ({
           )
         }
       </div>
+      {
+        createPortal(
+          <AnimatePresence>
+            {
+              gridRadialAt && (
+                <div className="note-radial-layer">
+                  <div className="note-radial-menu" style={{ left: gridRadialAt.x, top: gridRadialAt.y }}>
+                    {
+                      paletteNames.map((name, index) => {
+                        const angle = (index / paletteNames.length) * Math.PI * 2 - Math.PI / 2;
+                        const ox = Math.cos(angle) * GRID_RADIAL_RADIUS;
+                        const oy = Math.sin(angle) * GRID_RADIAL_RADIUS;
+
+                        return (
+                          <motion.button
+                            key={ name }
+                            type="button"
+                            aria-label={ `Pour a new ${ name } note here` }
+                            title={ `New ${ name } note` }
+                            className={ `note-radial-item ${ name }-bg` }
+                            initial={{ x: 0, y: 0, scale: 0, opacity: 0 }}
+                            animate={{ x: ox, y: oy, scale: 1, opacity: 1 }}
+                            exit={{
+                              x: 0,
+                              y: 0,
+                              scale: 0,
+                              opacity: 0,
+                              transition: {
+                                duration: .18,
+                                delay: (paletteNames.length - index) * .012,
+                                ease: "easeIn",
+                              },
+                            }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 260,
+                              damping: 15,
+                              delay: index * .03,
+                            }}
+                            onClick={ () => {
+                              addNote?.(name, gridRadialAt);
+                              closeGridRadialMenu();
+                            } }
+                          />
+                        );
+                      })
+                    }
+                  </div>
+                </div>
+              )
+            }
+          </AnimatePresence>,
+          document.body
+        )
+      }
     </main>
   )
 }

@@ -10,8 +10,11 @@ export const SHORTCUTS_EVENT = "docket:shortcuts";
 
 const SHORTCUTS = [
   { keys: ["N"], label: "Pour a new note" },
+  { keys: ["F"], label: "Toggle focus mode" },
   { keys: ["/"], label: "Jump to search" },
   { keys: ["Ctrl", "K"], label: "Open the command palette" },
+  { keys: ["Ctrl", "Z"], label: "Undo the last edit" },
+  { keys: ["Ctrl", "Shift", "Z"], label: "Redo the last undo" },
   { keys: ["↑", "↓"], label: "Move through a list" },
   { keys: ["Enter"], label: "Confirm the highlighted row" },
   { keys: ["Esc"], label: "Close whatever's open" },

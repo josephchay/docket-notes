@@ -16,6 +16,18 @@ header.header {
   padding-bottom: 12px;
 }
 
+/* Everything that actually slides away in focus mode (see Header.jsx)
+   lives inside this wrapper now, so it carries the row layout the items
+   used to get straight from .header itself. */
+.header .header-toolbar {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  row-gap: 8px;
+  flex-wrap: wrap;
+}
+
 .header .search {
   display: flex;
   align-items: center;
