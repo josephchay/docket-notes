@@ -68,36 +68,33 @@
 }
 
 /* A deliberately unmissable credit for the AI that helped build this desk —
-   dressed in the same palette the notes themselves wear, with a slow
-   shimmer so it stays lively rather than fading into the rail. */
+   cut from the exact same cloth as every other ink pill in the app (the
+   notes-count badge, clear-filters, the undo-toast button): solid page ink,
+   inverse page paper for the text, flipping cleanly with the theme. A slow
+   breathing shadow — the same language as a note's live-editing halo —
+   keeps it from ever going still. */
 .nav .logo .ai-credit {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   margin-top: 2px;
-  padding: 5px 10px 5px 8px;
+  padding: 5px 11px 5px 9px;
   border-radius: 999px;
-  background: linear-gradient(120deg, var(--blue-color), var(--purple-color) 55%, var(--pink-color));
-  background-size: 200% 200%;
-  box-shadow: 0 6px 16px -6px rgba(176, 149, 246, 0.65);
-  animation: ai-credit-shimmer 5s ease-in-out infinite;
+  background-color: var(--page-ink-color);
+  box-shadow: 0 10px 22px -10px rgba(25, 25, 25, 0.45);
+  transition: background-color 0.4s ease-in-out, box-shadow 0.4s ease-in-out;
+  animation: ai-credit-breathe 3.2s ease-in-out infinite;
 }
 
-@keyframes ai-credit-shimmer {
-  0%, 100% {
-    background-position: 0% 50%;
-    box-shadow: 0 6px 16px -6px rgba(85, 207, 250, 0.6);
-  }
-  50% {
-    background-position: 100% 50%;
-    box-shadow: 0 8px 20px -6px rgba(246, 161, 211, 0.7);
-  }
+@keyframes ai-credit-breathe {
+  0%, 100% { box-shadow: 0 10px 22px -10px rgba(25, 25, 25, 0.45); }
+  50% { box-shadow: 0 10px 27px -8px rgba(25, 25, 25, 0.65); }
 }
 
 .nav .logo .ai-credit .ai-credit-spark {
   font-size: 11px;
   line-height: 1;
-  color: var(--black-color);
+  color: var(--yellow-color);
 }
 
 .nav .logo .ai-credit .ai-credit-text {
@@ -109,17 +106,20 @@
 .nav .logo .ai-credit .ai-credit-made {
   font-size: 7px;
   font-weight: 700;
-  letter-spacing: .04em;
+  letter-spacing: .05em;
   text-transform: uppercase;
-  color: rgba(25, 25, 25, 0.7);
+  color: var(--page-bg-color);
+  opacity: .65;
+  transition: color 0.4s ease-in-out;
 }
 
 .nav .logo .ai-credit .ai-credit-name {
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: .01em;
-  color: var(--black-color);
+  color: var(--page-bg-color);
   white-space: nowrap;
+  transition: color 0.4s ease-in-out;
 }
 
 .nav .activator-container {
