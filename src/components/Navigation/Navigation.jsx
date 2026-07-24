@@ -26,6 +26,7 @@ const Navigation = ({
   addNote,
   exportNotes,
   importNotes,
+  hasNotes,
 }) => {
   const navActivator = useRef(null);
   const fileInput = useRef(null);
@@ -200,9 +201,10 @@ const Navigation = ({
         }}
         className="logo"
         ref={ logoRef }
-        onMouseEnter={ waveLogo }
       >
-        <h4>
+        <h4
+          onMouseEnter={ waveLogo }
+        >
           {
             "Docket".split("").map((letter, index) => (
               <span
@@ -317,6 +319,7 @@ const Navigation = ({
           </span>
         </motion.button>
         <motion.button
+          id="navImportButton"
           type="button"
           aria-label="Bring notes in from a backup file"
           className="nav-tool"
