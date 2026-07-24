@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
-import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaWandMagicSparkles } from "react-icons/fa6";
+import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { COMMAND_EVENT } from "../Command/CommandPalette";
+import { INSIGHTS_EVENT } from "../Insights/InsightsPanel";
 import searchIcon from '../../assets/icons/search.svg';
 
 import './Header.css';
@@ -423,6 +424,18 @@ const Header = ({
           }
         </AnimatePresence>
       </div>
+      <motion.div
+        role="button"
+        aria-label="Show desk insights"
+        title="Desk insights"
+        whileHover={{ scale: 1.14 }}
+        whileTap={{ scale: .9 }}
+        transition={ springy }
+        onClick={ () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)) }
+        className="wand"
+      >
+        <FaChartLine className="wand-icon" />
+      </motion.div>
       <motion.div
         role="button"
         aria-label="Open the command palette"

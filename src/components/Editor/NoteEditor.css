@@ -191,6 +191,59 @@
   color: var(--black-more-transclucent-color);
 }
 
+/* The tag rack: pinned tags as small pills, a bare-underline field to add
+   the next one — same black-ink-on-pastel-paper language as the word count
+   and quote pills below. */
+.note-editor-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.note-editor-tag {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--black-color);
+  background: var(--black-even-more-transclucent-color);
+}
+
+.note-editor-tag .note-editor-tag-icon {
+  font-size: 9px;
+  opacity: .7;
+}
+
+.note-editor-tag .note-editor-tag-remove {
+  font-size: 9px;
+  opacity: .55;
+}
+
+.note-editor-tag-input {
+  flex: 1;
+  min-width: 90px;
+  border: none;
+  outline: none;
+  background: none;
+  padding: 4px 2px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--black-color);
+}
+
+.note-editor-tag-input::placeholder {
+  color: var(--black-more-transclucent-color);
+}
+
 .note-editor-text {
   flex: 1;
   background: none;

@@ -7,6 +7,7 @@
 
 const NOTES_KEY = "docket-notes";
 const SETTINGS_KEY = "docket-settings";
+const TOUR_KEY = "docket-tour-seen";
 
 // StoredNote shape:
 // {
@@ -17,7 +18,8 @@ const SETTINGS_KEY = "docket-settings";
 //   time: string,
 //   color: string,
 //   favorite: boolean,
-//   lock: boolean
+//   lock: boolean,
+//   tags: string[]
 // }
 
 // StoredSettings shape:
@@ -57,6 +59,7 @@ export const loadNotes = () => {
         color: typeof note.color === "string" ? note.color : "yellow",
         favorite: !!note.favorite,
         lock: !!note.lock,
+        tags: Array.isArray(note.tags) ? note.tags.filter((tag) => typeof tag === "string") : [],
       }));
   } catch {
     return [];
@@ -95,5 +98,26 @@ export const saveSettings = (settings) => {
     window.sessionStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
   } catch {
     // Storage blocked — theme just won't persist this session.
+  }
+};
+
+// Whether the first-run coach-mark tour has already played this session.
+export const hasSeenTour = () => {
+  if (!storageAvailable()) return true;
+
+  try {
+    return window.sessionStorage.getItem(TOUR_KEY) === "1";
+  } catch {
+    return true;
+  }
+};
+
+export const markTourSeen = () => {
+  if (!storageAvailable()) return;
+
+  try {
+    window.sessionStorage.setItem(TOUR_KEY, "1");
+  } catch {
+    // Storage blocked — the tour will just play again next reload.
   }
 };

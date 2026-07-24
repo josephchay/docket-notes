@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import anime from "animejs";
-import { FaShuffle } from "react-icons/fa6";
+import { FaShuffle, FaSquareCheck } from "react-icons/fa6";
 
 import Note from "../Note/Note";
 import QuoteCard from "../Quote/QuoteCard";
@@ -32,7 +32,18 @@ const BLOBS = [
   { color: "var(--purple-color)", size: 44, x: [30, -60, 30], y: [-40, 40, -40], duration: 12 },
 ];
 
-const GooeyBlobs = () => (
+// The one-off bloom the blobs throw when the desk goes from holding notes
+// to holding none — bigger drops that fan outward from center and dissolve,
+// melted into the idle drifters below by the same gooey filter.
+const BURST = [
+  { color: "var(--yellow-color)", x: -95, y: -30 },
+  { color: "var(--blue-color)", x: 65, y: -65 },
+  { color: "var(--pink-color)", x: 0, y: 55 },
+  { color: "var(--purple-color)", x: 95, y: 15 },
+  { color: "var(--green-color)", x: -55, y: 60 },
+];
+
+const GooeyBlobs = ({ burst }) => (
   <div
     className="gooey-blobs"
     aria-hidden="true"
@@ -60,6 +71,27 @@ const GooeyBlobs = () => (
         />
       ))
     }
+    {
+      burst && BURST.map((drop, index) => (
+        <motion.span
+          key={ `burst-${ index }` }
+          className="gooey-blob"
+          style={{
+            width: 92,
+            height: 92,
+            backgroundColor: drop.color,
+          }}
+          initial={{ x: 0, y: 0, scale: 0, opacity: 0 }}
+          animate={{
+            x: [0, drop.x],
+            y: [0, drop.y],
+            scale: [0, 1.5, 0],
+            opacity: [0, 1, 0],
+          }}
+          transition={{ duration: 1.15, delay: index * .06, ease: "easeInOut" }}
+        />
+      ))
+    }
   </div>
 );
 
@@ -73,6 +105,14 @@ const NoteList = ({
   notes,
   hasNotes,
   clearFilters,
+  deskCleared,
+  allTags,
+  sortTag,
+  setSortTag,
+  selectMode,
+  toggleSelectMode,
+  selectedIds,
+  toggleSelectNote,
   spawn,
   clearSpawn,
   sortMode,
@@ -92,6 +132,21 @@ const NoteList = ({
 
   const [numPerRow, setNumPerRow] = useState(0);
   const [renderFirstRow, setRenderFirstRow] = useState(false);  // To delay the rendering of the notes list group.
+
+  // A one-off flag, true for a beat right after the desk goes from holding
+  // notes to holding none — drives the bigger blob bloom and the
+  // congratulatory pill in the true-empty state below.
+  const [celebrateClean, setCelebrateClean] = useState(false);
+  const prevClearedRef = useRef(deskCleared);
+
+  useEffect(() => {
+    if (deskCleared === prevClearedRef.current) return;
+
+    prevClearedRef.current = deskCleared;
+    setCelebrateClean(true);
+    const timer = setTimeout(() => setCelebrateClean(false), 1300);
+    return () => clearTimeout(timer);
+  }, [deskCleared]);
 
   // The shuffle die does an elastic tumble while the layout springs riffle
   // the notes into their new random order.
@@ -221,8 +276,76 @@ const NoteList = ({
               <FaShuffle />
             </span>
           </motion.button>
+          <motion.button
+            type="button"
+            aria-pressed={ !!selectMode }
+            aria-label={ selectMode ? "Stop selecting notes" : "Select multiple notes" }
+            title={ selectMode ? "Stop selecting" : "Select notes" }
+            className={ `select-toggle ${ selectMode ? "active" : "" }` }
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: .88 }}
+            transition={ springy }
+            onClick={ () => toggleSelectMode?.() }
+          >
+            <FaSquareCheck />
+          </motion.button>
         </motion.div>
       </div>
+      {/* Only appears once at least one note has been tagged — the strip
+          would otherwise just be clutter for a desk that never uses tags.
+          Same sticky-thumb recipe as the sort-mode control above. */}
+      {
+        allTags?.length > 0 && (
+          <motion.div
+            className="tag-filters"
+            initial={{ opacity: 0, translateY: 20 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ type: "spring", stiffness: 260, damping: 20 }}
+          >
+            <button
+              type="button"
+              aria-pressed={ !sortTag }
+              className={ `tag-filter ${ !sortTag ? "active" : "" }` }
+              onClick={ () => setSortTag?.(null) }
+            >
+              {
+                !sortTag && (
+                  <motion.span
+                    layoutId="tagThumb"
+                    className="tag-thumb"
+                    style={{ borderRadius: 999 }}
+                    transition={{ type: "spring", stiffness: 480, damping: 30 }}
+                  />
+                )
+              }
+              <span className="tag-filter-label">All</span>
+            </button>
+            {
+              allTags.map((tag) => (
+                <button
+                  key={ tag }
+                  type="button"
+                  aria-pressed={ sortTag === tag }
+                  className={ `tag-filter ${ sortTag === tag ? "active" : "" }` }
+                  onClick={ () => setSortTag?.(sortTag === tag ? null : tag) }
+                >
+                  {
+                    sortTag === tag && (
+                      <motion.span
+                        layoutId="tagThumb"
+                        className="tag-thumb"
+                        style={{ borderRadius: 999 }}
+                        transition={{ type: "spring", stiffness: 480, damping: 30 }}
+                      />
+                    )
+                  }
+                  <span className="tag-filter-label">#{ tag }</span>
+                </button>
+              ))
+            }
+          </motion.div>
+        )
+      }
       <QuoteCard />
       <div
         ref={ ref }
@@ -240,6 +363,9 @@ const NoteList = ({
                       note={ item }
                       spawnOrigin={ spawn && spawn.id === item.id ? spawn : null }
                       clearSpawn={ clearSpawn }
+                      selectMode={ selectMode }
+                      selected={ selectedIds?.has(item.id) }
+                      onToggleSelect={ toggleSelectNote }
                       deleteNote={ deleteNote }
                       updateTitle={ updateTitle }
                       updateText={ updateText }
@@ -323,7 +449,31 @@ const NoteList = ({
               <div
                 className="empty-state"
               >
-                <GooeyBlobs />
+                <GooeyBlobs burst={ celebrateClean } />
+                {/* Only plays right after the desk goes from holding notes
+                    to holding none — a quieter counterpart to the milestone
+                    ink shower, for clearing out rather than filling up. */}
+                <AnimatePresence>
+                  {
+                    celebrateClean && (
+                      <motion.span
+                        key="cleanDesk"
+                        className="clean-desk-pill"
+                        initial={{ opacity: 0, scale: .15, translateY: -10, borderRadius: 40 }}
+                        animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 999 }}
+                        exit={{
+                          opacity: 0,
+                          scale: .3,
+                          translateY: -8,
+                          transition: { duration: .22, ease: "easeIn" },
+                        }}
+                        transition={{ type: "spring", stiffness: 190, damping: 13 }}
+                      >
+                        ✦ Clean desk — nice work
+                      </motion.span>
+                    )
+                  }
+                </AnimatePresence>
                 <motion.h3
                   initial={{
                     opacity: 0,

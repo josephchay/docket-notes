@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useAnimationControls, useMotionValue, useSpring, useTransform } from "framer-motion";
 import anime from "animejs";
 
-import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRight } from "react-icons/fa6";
+import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRight, FaCheck } from "react-icons/fa6";
 import { FaEye, FaTrash } from "react-icons/fa";
 
 import useLongPress from "../../hooks/useLongPress";
@@ -22,6 +22,9 @@ const Note = ({
   note,
   spawnOrigin,
   clearSpawn,
+  selectMode,
+  selected,
+  onToggleSelect,
   deleteNote,
   updateTitle,
   updateText,
@@ -110,6 +113,18 @@ const Note = ({
     shouldPreventDefault: true,
     delay: 800,
   });
+
+  // In select mode, tapping the paper toggles this note's checkmark — but
+  // only when the tap actually lands on the paper itself. Every existing
+  // control (star, lock, the pull-string tassels, the badge below) is a
+  // button, so excluding anything inside one keeps this from double-firing
+  // alongside their own onClick.
+  const handleCardClick = (e) => {
+    if (!selectMode) return;
+    if (e.target instanceof Element && e.target.closest("button, input, textarea")) return;
+
+    onToggleSelect?.(note.id);
+  }
 
   // The moment the hold-ring finishes filling, it doesn't just vanish — it
   // splats into an irregular blot of ink that wobbles through a couple of
@@ -356,8 +371,51 @@ const Note = ({
         }}
         onPointerMove={ handleTiltMove }
         onPointerLeave={ handleTiltLeave }
-        className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" } ${ isTyping ? "editing" : "" }` }
+        onClick={ handleCardClick }
+        className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" } ${ isTyping ? "editing" : "" } ${ selectMode && selected ? "selected" : "" }` }
       >
+        {/* The checkmark badge only exists in select mode, and blooms in
+            with a bouncy overshoot rather than just appearing. Its own
+            pointerdown is shielded from the card's long-press handlers,
+            the same way the pull-string tassels shield theirs, so tapping
+            it doesn't also fire the card's own tap-to-toggle underneath. */}
+        <AnimatePresence>
+          {
+            selectMode && (
+              <motion.button
+                type="button"
+                aria-label={ selected ? "Deselect this note" : "Select this note" }
+                aria-pressed={ !!selected }
+                className={ `select-badge ${ selected ? "checked" : "" }` }
+                initial={{ opacity: 0, scale: 0, rotate: -20 }}
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                exit={{ opacity: 0, scale: 0, rotate: 20, transition: { duration: .15, ease: "easeIn" } }}
+                whileHover={{ scale: 1.14 }}
+                whileTap={{ scale: .88 }}
+                transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                onMouseDown={ (e) => e.stopPropagation() }
+                onTouchStart={ (e) => e.stopPropagation() }
+                onClick={ () => onToggleSelect?.(note.id) }
+              >
+                <AnimatePresence mode="wait" initial={ false }>
+                  {
+                    selected && (
+                      <motion.span
+                        key="check"
+                        initial={{ scale: 0, rotate: -45 }}
+                        animate={{ scale: 1, rotate: 0 }}
+                        exit={{ scale: 0 }}
+                        transition={{ type: "spring", stiffness: 500, damping: 18 }}
+                      >
+                        <FaCheck className="select-badge-icon" />
+                      </motion.span>
+                    )
+                  }
+                </AnimatePresence>
+              </motion.button>
+            )
+          }
+        </AnimatePresence>
         {/* A soft breathing halo in the note's own ink while it has the
             caret — the same live-editing moment the static ring already
             marks, just given a pulse instead of a flat line. */}

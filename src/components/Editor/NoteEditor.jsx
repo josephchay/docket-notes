@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
-import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle } from "react-icons/fa6";
+import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle, FaTag } from "react-icons/fa6";
 import { FaEye } from "react-icons/fa";
 
 import { NOTE_COLORS } from "../../constants/colors";
@@ -39,11 +39,39 @@ const NoteEditor = ({
   updateLock,
   setNoteColor,
   updateQuote,
+  updateTags,
 }) => {
   const [draftTitle, setDraftTitle] = useState(note.title);
   const [draftText, setDraftText] = useState(note.text);
   const [size, setSize] = useState("roomy");
   const [copied, setCopied] = useState(false);
+
+  // Tags pop in bouncy, shrink away when removed. Notes from before this
+  // feature existed simply have none yet.
+  const tags = note.tags || [];
+  const [tagDraft, setTagDraft] = useState("");
+  const tagInputRef = useRef(null);
+
+  const addTag = () => {
+    const clean = tagDraft.trim().toLowerCase().replace(/\s+/g, "-");
+    setTagDraft("");
+    if (!clean || tags.includes(clean)) return;
+
+    updateTags([...tags, clean], note.id);
+  };
+
+  const handleTagKeyDown = (e) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addTag();
+    } else if (e.key === "Backspace" && !tagDraft && tags.length > 0) {
+      updateTags(tags.slice(0, -1), note.id);
+    }
+  };
+
+  const removeTag = (tag) => {
+    updateTags(tags.filter((t) => t !== tag), note.id);
+  };
 
   // The gluey wobble: whenever the paper opens or changes size it squashes
   // and stretches like jelly while the bouncy size spring overshoots.
@@ -306,6 +334,50 @@ const NoteEditor = ({
               onChange={ (e) => handleTitle(e.target.value) }
               className={ `note-editor-title ${ note.color }-highlight` }
             />
+            {/* A little rack of tags — each pops in with an overshoot when
+                pinned on, shrinks away when pulled off. Enter or a comma
+                pins the current word; Backspace on an empty field pulls the
+                last one back off. */}
+            {
+              !note.lock && (
+                <div className="note-editor-tags">
+                  <AnimatePresence initial={ false }>
+                    {
+                      tags.map((tag) => (
+                        <motion.button
+                          key={ tag }
+                          type="button"
+                          aria-label={ `Remove the ${ tag } tag` }
+                          className="note-editor-tag"
+                          layout
+                          initial={{ opacity: 0, scale: 0, translateY: 8 }}
+                          animate={{ opacity: 1, scale: 1, translateY: 0 }}
+                          exit={{ opacity: 0, scale: .4, transition: { duration: .16, ease: "easeIn" } }}
+                          whileHover={{ scale: 1.06 }}
+                          whileTap={{ scale: .9 }}
+                          transition={{ type: "spring", stiffness: 420, damping: 17 }}
+                          onClick={ () => removeTag(tag) }
+                        >
+                          <FaTag className="note-editor-tag-icon" />
+                          { tag }
+                          <FaXmark className="note-editor-tag-remove" />
+                        </motion.button>
+                      ))
+                    }
+                  </AnimatePresence>
+                  <input
+                    ref={ tagInputRef }
+                    type="text"
+                    placeholder={ tags.length ? "Add another…" : "Add a tag…" }
+                    value={ tagDraft }
+                    onChange={ (e) => setTagDraft(e.target.value) }
+                    onKeyDown={ handleTagKeyDown }
+                    onBlur={ addTag }
+                    className="note-editor-tag-input"
+                  />
+                </div>
+              )
+            }
             <textarea
               ref={ textRef }
               readOnly={ note.lock }

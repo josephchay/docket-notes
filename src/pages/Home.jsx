@@ -11,6 +11,8 @@ import {
   FaFileArrowDown,
   FaRotateLeft,
   FaMagnifyingGlass,
+  FaQuestion,
+  FaChartLine,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -27,6 +29,10 @@ import UndoToast from "../components/Toast/UndoToast";
 import CommandPalette from "../components/Command/CommandPalette";
 import ThemeWipe from "../components/Theme/ThemeWipe";
 import InkCelebration from "../components/Celebration/InkCelebration";
+import ShortcutsSheet, { SHORTCUTS_EVENT } from "../components/Shortcuts/ShortcutsSheet";
+import TourGuide from "../components/Tour/TourGuide";
+import BulkActionBar from "../components/Bulk/BulkActionBar";
+import InsightsPanel, { INSIGHTS_EVENT } from "../components/Insights/InsightsPanel";
 
 import quotes from "../assets/data/quotes.json";
 
@@ -41,7 +47,8 @@ import "./Home.css";
 //   time: string,
 //   color: string,
 //   favorite: boolean,
-//   lock: boolean
+//   lock: boolean,
+//   tags: string[]
 // }
 
 // DeletedEntry shape:
@@ -63,6 +70,7 @@ const Home = () => {
   const [notesSortText, setNotesSortText] = useState("");
   const [notesSortByFavorite, setNotesSortByFavorite] = useState(false);
   const [notesSortColor, setNotesSortColor] = useState(null);
+  const [notesSortTag, setNotesSortTag] = useState(null);
 
   // Fresh paper or the Ink theme — kept in sessionStorage alongside the notes.
   const [theme, setTheme] = useState("light");
@@ -99,12 +107,19 @@ const Home = () => {
   const celebratedRef = useRef(new Set());
   const [celebration, setCelebration] = useState(null);
 
+  // Whether the desk has ever held a note this session — so the "clean
+  // desk" moment only plays on the 1→0 edge, not on the very first render
+  // of an empty session.
+  const everHadNotesRef = useRef(false);
+  const [deskCleared, setDeskCleared] = useState(0);
+
   // Hydrate notes and settings from sessionStorage once, on mount.
   useEffect(() => {
     const stored = loadNotes();
     if (stored.length > 0) setNotes(stored);
 
     celebratedRef.current = new Set(MILESTONES.filter((m) => m <= stored.length));
+    everHadNotesRef.current = stored.length > 0;
 
     const settings = loadSettings();
     if (settings.theme === "dark" || settings.theme === "light") {
@@ -132,6 +147,21 @@ const Home = () => {
     }, 1900);
   }, [notes.length, hydrated]);
 
+  // The desk going from at-least-one note to none at all gets its own
+  // quieter moment — the empty state's gooey blobs bloom bigger for a beat.
+  // Bumping a counter (rather than a boolean) lets it fire again every time
+  // the desk is fully cleared, not just once per session.
+  useEffect(() => {
+    if (!hydrated) return;
+
+    if (notes.length === 0 && everHadNotesRef.current) {
+      everHadNotesRef.current = false;
+      setDeskCleared((n) => n + 1);
+    } else if (notes.length > 0) {
+      everHadNotesRef.current = true;
+    }
+  }, [notes.length, hydrated]);
+
   // Mirror every change back into sessionStorage — but only after hydration,
   // so the initial empty list never overwrites what the session already holds.
   useEffect(() => {
@@ -155,6 +185,83 @@ const Home = () => {
   // Which note is stretched open in the focus editor, if any.
   const [editingNoteId, setEditingNoteId] = useState(null);
 
+  // Select mode: a checkmark badge blooms onto every note, tapping toggles
+  // it into the selection instead of doing nothing, and the bulk action bar
+  // morphs up the moment the first one is picked.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+
+  const toggleSelectMode = () => {
+    setSelectMode((prev) => !prev);
+    setSelectedIds(new Set());
+  }
+
+  const toggleSelectNote = useCallback((noteId) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(noteId)) next.delete(noteId);
+      else next.add(noteId);
+      return next;
+    });
+  }, []);
+
+  const endSelection = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }
+
+  // Every bulk action reads the current selection off one shared `notes`
+  // snapshot and writes the whole array back in a single setNotes call —
+  // calling the single-note updaters once per id would each start from the
+  // same stale snapshot and clobber one another.
+  const bulkStar = () => {
+    const allFavorited = notes.every((note) => !selectedIds.has(note.id) || note.favorite);
+    setNotes((prev) => prev.map((note) =>
+      selectedIds.has(note.id) ? { ...note, favorite: !allFavorited } : note
+    ));
+  }
+
+  const bulkRecolor = () => {
+    const palette = Object.keys(NOTE_COLORS);
+    setNotes((prev) => prev.map((note) => {
+      if (!selectedIds.has(note.id)) return note;
+      const nextIndex = (palette.indexOf(note.color) + 1) % palette.length;
+      return { ...note, color: palette[nextIndex] };
+    }));
+  }
+
+  const bulkExport = () => {
+    const selected = notes.filter((note) => selectedIds.has(note.id));
+    if (selected.length === 0) return;
+
+    const blob = new Blob([JSON.stringify(selected, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `docket-selection-${ new Date().toISOString().slice(0, 10) }.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  const bulkDelete = () => {
+    const toDelete = notes.filter((note) => selectedIds.has(note.id));
+    if (toDelete.length === 0) return;
+
+    setDeletedNotes((prev) => [
+      ...prev.filter((entry) => !selectedIds.has(entry.note.id)),
+      ...toDelete.map((note) => ({ note, index: notes.findIndex((n) => n.id === note.id) })),
+    ].slice(-4));
+    setNotes((prev) => prev.filter((note) => !selectedIds.has(note.id)));
+
+    if (editingNoteId && selectedIds.has(editingNoteId)) setEditingNoteId(null);
+
+    setSelectedIds(new Set());
+    setSelectMode(false);
+  }
+
   const toggleSortByFavorite = () => {
     setNotesSortByFavorite(!notesSortByFavorite);
   }
@@ -165,7 +272,16 @@ const Home = () => {
     setNotesSortText("");
     setNotesSortByFavorite(false);
     setNotesSortColor(null);
+    setNotesSortTag(null);
   }, []);
+
+  // Every tag in use across the desk, for the tag filter strip — sorted so
+  // the strip doesn't reshuffle itself as notes come and go.
+  const allTags = useMemo(() => {
+    const set = new Set();
+    notes.forEach((note) => (note.tags || []).forEach((tag) => set.add(tag)));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [notes]);
 
   // How the desk lays its papers out: freshest first, grouped by ink color,
   // or with the starred ones brought to the front. Switching modes lets the
@@ -206,6 +322,10 @@ const Home = () => {
       filtered = filtered.filter((note) => note.color === notesSortColor);
     }
 
+    if (notesSortTag) {
+      filtered = filtered.filter((note) => (note.tags || []).includes(notesSortTag));
+    }
+
     if (sortMode === "color") {
       const order = Object.keys(NOTE_COLORS);
       filtered = [...filtered].sort((a, b) => order.indexOf(a.color) - order.indexOf(b.color));
@@ -214,7 +334,7 @@ const Home = () => {
     }
 
     return filtered;
-  }, [notes, notesSortText, notesSortByFavorite, notesSortColor, sortMode]);
+  }, [notes, notesSortText, notesSortByFavorite, notesSortColor, notesSortTag, sortMode]);
 
   // The dot a fresh note should morph out of: the ink pot that was tapped,
   // or the nav activator for keyboard-born notes. Cleared once the morph
@@ -235,6 +355,7 @@ const Home = () => {
       color,
       favorite: false,
       lock: false,
+      tags: [],
     });
 
     setNotes(newNotes);
@@ -368,6 +489,13 @@ const Home = () => {
     setNotes(newNotes);
   }
 
+  const updateTags = (tags, id) => {
+    const newNotes = notes.map((note) =>
+      note.id === id ? { ...note, tags } : note
+    );
+    setNotes(newNotes);
+  }
+
   // Save the whole desk as a JSON backup the visitor can keep or move.
   const exportNotes = () => {
     const blob = new Blob([JSON.stringify(notes, null, 2)], { type: "application/json" });
@@ -410,6 +538,7 @@ const Home = () => {
               color: typeof note.color === "string" && note.color in NOTE_COLORS ? note.color : "yellow",
               favorite: !!note.favorite,
               lock: !!note.lock,
+              tags: Array.isArray(note.tags) ? note.tags.filter((tag) => typeof tag === "string") : [],
             }));
 
           return [...prev, ...cleaned];
@@ -464,6 +593,32 @@ const Home = () => {
     return counts;
   }, [notes]);
 
+  // The desk insights panel's numbers: how many notes were poured each day,
+  // how many are starred, and the average length of what's written. Notes
+  // only carry a calendar day (not a time), and sessionStorage means the
+  // whole history usually lives within one sitting — so "by day" is a
+  // handful of discrete buckets, not a long time series.
+  const insights = useMemo(() => {
+    const byDay = new Map();
+    notes.forEach((note) => {
+      const key = note.time || "Unknown";
+      byDay.set(key, (byDay.get(key) || 0) + 1);
+    });
+
+    const days = Array.from(byDay.entries())
+      .map(([label, count]) => ({ label, count, when: new Date(label).getTime() }))
+      .sort((a, b) => {
+        if (Number.isNaN(a.when) || Number.isNaN(b.when)) return 0;
+        return a.when - b.when;
+      });
+
+    const favoriteCount = notes.filter((note) => note.favorite).length;
+    const totalChars = notes.reduce((sum, note) => sum + (note.text?.length || 0), 0);
+    const avgChars = notes.length ? Math.round(totalChars / notes.length) : 0;
+
+    return { days, favoriteCount, avgChars };
+  }, [notes]);
+
   // Everything the command palette can cast, in its shelf order.
   const paletteActions = [
     {
@@ -491,6 +646,19 @@ const Home = () => {
       hint: "/",
       icon: <FaMagnifyingGlass />,
       perform: () => document.querySelector(".search input")?.focus(),
+    },
+    {
+      key: "shortcuts",
+      label: "Show keyboard shortcuts",
+      hint: "?",
+      icon: <FaQuestion />,
+      perform: () => window.dispatchEvent(new CustomEvent(SHORTCUTS_EVENT)),
+    },
+    {
+      key: "insights",
+      label: "Show desk insights",
+      icon: <FaChartLine />,
+      perform: () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)),
     },
   ];
 
@@ -530,7 +698,15 @@ const Home = () => {
         <NoteList
           notes={ filteredNotes }
           hasNotes={ notes.length > 0 }
+          deskCleared={ deskCleared }
           clearFilters={ clearFilters }
+          allTags={ allTags }
+          sortTag={ notesSortTag }
+          setSortTag={ setNotesSortTag }
+          selectMode={ selectMode }
+          toggleSelectMode={ toggleSelectMode }
+          selectedIds={ selectedIds }
+          toggleSelectNote={ toggleSelectNote }
           spawn={ spawn }
           clearSpawn={ clearSpawn }
           sortMode={ sortMode }
@@ -560,11 +736,31 @@ const Home = () => {
               updateLock={ updateLock }
               setNoteColor={ setNoteColor }
               updateQuote={ updateQuote }
+              updateTags={ updateTags }
             />
           )
         }
       </AnimatePresence>
       <CommandPalette actions={ paletteActions } />
+      <ShortcutsSheet />
+      <TourGuide />
+      <InsightsPanel
+        totalCount={ notes.length }
+        colorCounts={ colorCounts }
+        days={ insights.days }
+        favoriteCount={ insights.favoriteCount }
+        avgChars={ insights.avgChars }
+        sortColor={ notesSortColor }
+        setSortColor={ setNotesSortColor }
+      />
+      <BulkActionBar
+        count={ selectedIds.size }
+        onStar={ bulkStar }
+        onRecolor={ bulkRecolor }
+        onExport={ bulkExport }
+        onDelete={ bulkDelete }
+        onDone={ endSelection }
+      />
       <ThemeWipe wipe={ wipe } />
       <InkCelebration celebration={ celebration } />
       <div className="undo-toast-layer">

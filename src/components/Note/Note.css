@@ -22,6 +22,47 @@
     0 18px 40px -12px rgba(25, 25, 25, 0.3);
 }
 
+/* A picked note in select mode wears a solid ink ring instead of the
+   editing state's translucent one, so the two moments never read the same. */
+.note.selected {
+  box-shadow:
+    0 0 0 3px var(--black-color),
+    0 1px 1px rgba(25, 25, 25, 0.04),
+    0 18px 40px -12px rgba(25, 25, 25, 0.3);
+}
+
+/* The select-mode checkmark, opposite the star. Unchecked it is a bare
+   ring; checked it fills with ink and pops in a check with its own
+   overshoot, on top of the badge's own bloom. */
+.note .select-badge {
+  position: absolute;
+  left: 24px;
+  top: 24px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--black-more-transclucent-color);
+  background: var(--white-transclucent-color);
+  transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.note .select-badge.checked {
+  background: var(--black-color);
+  box-shadow: inset 0 0 0 2px var(--black-color);
+}
+
+.note .select-badge .select-badge-icon {
+  font-size: 11px;
+  color: var(--white-color);
+}
+
 /* Sits behind the paper's own content and glows outward in the note's own
    ink while the caret is live inside it — see .note.editing above for the
    flat ring this complements. */

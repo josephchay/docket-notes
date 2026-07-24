@@ -1,0 +1,85 @@
+.tour-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 960;
+}
+
+/* The mask (WebkitMaskImage/maskImage) is set inline from the live
+   useMotionTemplate string — a soft-edged hole cut wherever the current
+   step's springs currently sit. */
+.tour-dim {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(20, 18, 15, 0.6);
+}
+
+:root[data-theme="dark"] .tour-dim {
+  background-color: rgba(0, 0, 0, 0.72);
+}
+
+/* border-radius is animated by framer during the step-to-step morph, so it
+   is deliberately not set here. */
+.tour-bubble {
+  position: fixed;
+  padding: 18px 20px;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 26px 60px -20px rgba(25, 25, 25, 0.5);
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+}
+
+.tour-bubble h4 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.tour-bubble p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--page-ink-color);
+  opacity: .75;
+  transition: color 0.4s ease-in-out;
+}
+
+.tour-bubble-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.tour-skip {
+  padding: 6px 4px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--page-ink-color);
+  opacity: .5;
+}
+
+.tour-next {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.tour-next .tour-next-icon {
+  font-size: 11px;
+}

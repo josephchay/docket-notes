@@ -1,0 +1,80 @@
+.bulk-bar-layer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 34px;
+  z-index: 700;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* border-radius is animated by framer during the dot-to-bar morph, so it is
+   deliberately not set here. */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px 10px 20px;
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
+  box-shadow: 0 18px 44px -12px rgba(25, 25, 25, 0.5);
+  pointer-events: auto;
+  will-change: transform;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.bulk-bar .bulk-bar-count {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.bulk-bar .bulk-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bulk-bar .bulk-bar-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 11px;
+  background-color: rgba(255, 254, 255, 0.16);
+  color: var(--page-bg-color);
+  font-size: 13px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+/* The ink flips between light and dark theme, so the translucent chip
+   backing the icons has to flip its own tint to stay visible on either. */
+:root[data-theme="dark"] .bulk-bar .bulk-bar-actions button {
+  background-color: rgba(0, 0, 0, 0.18);
+}
+
+.bulk-bar .bulk-bar-actions .bulk-bar-danger {
+  background-color: var(--red-color);
+  color: var(--black-color);
+}
+
+.bulk-bar .bulk-bar-done {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 11px;
+  background-color: var(--page-bg-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
