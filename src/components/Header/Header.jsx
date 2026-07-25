@@ -147,7 +147,10 @@ const Header = ({
           translateY: focusMode ? -90 : 0,
           opacity: focusMode ? 0 : 1,
         }}
-        transition={{ type: "spring", stiffness: 260, damping: 24 }}
+        /* Same fixed duration + bezier as the nav rail's slide and .home's
+           grid-track collapse (Home.css) — all three finish on the same
+           beat instead of drifting apart as three separately-timed springs. */
+        transition={{ duration: .5, ease: [0.34, 1.56, 0.64, 1] }}
       >
       <div className="search">
         <div className="icon">

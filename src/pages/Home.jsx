@@ -884,6 +884,7 @@ const Home = () => {
           notes={ filteredNotes }
           hasNotes={ notes.length > 0 }
           deskCleared={ deskCleared }
+          focusMode={ focusMode }
           addNote={ addNote }
           clearFilters={ clearFilters }
           allTags={ allTags }

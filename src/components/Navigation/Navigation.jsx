@@ -208,7 +208,11 @@ const Navigation = ({
     <motion.div
       className="nav"
       animate={{ x: focusMode ? -170 : 0 }}
-      transition={{ type: "spring", stiffness: 210, damping: 24 }}
+      // A fixed duration + the exact bezier .home's grid-track collapse uses
+      // (Home.css), rather than an open-ended spring — so the rail's slide
+      // and the notes grid reclaiming that space finish in the same beat
+      // instead of two similar-but-not-quite-matched motions.
+      transition={{ duration: .5, ease: [0.34, 1.56, 0.64, 1] }}
     >
       <motion.div
         initial={{

@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import anime from "animejs";
@@ -109,6 +109,7 @@ const NOTES_HEADING = "Notes".split("");
 const NoteList = ({
   notes,
   hasNotes,
+  focusMode,
   clearFilters,
   deskCleared,
   addNote,
@@ -138,6 +139,33 @@ const NoteList = ({
 
   const [numPerRow, setNumPerRow] = useState(0);
   const [renderFirstRow, setRenderFirstRow] = useState(false);  // To delay the rendering of the notes list group.
+
+  // The whole notes panel throws a fluid, high-gloss burst — a scale
+  // overshoot, a brief blur pulse, a shallow 3D tilt that rights itself —
+  // every time focus mode toggles, timed with .home's grid-track collapse
+  // (Home.css) and the nav/header slide (Navigation.jsx, Header.jsx) so the
+  // panel visibly stretches into the reclaimed space rather than just
+  // snapping to its new size once the layout catches up. Imperative
+  // AnimatorControls (the same technique NoteEditor.jsx uses for its own
+  // resize wobble) rather than a declarative animate target, because the
+  // burst has to replay every toggle even when it returns to the exact
+  // same resting values each time.
+  const panelMorph = useAnimationControls();
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+
+    panelMorph.start({
+      scale: [1, focusMode ? 1.028 : .985, 1],
+      filter: ["blur(0px)", "blur(7px)", "blur(0px)"],
+      rotateX: [0, focusMode ? -2.2 : 1.6, 0],
+      transition: { duration: .6, times: [0, .45, 1], ease: "easeInOut" },
+    });
+  }, [focusMode, panelMorph]);
 
   // A one-off flag, true for a beat right after the desk goes from holding
   // notes to holding none — drives the bigger blob bloom and the
@@ -226,7 +254,11 @@ const NoteList = ({
   }, []);
 
   return (
-    <main className="main">
+    <motion.main
+      className="main"
+      animate={ panelMorph }
+      style={{ transformPerspective: 1400 }}
+    >
       <div className="header">
         <h2 aria-label="Notes">
           {
@@ -633,7 +665,7 @@ const NoteList = ({
           document.body
         )
       }
-    </main>
+    </motion.main>
   )
 }
 
