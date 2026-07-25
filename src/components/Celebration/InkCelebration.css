@@ -6,19 +6,6 @@
   pointer-events: none;
 }
 
-.ink-celebration .ink-celebration-drops {
-  position: absolute;
-  inset: 0;
-}
-
-.ink-celebration .ink-drop {
-  position: absolute;
-  top: 0;
-  border-radius: 50%;
-  opacity: 0;
-  will-change: transform, opacity;
-}
-
 .ink-celebration .ink-celebration-pill-slot {
   position: absolute;
   top: 90px;
