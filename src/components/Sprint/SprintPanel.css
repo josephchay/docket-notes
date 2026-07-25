@@ -1,0 +1,277 @@
+.sprint-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+
+.sprint-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(25, 25, 25, 0.28);
+}
+
+:root[data-theme="dark"] .sprint-backdrop {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* border-radius is animated by framer during the drop-to-sheet morph, so it
+   is deliberately not set here. */
+.sprint-panel {
+  position: relative;
+  width: min(340px, 92vw);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: 24px;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
+  will-change: transform;
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+}
+
+.sprint-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--page-line-color);
+  transition: border-color 0.4s ease-in-out;
+}
+
+.sprint-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.sprint-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.sprint-ring-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 176px;
+  height: 176px;
+  margin: 26px 0 6px;
+}
+
+/* The gooey wobble sitting behind the ring — GSAP owns its border-radius
+   directly (see SprintPanel.jsx), so no keyframes live here. */
+.sprint-blob {
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  opacity: 0.16;
+  filter: blur(2px);
+}
+
+.sprint-blob.sprint {
+  background-color: var(--yellow-color);
+}
+
+.sprint-blob.break {
+  background-color: var(--blue-color);
+}
+
+.sprint-ring {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform: rotate(0deg);
+}
+
+.sprint-ring-track {
+  fill: none;
+  stroke: var(--page-line-color);
+  stroke-width: 10;
+  transition: stroke 0.4s ease-in-out;
+}
+
+.sprint-ring-fill {
+  fill: none;
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+
+.sprint-ring-fill.sprint {
+  stroke: var(--yellow-color);
+}
+
+.sprint-ring-fill.break {
+  stroke: var(--blue-color);
+}
+
+.sprint-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.sprint-phase-icon {
+  display: flex;
+  font-size: 15px;
+  color: var(--page-ink-color);
+  opacity: 0.55;
+  margin-bottom: 2px;
+  transition: color 0.4s ease-in-out;
+}
+
+.sprint-clock {
+  font-size: 34px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.sprint-phase-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--black-transclucent-color);
+}
+
+.sprint-lengths {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 4px;
+  border-radius: 999px;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.sprint-length {
+  position: relative;
+  padding: 7px 16px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  cursor: pointer;
+  transition: color 0.3s ease-in-out;
+}
+
+.sprint-length-thumb {
+  position: absolute;
+  inset: 0;
+  background-color: var(--page-bg-color);
+  box-shadow: 0 6px 16px -6px rgba(25, 25, 25, 0.35);
+  z-index: -1;
+}
+
+.sprint-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.sprint-primary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.sprint-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+/* The quiet capsule left ticking on the desk while the full panel is
+   folded away — bottom-center, stacked just above the quick dock, clear of
+   the back-to-top drop (bottom right) and the sync heartbeat (bottom left). */
+.sprint-capsule {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px 9px 14px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background: var(--page-ink-color);
+  color: var(--page-bg-color);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 14px 30px -10px rgba(25, 25, 25, 0.4);
+  cursor: pointer;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.sprint-capsule-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--yellow-color);
+  animation: sprint-dot-pulse 1.6s ease-in-out infinite;
+}
+
+.sprint-capsule.break .sprint-capsule-dot {
+  background-color: var(--blue-color);
+}
+
+@keyframes sprint-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .45; transform: scale(.75); }
+}

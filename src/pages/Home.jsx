@@ -16,6 +16,7 @@ import {
   FaClockRotateLeft,
   FaArrowRotateRight,
   FaCompress,
+  FaHourglassHalf,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -39,6 +40,8 @@ import InsightsPanel, { INSIGHTS_EVENT } from "../components/Insights/InsightsPa
 import ActionStamp from "../components/Stamp/ActionStamp";
 import ScrollProgress from "../components/Scroll/ScrollProgress";
 import DropZoneOverlay from "../components/DropZone/DropZoneOverlay";
+import SprintPanel, { SPRINT_EVENT } from "../components/Sprint/SprintPanel";
+import QuickDock from "../components/Dock/QuickDock";
 
 import quotes from "../assets/data/quotes.json";
 
@@ -869,6 +872,13 @@ const Home = () => {
       icon: <FaChartLine />,
       perform: () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)),
     },
+    {
+      key: "sprint",
+      label: "Start a focus sprint",
+      hint: "S",
+      icon: <FaHourglassHalf />,
+      perform: () => window.dispatchEvent(new CustomEvent(SPRINT_EVENT)),
+    },
   ];
 
   return (
@@ -960,6 +970,21 @@ const Home = () => {
       <CommandPalette actions={ paletteActions } />
       <ShortcutsSheet />
       <TourGuide />
+      <SprintPanel />
+      <AnimatePresence>
+        {
+          !focusMode && (
+            <QuickDock
+              addNote={ addNote }
+              shuffleNotes={ shuffleNotes }
+              focusMode={ focusMode }
+              toggleFocusMode={ toggleFocusMode }
+              theme={ theme }
+              toggleTheme={ toggleTheme }
+            />
+          )
+        }
+      </AnimatePresence>
       <InsightsPanel
         totalCount={ notes.length }
         colorCounts={ colorCounts }

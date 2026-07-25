@@ -11,6 +11,7 @@ export const SHORTCUTS_EVENT = "docket:shortcuts";
 const SHORTCUTS = [
   { keys: ["N"], label: "Pour a new note" },
   { keys: ["F"], label: "Toggle focus mode" },
+  { keys: ["S"], label: "Toggle the focus sprint" },
   { keys: ["/"], label: "Jump to search" },
   { keys: ["Ctrl", "K"], label: "Open the command palette" },
   { keys: ["Ctrl", "Z"], label: "Undo the last edit" },

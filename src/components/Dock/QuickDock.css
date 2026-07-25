@@ -1,0 +1,58 @@
+/* Bottom-center, clear of the back-to-top drop and focus-exit (top/bottom
+   right) and the sync heartbeat (bottom left). The sprint capsule stacks
+   directly above it when a sprint is ticking with its panel folded away. */
+.quick-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: 610;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 26px;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 20px 46px -18px rgba(25, 25, 25, 0.4);
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+}
+
+.quick-dock-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 14px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.quick-dock-highlight {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  background-color: var(--page-surface-color);
+  z-index: -1;
+}
+
+/* GSAP owns scale/y on this wrapper via quickTo — kept off the button
+   itself so it never fights framer's own whileTap transform. */
+.quick-dock-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: 50% 100%;
+}
+
+.quick-dock-icon {
+  display: flex;
+  font-size: 16px;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
