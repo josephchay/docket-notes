@@ -2,7 +2,7 @@ import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import anime from "animejs";
-import { FaShuffle, FaSquareCheck } from "react-icons/fa6";
+import { FaShuffle, FaSquareCheck, FaCheckDouble } from "react-icons/fa6";
 
 import Note from "../Note/Note";
 import QuoteCard from "../Quote/QuoteCard";
@@ -120,6 +120,7 @@ const NoteList = ({
   toggleSelectMode,
   selectedIds,
   toggleSelectNote,
+  selectAllVisible,
   spawn,
   clearSpawn,
   sortMode,
@@ -136,6 +137,8 @@ const NoteList = ({
   openEditor,
 }) => {
   const ref = useRef(null);
+
+  const allSelected = notes.length > 0 && notes.every((note) => selectedIds?.has(note.id));
 
   const [numPerRow, setNumPerRow] = useState(0);
   const [renderFirstRow, setRenderFirstRow] = useState(false);  // To delay the rendering of the notes list group.
@@ -364,6 +367,32 @@ const NoteList = ({
           >
             <FaSquareCheck />
           </motion.button>
+          {/* Only appears while actively selecting — sets off a staggered
+              wave of checkmarks across the grid rather than an instant flat
+              toggle, reusing each note's own select-badge pop-in. */}
+          <AnimatePresence>
+            {
+              selectMode && (
+                <motion.button
+                  key="selectAll"
+                  type="button"
+                  aria-label={ allSelected ? "Deselect every note" : "Select every note" }
+                  title={ allSelected ? "Deselect all" : "Select all" }
+                  className="select-all"
+                  initial={{ opacity: 0, scale: 0 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0 }}
+                  whileHover={{ scale: 1.06 }}
+                  whileTap={{ scale: .92 }}
+                  transition={ springy }
+                  onClick={ () => selectAllVisible?.() }
+                >
+                  <FaCheckDouble className="select-all-icon" />
+                  { allSelected ? "Deselect all" : "Select all" }
+                </motion.button>
+              )
+            }
+          </AnimatePresence>
         </motion.div>
       </div>
       {/* Only appears once at least one note has been tagged — the strip

@@ -257,32 +257,66 @@ const Note = ({
     if (!spawning || !cardRef.current) return;
 
     const rect = cardRef.current.getBoundingClientRect();
+    const dx = spawnOrigin.x - (rect.left + rect.width / 2);
+    const dy = spawnOrigin.y - (rect.top + rect.height / 2);
 
-    // Start as the 32px pot itself, centered where it was tapped.
-    spawnControls.set({
-      x: spawnOrigin.x - (rect.left + rect.width / 2),
-      y: spawnOrigin.y - (rect.top + rect.height / 2),
-      scale: 32 / rect.width,
-      borderRadius: "50%",
-      opacity: 1,
-    });
+    // Full roundness in px (not "50%") so the corner morph can actually
+    // tween as it squares off — mixed units would snap instead of morphing.
+    const round = Math.min(rect.width, rect.height) / 2;
 
-    spawnControls.start({
-      x: 0,
-      y: 0,
-      scale: 1,
-      borderRadius: "24px",
-      opacity: 1,
-      transition: {
-        type: "spring",
-        stiffness: 230,
-        damping: 18,
-        mass: .9,
-      },
-    }).then(() => {
+    const morph = async () => {
+      // A dot of ink, sitting right in the pot that was tapped.
+      spawnControls.set({
+        x: dx,
+        y: dy,
+        scale: 32 / rect.width,
+        scaleX: 1,
+        scaleY: 1,
+        borderRadius: `${ round }px`,
+        opacity: 1,
+      });
+
+      // 1 — The squeeze: a beat of anticipation as the drop pulls free of
+      //     the pot, stretching thin before it lets go — still a perfect
+      //     circle, just an elongated one.
+      await spawnControls.start({
+        scaleY: 1.5,
+        scaleX: .78,
+        transition: { duration: .16, ease: "easeOut" },
+      });
+
+      // 2 — The bloom: travels to its slot, grows, un-stretches, and
+      //     squares off from circle to paper — all in one loose, starchy
+      //     spring, so it reads as one continuous fluid motion rather than
+      //     separate steps.
+      await spawnControls.start({
+        x: 0,
+        y: 0,
+        scale: 1,
+        scaleX: 1,
+        scaleY: 1,
+        borderRadius: "24px",
+        transition: {
+          type: "spring",
+          stiffness: 170,
+          damping: 15,
+          mass: .9,
+        },
+      });
+
+      // 3 — Landing jelly: one last squash-and-stretch as the paper's own
+      //     weight settles, the same wobble the focus editor plays.
+      await spawnControls.start({
+        scaleX: [1, 1.06, .97, 1.01, 1],
+        scaleY: [1, .94, 1.05, .99, 1],
+        transition: { duration: .5, times: [0, .3, .55, .8, 1], ease: "easeInOut" },
+      });
+
       setSpawning(false);
       clearSpawn?.();
-    });
+    };
+
+    morph();
     // Runs once, for the mount that poured the note.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

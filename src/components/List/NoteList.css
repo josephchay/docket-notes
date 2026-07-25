@@ -109,6 +109,30 @@ main .header .desk-tools .select-toggle.active {
   color: var(--page-bg-color);
 }
 
+/* Only rendered while actively selecting — sets off the staggered wave of
+   checkmarks (see Home.jsx's selectAllVisible). */
+main .header .desk-tools .select-all {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px;
+  border: none;
+  outline: none;
+  border-radius: 12px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+main .header .desk-tools .select-all .select-all-icon {
+  font-size: 12px;
+}
+
 /* The tag filter strip — only rendered once a note has been tagged.
    Horizontally scrollable rather than wrapping, so a busy tag list never
    pushes the note grid down. */

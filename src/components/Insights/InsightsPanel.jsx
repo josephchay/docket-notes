@@ -87,7 +87,7 @@ const InsightsPanel = ({
                 </motion.button>
               </div>
 
-              <div className="insights-body custom-scroll">
+              <div className="insights-body">
                 <section className="insights-section">
                   <h4>Notes by day</h4>
                   {
@@ -100,6 +100,9 @@ const InsightsPanel = ({
                               className="insights-bar-column"
                               title={ `${ day.count } ${ day.count === 1 ? "note" : "notes" } on ${ day.label }` }
                             >
+                              <span className="insights-tooltip">
+                                { day.count } { day.count === 1 ? "note" : "notes" } · { day.label }
+                              </span>
                               <motion.span
                                 className="insights-bar-count"
                                 initial={{ opacity: 0, scale: .5 }}
@@ -151,6 +154,7 @@ const InsightsPanel = ({
                             className={ `insights-bar-column insights-bar-button ${ sortColor === name ? "active" : "" }` }
                             onClick={ () => setSortColor?.(sortColor === name ? null : name) }
                           >
+                            <span className="insights-tooltip">{ label }</span>
                             <motion.span
                               key={ `${ name }-${ count }` }
                               className="insights-bar-count"

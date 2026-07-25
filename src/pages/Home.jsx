@@ -223,6 +223,34 @@ const Home = () => {
     setSelectedIds(new Set());
   }
 
+  // Selects (or deselects) every currently-visible note — staggered rather
+  // than all at once, so the checkmarks bloom across the grid as a wave
+  // rather than popping in a single flat instant. Reuses each note's own
+  // existing select-badge pop-in animation; nothing in Note.jsx needs to
+  // know this was a bulk action rather than an individual tap.
+  const selectAllVisible = () => {
+    const allSelected = filteredNotes.length > 0 && filteredNotes.every((note) => selectedIds.has(note.id));
+
+    if (allSelected) {
+      filteredNotes.forEach((note, index) => {
+        setTimeout(() => {
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(note.id);
+            return next;
+          });
+        }, index * 18);
+      });
+      return;
+    }
+
+    filteredNotes.forEach((note, index) => {
+      setTimeout(() => {
+        setSelectedIds((prev) => new Set(prev).add(note.id));
+      }, index * 22);
+    });
+  }
+
   // Every bulk action reads the current selection off one shared `notes`
   // snapshot and writes the whole array back in a single setNotes call —
   // calling the single-note updaters once per id would each start from the
@@ -894,6 +922,7 @@ const Home = () => {
           toggleSelectMode={ toggleSelectMode }
           selectedIds={ selectedIds }
           toggleSelectNote={ toggleSelectNote }
+          selectAllVisible={ selectAllVisible }
           spawn={ spawn }
           clearSpawn={ clearSpawn }
           sortMode={ sortMode }
