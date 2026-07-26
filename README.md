@@ -35,6 +35,9 @@ Session Storage is being used temporarily.
 1. Some or all notes during delete animation the note became shrinked-square like the note shape itself since <a href="https://github.com/josephchay/docket-notes/tree/71dbccb3d8b35017268a152894c92bc2065bcac1" target="_blank">71dbccb3d8b35017268a152894c92bc2065bcac1</a>, instead of circle instead like in commit: <a href="https://github.com/josephchay/docket-notes/tree/6d44f9e460ce52f49906022e3bc3965baf9c896c" target="_blank">6d44f9e460ce52f49906022e3bc3965baf9c896c</a>
 
 # Acknowledgements
-- Design inspired from <a href="https://dribbble.com/shots/14037848-Docket-note-Side-menu" target="_blank">Docket Note</a>
-- Side menu animation inspiration and code from <a href="https://www.youtube.com/watch?v=lSzfYAQYKU0" target="_blank">Micro Interactions using Anime.js | HTML, CSS & Javascript</a>
-- Code helped with <a href="https://claude.ai/" target="_blank">Claude AI</a> (Paid - invoice can be shared upon request), after commit <a href="https://github.com/josephchay/docket-notes/tree/5fcc14fe8b9dcf6bce6d23789cacaa6043f80d08" target="_blank">5fcc14fe8b9dcf6bce6d23789cacaa6043f80d08</a>
+1. Design inspired from <a href="https://dribbble.com/shots/14037848-Docket-note-Side-menu" target="_blank">Docket Note</a>
+2. Side menu animation inspiration and code from <a href="https://www.youtube.com/watch?v=lSzfYAQYKU0" target="_blank">Micro Interactions using Anime.js | HTML, CSS & Javascript</a>
+3. Code helped with <a href="https://claude.ai/" target="_blank">Claude AI</a> (Paid - invoice can be shared upon request), after commit <a href="https://github.com/josephchay/docket-notes/tree/5fcc14fe8b9dcf6bce6d23789cacaa6043f80d08" target="_blank">5fcc14fe8b9dcf6bce6d23789cacaa6043f80d08</a>
+    - Subscriptions Proofs in <a href="src/assets/miscellaneous" target="_blank">src/assets/miscellaneous</a>
+        ![Claude AI Subscription (with $100 Free Usage Credits - Used)](src/assets/miscellaneous/claude-ai-subscription-along-with-free-usage-credits-of-100-free-usage-credits-used.png)
+        ![Claude AI Subscription (with $100 Free Usage Credits - Used) for Fable 5](src/assets/miscellaneous/claude-ai-subscription-free-usage-credits-for-fable5.png)
