@@ -8,10 +8,23 @@ main .header {
   gap: 16px;
 }
 
+/* The heading's neumorphic press lives on the letters themselves — an
+   embossing text-shadow, no plate behind — matching the nav wordmark.
+   It inherits down to the animated per-letter spans. */
 main .header h2 {
   font-size: 54px;
   margin: 70px 0 0;
   line-height: 1;
+  text-shadow:
+    -2px -2px 5px rgba(255, 255, 255, 0.9),
+    4px 4px 8px rgba(25, 25, 25, 0.24);
+  transition: text-shadow 0.4s ease-in-out;
+}
+
+:root[data-theme="dark"] main .header h2 {
+  text-shadow:
+    -2px -2px 5px rgba(255, 255, 255, 0.08),
+    4px 4px 8px rgba(0, 0, 0, 0.65);
 }
 
 main .header h2 span {

@@ -1,0 +1,79 @@
+/* While the replay is rolling, everything that isn't in the film gets out
+   of frame: the dock, the floating drops, the scroll thread, any lingering
+   undo toasts. They fade rather than unmount, so the desk they belong to is
+   exactly as they left it when the curtain comes back up. */
+.replay-active .quick-dock,
+.replay-active .back-to-top,
+.replay-active .scroll-progress,
+.replay-active .undo-toast-layer {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .35s ease-in-out;
+}
+
+/* The camera owns .home for the duration — its CSS transform transition
+   (the recede-behind-the-editor spring) would smear every gsap frame of
+   the dolly if it stayed on. */
+.replay-active .home {
+  transition: none !important;
+  will-change: transform;
+}
+
+/* The stage sits over everything and swallows stray input while the ghost
+   performs; Escape is the one interruption the show answers. */
+.replay-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 980;
+}
+
+/* The ghost cursor's body: three drops chasing one target on staggered
+   clocks, melted into one comet by the same gooey filter the rail's ink
+   pots share. */
+.replay-goo {
+  position: absolute;
+  inset: 0;
+  filter: url(#gooey-effect);
+  pointer-events: none;
+}
+
+.replay-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  background-color: var(--page-ink-color);
+  opacity: 0;
+  will-change: transform;
+  transition: background-color .4s ease-in-out;
+}
+
+.replay-dot.lead {
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+}
+
+.replay-dot.mid {
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+}
+
+.replay-dot.tail {
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+}
+
+/* The ring a press leaves behind. */
+.replay-ripple {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  border: 2px solid var(--page-ink-color);
+  border-radius: 50%;
+  pointer-events: none;
+  transition: border-color .4s ease-in-out;
+}

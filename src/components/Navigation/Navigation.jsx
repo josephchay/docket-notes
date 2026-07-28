@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { interpret } from "xstate";
 import anime from "animejs";
 import { FaFileArrowDown, FaFileArrowUp } from "react-icons/fa6";
@@ -10,7 +10,7 @@ import plusIcon from "../../assets/icons/plus.svg";
 
 import ColorSelector from "./ColorSelector";
 
-import "./Nagivation.css";
+import "./Navigation.css";
 
 const colorSelectors = [
   { order: "first", color: "yellow", isSubsequent: false, dataFrom: "0", dataTo: "80" },
@@ -26,35 +26,12 @@ const Navigation = ({
   addNote,
   exportNotes,
   importNotes,
-  hasNotes,
   focusMode,
 }) => {
   const navActivator = useRef(null);
   const fileInput = useRef(null);
   const logoRef = useRef(null);
   const [toggleService, setToggleService] = useState(null);
-
-  // An empty desk gets a slow breathing halo around the + activator to draw
-  // the eye — measured in JS rather than centered with pure CSS, since the
-  // activator sits inside the gooey-filtered group and a halo living in
-  // there would melt into the ink pots instead of glowing around them.
-  const [inviteAt, setInviteAt] = useState(null);
-
-  useEffect(() => {
-    if (hasNotes) {
-      setInviteAt(null);
-      return;
-    }
-
-    const measure = () => {
-      const rect = navActivator.current?.getBoundingClientRect();
-      if (rect) setInviteAt({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-    };
-
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [hasNotes]);
 
   // The wordmark's letters spring up one by one with an elastic overshoot,
   // and do a little wave again whenever the pointer greets them.
@@ -317,26 +294,6 @@ const Navigation = ({
           }
         </motion.div>
       </div>
-      {/* Deliberately outside .activator-container, whose gooey filter
-          would otherwise melt this into the ink pots instead of glowing
-          softly around the button. */}
-      <AnimatePresence>
-        {
-          inviteAt && (
-            <motion.div
-              className="nav-invite"
-              style={{ left: inviteAt.x, top: inviteAt.y }}
-              initial={{ opacity: 0, scale: .6 }}
-              animate={{ opacity: [0, .4, .15, .4], scale: [.6, 1.3, 1, 1.3] }}
-              exit={{ opacity: 0, scale: .6, transition: { duration: .3 } }}
-              transition={{
-                opacity: { duration: 2.2, repeat: Infinity, ease: "easeInOut", times: [0, .3, .6, 1] },
-                scale: { duration: 2.2, repeat: Infinity, ease: "easeInOut", times: [0, .3, .6, 1] },
-              }}
-            />
-          )
-        }
-      </AnimatePresence>
       <motion.div
         initial={{
           opacity: 0,

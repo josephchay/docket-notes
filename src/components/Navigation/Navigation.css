@@ -53,12 +53,21 @@
   min-height: 80px;
 }
 
+/* The wordmark's neumorphic press lives on the letters themselves — an
+   embossing text-shadow, no plate behind. text-shadow inherits, so each
+   rising .logo-letter span carries its own light and shade with it. */
 .nav .logo h4 {
   font-size: 20px;
   /* Masks the letters so they rise up into view; a touch of padding gives
      the elastic overshoot room to breathe. */
   overflow: hidden;
   padding: 6px 2px;
+  text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.082);
+  transition: text-shadow 0.4s ease-in-out;
+}
+
+:root[data-theme="dark"] .nav .logo h4 {
+  text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.65);
 }
 
 .nav .logo .logo-letter {
@@ -122,25 +131,17 @@
   transition: color 0.4s ease-in-out;
 }
 
-/* A slow breathing halo behind the + activator while the desk is empty,
-   coaxing a first note out of it. Positioned in JS (see Navigation.jsx) —
-   it needs to sit outside the gooey-filtered group below, so pure CSS
-   layout math would have to fight that same filter for nothing. */
-.nav-invite {
-  position: fixed;
-  z-index: 5;
-  width: 84px;
-  height: 84px;
-  margin-left: -42px;
-  margin-top: -42px;
-  border-radius: 50%;
-  background-color: var(--page-ink-color);
-  pointer-events: none;
-  transition: background-color 0.4s ease-in-out;
+/* The activator's shadow rides the filter chain: drop-shadow runs AFTER
+   the gooey filter, so the shade is cast by the final rendered silhouette
+   itself — the button, and the ink pots as they pour, each carrying the
+   same soft fall of shade. No extra element, no circle behind anything;
+   a box-shadow inside the goo would just be blurred and clipped away. */
+.nav .activator-container {
+  filter: url(#gooey-effect) drop-shadow(4px 4px 10px rgba(25, 25, 25, 0.22));
 }
 
-.nav .activator-container {
-  filter: url(#gooey-effect);
+:root[data-theme="dark"] .nav .activator-container {
+  filter: url(#gooey-effect) drop-shadow(6px 6px 10px rgba(222, 222, 222, 0.6));
 }
 
 .nav .activator-container .activator {

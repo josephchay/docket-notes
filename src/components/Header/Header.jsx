@@ -6,6 +6,7 @@ import { NOTE_COLORS } from "../../constants/colors";
 import { COMMAND_EVENT } from "../Command/CommandPalette";
 import { INSIGHTS_EVENT } from "../Insights/InsightsPanel";
 import searchIcon from '../../assets/icons/search.svg';
+import useJellyTap from "../../hooks/useJellyTap";
 
 import './Header.css';
 
@@ -62,6 +63,16 @@ const Header = ({
   toggleFocusMode,
 }) => {
   const filtersActive = searchText !== "" || notesSortByFavorite || sortColor !== null;
+
+  // The toolbar's plain icon buttons (star, and the three bare wand icons)
+  // were the one flat corner of the desk — a uniform whileHover/whileTap
+  // scale with no squash, no stretch, while everything else on the page
+  // has some spring in it. Each gets its own jelly, played on its own inner
+  // icon span so it never fights the button's own hover/tap scale.
+  const starJelly = useJellyTap();
+  const insightsJelly = useJellyTap();
+  const commandJelly = useJellyTap();
+  const focusJelly = useJellyTap();
 
   const handleSearch = (e) => {
     setNotesSortText(e.target.value);
@@ -204,13 +215,16 @@ const Header = ({
           type="button"
           aria-label={ notesSortByFavorite ? "Show every note" : "Show only starred notes" }
           aria-pressed={ notesSortByFavorite }
-          whileHover={{ scale: 1.14 }}
+          whileHover={{ scale: 1.14, rotate: -8 }}
           whileTap={{ scale: 0.96 }}
           transition={ springy }
+          onTapStart={ starJelly.squash }
           onClick={ handleStarFilter }
           className={ `star ${ notesSortByFavorite ? "active" : "" }` }
         >
-          <FaStar className="star-icon" />
+          <motion.span animate={ starJelly.jelly } style={{ display: "inline-flex" }}>
+            <FaStar className="star-icon" />
+          </motion.span>
           <AnimatePresence>
             {
               starBurst && (
@@ -444,13 +458,16 @@ const Header = ({
         role="button"
         aria-label="Show desk insights"
         title="Desk insights"
-        whileHover={{ scale: 1.14 }}
+        whileHover={{ scale: 1.14, rotate: 10 }}
         whileTap={{ scale: .9 }}
         transition={ springy }
+        onTapStart={ insightsJelly.squash }
         onClick={ () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)) }
         className="wand"
       >
-        <FaChartLine className="wand-icon" />
+        <motion.span animate={ insightsJelly.jelly } style={{ display: "inline-flex" }}>
+          <FaChartLine className="wand-icon" />
+        </motion.span>
       </motion.div>
       <motion.div
         role="button"
@@ -459,22 +476,28 @@ const Header = ({
         whileHover={{ scale: 1.14, rotate: -10 }}
         whileTap={{ scale: .9 }}
         transition={ springy }
+        onTapStart={ commandJelly.squash }
         onClick={ () => window.dispatchEvent(new CustomEvent(COMMAND_EVENT)) }
         className="wand"
       >
-        <FaWandMagicSparkles className="wand-icon" />
+        <motion.span animate={ commandJelly.jelly } style={{ display: "inline-flex" }}>
+          <FaWandMagicSparkles className="wand-icon" />
+        </motion.span>
       </motion.div>
       <motion.div
         role="button"
         aria-label="Enter focus mode"
         title="Focus mode (F)"
-        whileHover={{ scale: 1.14 }}
+        whileHover={{ scale: 1.14, rotate: -14 }}
         whileTap={{ scale: .9 }}
         transition={ springy }
+        onTapStart={ focusJelly.squash }
         onClick={ toggleFocusMode }
         className="wand"
       >
-        <FaExpand className="wand-icon" />
+        <motion.span animate={ focusJelly.jelly } style={{ display: "inline-flex" }}>
+          <FaExpand className="wand-icon" />
+        </motion.span>
       </motion.div>
       <motion.div
         ref={ themeRef }

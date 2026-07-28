@@ -1,55 +1,182 @@
+/* The walk's whole layer is pointer-transparent — no dim, no click-jail.
+   Only the card itself takes the pointer; the desk stays fully usable
+   while the walk makes its rounds. */
 .tour-layer {
   position: fixed;
   inset: 0;
   z-index: 960;
 }
 
-/* The mask (WebkitMaskImage/maskImage) is set inline from the live
-   useMotionTemplate string — a soft-edged hole cut wherever the current
-   step's springs currently sit. */
-.tour-dim {
-  position: absolute;
-  inset: 0;
-  background-color: rgba(20, 18, 15, 0.6);
+/* While the walk is on, gsap leans the whole page in toward each stop —
+   .home's own transform transition (the recede-behind-the-editor spring)
+   would smear every frame of that zoom if it stayed live. */
+.tour-active .home {
+  transition: none !important;
+  will-change: transform;
 }
 
-:root[data-theme="dark"] .tour-dim {
-  background-color: rgba(0, 0, 0, 0.72);
-}
-
-/* border-radius is animated by framer during the step-to-step morph, so it
-   is deliberately not set here. */
-.tour-bubble {
+/* The springs, travel tilt, arrival wiggle and landing jelly all live on
+   this shell, so the card inside can keep its own dot-to-sheet bloom
+   without the two sets of transforms fighting. */
+.tour-card-shell {
   position: fixed;
-  padding: 18px 20px;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  pointer-events: auto;
+  will-change: transform;
+}
+
+/* The control under discussion does its own talking: a looping jelly
+   wobble — squash, stretch, a little shake of the head, then a beat of
+   rest before it asks again. It animates the standalone scale/rotate
+   properties (not transform), so the browser composes it on top of
+   whatever transforms the control already wears — the + activator's
+   open rotation, framer's hover scales — and removing the class leaves
+   no trace behind. */
+.tour-poke {
+  animation: tour-poke 2.6s ease-in-out infinite;
+  will-change: scale, rotate;
+}
+
+/* Typing in the control mid-walk earns it a still hand. */
+.tour-poke:focus-within {
+  animation: none;
+  scale: 1.04;
+}
+
+@keyframes tour-poke {
+  0% { scale: 1 1; rotate: 0deg; }
+  6% { scale: 1.14 0.86; rotate: -3.5deg; }
+  13% { scale: 0.92 1.1; rotate: 3deg; }
+  20% { scale: 1.07 0.95; rotate: -2deg; }
+  27% { scale: 0.97 1.03; rotate: 1.2deg; }
+  34% { scale: 1.02 0.99; rotate: -0.5deg; }
+  42%, 100% { scale: 1 1; rotate: 0deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-poke {
+    animation: none;
+    scale: 1.05;
+  }
+}
+
+/* The one paper card, same cloth as every panel on the desk. border-radius
+   is animated by framer during the dot-to-sheet bloom, so it is
+   deliberately not set here. */
+.tour-card {
+  padding: 18px 20px 16px;
   background-color: var(--page-bg-color);
   border: 1px solid var(--page-line-color);
   box-shadow: 0 26px 60px -20px rgba(25, 25, 25, 0.5);
   transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
 }
 
-.tour-bubble h4 {
-  margin: 0 0 6px;
-  font-size: 16px;
+:root[data-theme="dark"] .tour-card {
+  box-shadow: 0 26px 60px -18px rgba(0, 0, 0, 0.72);
+}
+
+.tour-card-inner.centered {
+  text-align: center;
+}
+
+.tour-card-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.tour-card-inner.centered .tour-card-topline {
+  justify-content: center;
+}
+
+.tour-card-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--page-ink-color);
+  opacity: .45;
+  transition: color 0.4s ease-in-out;
+}
+
+/* The walk's progress: one little ink pot per stop, round like the rail's. */
+.tour-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tour-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--tour-accent);
+  transform: scale(.85);
+  transition:
+    background-color .45s cubic-bezier(.3, 2.1, .45, 1),
+    box-shadow .45s cubic-bezier(.3, 2.1, .45, 1),
+    transform .45s cubic-bezier(.3, 2.1, .45, 1);
+}
+
+.tour-dot.past {
+  background-color: var(--tour-accent);
+  box-shadow: inset 0 0 0 1.5px var(--tour-accent);
+  transform: scale(.95);
+}
+
+.tour-dot.live {
+  background-color: var(--page-ink-color);
+  box-shadow: inset 0 0 0 1.5px var(--page-ink-color);
+  transform: scale(1);
+  animation: tour-dot-breathe 1.15s ease-in-out infinite;
+}
+
+@keyframes tour-dot-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+}
+
+.tour-card-title {
+  margin: 0 0 7px;
+  font-size: 17px;
   font-weight: 800;
   color: var(--page-ink-color);
   transition: color 0.4s ease-in-out;
 }
 
-.tour-bubble p {
+/* Characters start hidden and rise in on anime's elastic stagger — the
+   same entrance the nav wordmark's letters play. */
+.tour-char {
+  display: inline-block;
+  opacity: 0;
+  will-change: transform;
+}
+
+.tour-card-body {
   margin: 0;
   font-size: 13.5px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--page-ink-color);
   opacity: .75;
   transition: color 0.4s ease-in-out;
 }
 
-.tour-bubble-actions {
+.tour-card-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   margin-top: 16px;
+}
+
+.tour-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .tour-skip {
@@ -64,11 +191,25 @@
   opacity: .5;
 }
 
+.tour-back {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--page-line-color);
+  outline: none;
+  border-radius: 50%;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+}
+
 .tour-next {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 8px 16px;
+  padding: 9px 16px;
   border: none;
   outline: none;
   border-radius: 999px;
@@ -82,4 +223,30 @@
 
 .tour-next .tour-next-icon {
   font-size: 11px;
+}
+
+.tour-skip:focus-visible,
+.tour-back:focus-visible,
+.tour-next:focus-visible {
+  outline: 2px solid var(--page-ink-color);
+  outline-offset: 2px;
+}
+
+.tour-farewell-star {
+  display: block;
+  margin-top: 10px;
+  font-size: 18px;
+  color: var(--page-ink-color);
+}
+
+/* If motion is dialled down, the walk keeps its words and loses its
+   theatrics — chars render in place, dots hold still. */
+@media (prefers-reduced-motion: reduce) {
+  .tour-char {
+    opacity: 1;
+  }
+
+  .tour-dot.live {
+    animation: none;
+  }
 }

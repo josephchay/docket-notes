@@ -4,6 +4,7 @@ import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle, FaTag } from "react-icons/fa
 import { FaEye } from "react-icons/fa";
 
 import { NOTE_COLORS } from "../../constants/colors";
+import useJellyTap from "../../hooks/useJellyTap";
 
 import "./NoteEditor.css";
 
@@ -76,6 +77,17 @@ const NoteEditor = ({
   // The gluey wobble: whenever the paper opens or changes size it squashes
   // and stretches like jelly while the bouncy size spring overshoots.
   const jelly = useAnimationControls();
+
+  // The header's action row was the editor's one flat corner — plain
+  // hover/tap scale with no give in it. Each icon gets its own tap jelly
+  // now, played on its own inner span so it never fights the button's own
+  // whileHover/whileTap, or (for lock) the coin-flip already swapping
+  // pen/eye on the span inside it.
+  const starTap = useJellyTap();
+  const lockTap = useJellyTap();
+  const copyTap = useJellyTap();
+  const resizeTap = useJellyTap();
+  const closeTap = useJellyTap();
 
   const wobble = useCallback(() => {
     jelly.start({
@@ -234,15 +246,18 @@ const NoteEditor = ({
                   type="button"
                   aria-label={ note.favorite ? "Unstar this note" : "Star this note" }
                   className="note-editor-action"
-                  whileHover={{ scale: 1.15 }}
+                  whileHover={{ scale: 1.15, rotate: -10 }}
                   whileTap={{ scale: .9 }}
                   transition={{ type: "spring", stiffness: 420, damping: 16 }}
                   style={{
                     backgroundColor: note.favorite ? "var(--black-color)" : "var(--black-even-more-transclucent-color)",
                   }}
+                  onTapStart={ starTap.squash }
                   onClick={ () => updateFavorite(note.id) }
                 >
-                  <FaStar className={ `note-editor-action-icon ${ note.color }` } />
+                  <motion.span animate={ starTap.jelly } style={{ display: "inline-flex" }}>
+                    <FaStar className={ `note-editor-action-icon ${ note.color }` } />
+                  </motion.span>
                 </motion.button>
                 <motion.button
                   type="button"
@@ -252,29 +267,32 @@ const NoteEditor = ({
                   whileHover={{ scale: 1.15 }}
                   whileTap={{ scale: .9 }}
                   transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                  onTapStart={ lockTap.squash }
                   onClick={ () => updateLock(note.id) }
                 >
-                  <AnimatePresence mode="wait" initial={ false }>
-                    <motion.span
-                      key={ note.lock ? "pen" : "eye" }
-                      className="note-editor-action-icon-wrap"
-                      initial={{ rotateY: -130, scale: .3, opacity: 0 }}
-                      animate={{ rotateY: 0, scale: 1, opacity: 1 }}
-                      exit={{
-                        rotateY: 130,
-                        scale: .3,
-                        opacity: 0,
-                        transition: { duration: .16, ease: "easeIn" },
-                      }}
-                      transition={{ type: "spring", stiffness: 420, damping: 17 }}
-                    >
-                      {
-                        note.lock
-                          ? <FaPen className="note-editor-action-icon light" />
-                          : <FaEye className="note-editor-action-icon light" />
-                      }
-                    </motion.span>
-                  </AnimatePresence>
+                  <motion.span animate={ lockTap.jelly } style={{ display: "inline-flex" }}>
+                    <AnimatePresence mode="wait" initial={ false }>
+                      <motion.span
+                        key={ note.lock ? "pen" : "eye" }
+                        className="note-editor-action-icon-wrap"
+                        initial={{ rotateY: -130, scale: .3, opacity: 0 }}
+                        animate={{ rotateY: 0, scale: 1, opacity: 1 }}
+                        exit={{
+                          rotateY: 130,
+                          scale: .3,
+                          opacity: 0,
+                          transition: { duration: .16, ease: "easeIn" },
+                        }}
+                        transition={{ type: "spring", stiffness: 420, damping: 17 }}
+                      >
+                        {
+                          note.lock
+                            ? <FaPen className="note-editor-action-icon light" />
+                            : <FaEye className="note-editor-action-icon light" />
+                        }
+                      </motion.span>
+                    </AnimatePresence>
+                  </motion.span>
                 </motion.button>
                 <motion.button
                   type="button"
@@ -283,9 +301,12 @@ const NoteEditor = ({
                   whileHover={{ scale: 1.15 }}
                   whileTap={{ scale: .9 }}
                   transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                  onTapStart={ copyTap.squash }
                   onClick={ handleCopy }
                 >
-                  <FaCopy className="note-editor-action-icon light" />
+                  <motion.span animate={ copyTap.jelly } style={{ display: "inline-flex" }}>
+                    <FaCopy className="note-editor-action-icon light" />
+                  </motion.span>
                 </motion.button>
                 <motion.button
                   type="button"
@@ -294,9 +315,12 @@ const NoteEditor = ({
                   whileHover={{ scale: 1.15 }}
                   whileTap={{ scale: .8 }}
                   transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                  onTapStart={ resizeTap.squash }
                   onClick={ () => setSize(EDITOR_SIZES[(EDITOR_SIZES.indexOf(size) + 1) % EDITOR_SIZES.length]) }
                 >
-                  <span className={ `note-editor-size-box s${ EDITOR_SIZES.indexOf(size) }` } />
+                  <motion.span animate={ resizeTap.jelly } style={{ display: "inline-flex" }}>
+                    <span className={ `note-editor-size-box s${ EDITOR_SIZES.indexOf(size) }` } />
+                  </motion.span>
                 </motion.button>
                 <motion.button
                   type="button"
@@ -305,9 +329,12 @@ const NoteEditor = ({
                   whileHover={{ scale: 1.15, rotate: 90 }}
                   whileTap={{ scale: .9 }}
                   transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                  onTapStart={ closeTap.squash }
                   onClick={ onClose }
                 >
-                  <FaXmark className="note-editor-action-icon light" />
+                  <motion.span animate={ closeTap.jelly } style={{ display: "inline-flex" }}>
+                    <FaXmark className="note-editor-action-icon light" />
+                  </motion.span>
                 </motion.button>
               </div>
               <AnimatePresence>

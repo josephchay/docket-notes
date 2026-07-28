@@ -21,10 +21,10 @@ const DropZoneOverlay = ({ active }) => (
         >
           <motion.div
             className="drop-zone-frame"
-            initial={{ opacity: 0, scale: .8, rotate: -2 }}
-            animate={{ opacity: 1, scale: [.8, 1.05, .98, 1], rotate: 0 }}
+            initial={{ opacity: 0, scaleX: .7, scaleY: 1.3, rotate: -2 }}
+            animate={{ opacity: 1, scaleX: [.7, 1.08, .96, 1], scaleY: [1.3, .92, 1.04, 1], rotate: 0 }}
             exit={{ opacity: 0, scale: .85, transition: { duration: .18, ease: "easeIn" } }}
-            transition={{ duration: .55, times: [0, .55, .8, 1], ease: "easeOut" }}
+            transition={{ duration: .6, times: [0, .55, .8, 1], ease: "easeOut" }}
           >
             <motion.span
               className="drop-zone-icon"

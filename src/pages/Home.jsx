@@ -17,6 +17,7 @@ import {
   FaArrowRotateRight,
   FaCompress,
   FaHourglassHalf,
+  FaClapperboard,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -35,6 +36,7 @@ import ThemeWipe from "../components/Theme/ThemeWipe";
 import InkCelebration from "../components/Celebration/InkCelebration";
 import ShortcutsSheet, { SHORTCUTS_EVENT } from "../components/Shortcuts/ShortcutsSheet";
 import TourGuide from "../components/Tour/TourGuide";
+import ShotReplay, { REPLAY_EVENT } from "../components/Replay/ShotReplay";
 import BulkActionBar from "../components/Bulk/BulkActionBar";
 import InsightsPanel, { INSIGHTS_EVENT } from "../components/Insights/InsightsPanel";
 import ActionStamp from "../components/Stamp/ActionStamp";
@@ -879,6 +881,12 @@ const Home = () => {
       icon: <FaHourglassHalf />,
       perform: () => window.dispatchEvent(new CustomEvent(SPRINT_EVENT)),
     },
+    {
+      key: "replay",
+      label: "Replay the original shot",
+      icon: <FaClapperboard />,
+      perform: () => window.dispatchEvent(new CustomEvent(REPLAY_EVENT)),
+    },
   ];
 
   return (
@@ -969,7 +977,8 @@ const Home = () => {
       </AnimatePresence>
       <CommandPalette actions={ paletteActions } />
       <ShortcutsSheet />
-      <TourGuide />
+      <TourGuide theme={ theme } />
+      <ShotReplay />
       <SprintPanel />
       <AnimatePresence>
         {
