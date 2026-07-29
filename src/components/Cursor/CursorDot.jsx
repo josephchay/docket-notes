@@ -11,27 +11,37 @@ const TEXT_FIELDS = "input[type='text'], input[type='search'], input:not([type])
 const INK_COLOR_CLASS = /^(yellow|orange|green|blue|purple|pink|red)-bg$/;
 const INK_SOURCE = ".note, .selector, .note-radial-item";
 
-const R = 4.5;          // resting capsule end-cap radius (px) — a 9px dot at rest
+const R = 7;            // resting capsule radius (px) — a 14px dot at rest
 const CARET_W = 2.5;    // text caret size (px)
 const CARET_H = 24;
 const WRAP_MAX = 140;   // controls larger than this are not wrapped
 const WRAP_PAD = 5;     // breathing room around a wrapped control (px)
 const MAGNET = 0.14;    // how far a wrapped highlight leans toward the pointer
-const MAX_STRETCH = 74; // longest the capsule is allowed to stretch (px)
+const MAX_SEG_STRETCH = 37; // longest either chain link (head→neck, neck→tail) may stretch (px)
+
+const VEL_SMOOTH = 0.2;       // low-pass factor for the raw pointer-velocity estimate
+const VEL_STRETCH_K = 0.0004; // px/s of pointer speed -> extra thinning ratio
+const MAX_VEL_STRETCH = 0.35; // cap on that thinning (0.35 -> stroke as thin as 1/1.35 ≈ 74%)
 
 const PEN_HOLD_MS = 4000; // how long dipped ink stays on the pen
 const IDLE_DELAY = 2.5;   // seconds still before the ink starts pooling
 const MAX_RIPPLES = 6;
 
-// The cursor is two tracked points — a head that snaps to the pointer and
-// a tail that drags a beat behind it — rendered as ONE solid shape: a
-// plain rounded div, stretched to span the distance between them and
-// rotated to their angle, with fully-pill corner rounding at both ends.
-// That's the whole trick: no separate trailing dots, no blur filter, just
-// a single continuous capsule whose length and angle are recomputed every
-// frame from where the two points currently sit. Fast motion pulls the
-// head ahead of the tail and the capsule stretches like pulled taffy;
-// stop moving and the tail catches back up until it's a plain dot again.
+// The cursor is a three-point chain — a head that snaps to the pointer, a
+// neck that drags a beat behind the head, and a tail that drags a beat
+// behind the neck — rendered as ONE stroked SVG path: a quadratic curve
+// running head -> tail with the neck as its control point, round-capped so
+// a straight chain reads as a plain capsule. That's the whole trick: no
+// separate trailing dots, no blur filter, just one continuous curve
+// recomputed every frame from where the three points currently sit. On a
+// straight line the neck sits right on the head-tail line and the curve
+// is visually a straight pill; turn the pointer through a curve and each
+// link's own lag pulls the neck off that line, so the tail bows through
+// the turn instead of swinging like a rigid rod. The pointer's own raw
+// speed, smoothed independently of that chain lag, thins the stroke a
+// touch on top — the chain's own spacing already does the elongating —
+// so a quick flick whips thinner a beat before the links catch up, and a
+// sudden stop lets it fatten back to a resting dot.
 //
 // Over a small control the cursor instead melts into a translucent ink
 // highlight that wraps it (iPadOS-style), leaning gently toward the
@@ -63,9 +73,15 @@ const CursorDot = () => {
 
     const mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 
-    // The capsule's two ends.
+    // The chain's three links.
     const head = { x: mouse.x, y: mouse.y };
+    const neck = { x: mouse.x, y: mouse.y };
     const tail = { x: mouse.x, y: mouse.y };
+
+    // Raw pointer velocity, smoothed independently of the chain's own lag —
+    // feeds the extra thinning layered on below.
+    const prevMouse = { x: mouse.x, y: mouse.y };
+    const vel = { x: 0, y: 0 };
 
     // The wrap/caret highlight's own eased box — unchanged from the
     // original single-dot cursor.
@@ -128,8 +144,8 @@ const CursorDot = () => {
 
       if (!seen) {
         seen = true;
-        head.x = tail.x = cur.x = mouse.x;
-        head.y = tail.y = cur.y = mouse.y;
+        head.x = neck.x = tail.x = cur.x = mouse.x;
+        head.y = neck.y = tail.y = cur.y = mouse.y;
       }
     };
 
@@ -194,6 +210,15 @@ const CursorDot = () => {
       // Frame-rate independent easing, identical feel at any refresh rate.
       const ease = (k) => 1 - Math.pow(1 - k, dt * 60);
 
+      // Smoothed pointer velocity — a faster, more direct signal than the
+      // head/tail lag below, so it can lead the capsule's own stretch.
+      if (dt > 0) {
+        vel.x += ((mouse.x - prevMouse.x) / dt - vel.x) * ease(VEL_SMOOTH);
+        vel.y += ((mouse.y - prevMouse.y) / dt - vel.y) * ease(VEL_SMOOTH);
+      }
+      prevMouse.x = mouse.x;
+      prevMouse.y = mouse.y;
+
       if (wrapEl && !document.contains(wrapEl)) {
         wrapEl = null;
         ink.classList.remove("is-wrap");
@@ -220,32 +245,38 @@ const CursorDot = () => {
 
       press += (pressTarget - press) * ease(0.35);
 
-      // ---- The capsule: head snaps to the pointer, tail drags behind. ----
+      // ---- The chain: head snaps to the pointer, neck and tail each drag
+      // a beat behind the link ahead of them. ----
       head.x += (mouse.x - head.x) * ease(0.45);
       head.y += (mouse.y - head.y) * ease(0.45);
 
       if (free) {
-        tail.x += (head.x - tail.x) * ease(0.16);
-        tail.y += (head.y - tail.y) * ease(0.16);
+        neck.x += (head.x - neck.x) * ease(0.28);
+        neck.y += (head.y - neck.y) * ease(0.28);
+        tail.x += (neck.x - tail.x) * ease(0.16);
+        tail.y += (neck.y - tail.y) * ease(0.16);
       } else {
         // Collapsed while wrapping or typing, so it's a plain dot again
-        // the instant the pointer is free — no stray stretch left over.
-        tail.x = head.x;
-        tail.y = head.y;
+        // the instant the pointer is free — no stray curve left over.
+        neck.x = tail.x = head.x;
+        neck.y = tail.y = head.y;
       }
 
-      let dx = head.x - tail.x;
-      let dy = head.y - tail.y;
-      let dist = Math.hypot(dx, dy);
-
-      if (dist > MAX_STRETCH) {
-        const k = MAX_STRETCH / dist;
-        dx *= k;
-        dy *= k;
-        tail.x = head.x - dx;
-        tail.y = head.y - dy;
-        dist = MAX_STRETCH;
-      }
+      // Each link is only allowed to trail so far behind the one ahead of
+      // it — independently, so the chain can still bow through a turn
+      // without either half overshooting its own budget.
+      const clampLink = (from, to) => {
+        const lx = to.x - from.x;
+        const ly = to.y - from.y;
+        const ldist = Math.hypot(lx, ly);
+        if (ldist > MAX_SEG_STRETCH) {
+          const k = MAX_SEG_STRETCH / ldist;
+          to.x = from.x + lx * k;
+          to.y = from.y + ly * k;
+        }
+      };
+      clampLink(head, neck);
+      clampLink(neck, tail);
 
       let r = R * (1 - press * 0.22);
       // GSAP's press pulse and idle pool both ride on the same radius, so
@@ -253,16 +284,15 @@ const CursorDot = () => {
       if (pulse.amount > 0.001) r *= 1 + pulse.amount * 0.3;
       if (pool.amount > 0.001) r *= 1 + pool.amount * 0.22 * Math.sin(pool.amount * Math.PI);
 
-      const width = dist + r * 2;
-      const height = r * 2;
-      const angle = Math.atan2(dy, dx);
-      const midX = (head.x + tail.x) / 2;
-      const midY = (head.y + tail.y) / 2;
+      // A touch of extra thinning from raw pointer speed — the chain's own
+      // spacing already stretches the curve out, so this just leans into
+      // it, on top of the shape above.
+      const speed = Math.hypot(vel.x, vel.y);
+      const velStretch = Math.min(speed * VEL_STRETCH_K, MAX_VEL_STRETCH);
+      r /= 1 + velStretch;
 
-      capsule.style.width = `${ width }px`;
-      capsule.style.height = `${ height }px`;
-      capsule.style.borderRadius = `${ r }px`;
-      capsule.style.transform = `translate3d(${ midX - width / 2 }px, ${ midY - height / 2 }px, 0) rotate(${ angle }rad)`;
+      capsule.setAttribute("d", `M${ head.x },${ head.y } Q${ neck.x },${ neck.y } ${ tail.x },${ tail.y }`);
+      capsule.style.strokeWidth = `${ r * 2 }px`;
       capsule.style.opacity = (free && seen && !pointerGone) ? 1 : 0;
 
       // ---- The wrap / caret highlight — unchanged single-dot recipe. ----
@@ -329,11 +359,13 @@ const CursorDot = () => {
       className="cursor-layer"
       aria-hidden="true"
     >
-      <div
-        ref={ capsuleRef }
-        className="cursor-capsule"
-        style={{ opacity: 0 }}
-      ></div>
+      <svg className="cursor-svg">
+        <path
+          ref={ capsuleRef }
+          className="cursor-capsule"
+          style={{ opacity: 0 }}
+        />
+      </svg>
       <div
         ref={ inkRef }
         className="cursor-ink"

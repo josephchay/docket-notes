@@ -5,28 +5,35 @@
   z-index: 999999;
 }
 
-/* The stretchy capsule: one solid pill, its width/height/radius/rotation
-   all written per-frame from JS (see CursorDot.jsx) — a head circle that
-   snaps to the pointer and a tail circle that lags a beat behind it,
-   rendered as a single rounded div spanning the distance between them.
+/* The stretchy capsule: a quadratic curve through three chain links (see
+   CursorDot.jsx), stroked round-capped so a straight chain still reads as
+   a plain pill. Its `d` and stroke-width are written per-frame from JS; an
+   SVG path can bow through a turn in a way a rectangular div never could.
    Default ink is a soft neutral gray; dipping into a note or a nav color
    pot (see .is-inked below) swaps it for that color, solid. */
-.cursor-capsule {
+.cursor-svg {
   position: fixed;
-  left: 0;
-  top: 0;
-  background-color: var(--black-even-more-transclucent-color);
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
-  will-change: transform, width, height, opacity;
-  transition: background-color 0.4s ease-in-out, opacity 0.35s ease-in-out;
+}
+
+.cursor-capsule {
+  fill: none;
+  stroke: var(--black-even-more-transclucent-color);
+  stroke-linecap: round;
+  pointer-events: none;
+  will-change: stroke-width, opacity;
+  transition: stroke 0.4s ease-in-out, opacity 0.35s ease-in-out;
 }
 
 :root[data-theme="dark"] .cursor-capsule {
-  background-color: rgba(255, 254, 255, 0.22);
+  stroke: rgba(255, 254, 255, 0.22);
 }
 
 .cursor-capsule.is-inked {
-  background-color: var(--pen-ink, var(--black-even-more-transclucent-color));
+  stroke: var(--pen-ink, var(--black-even-more-transclucent-color));
 }
 
 /* The wrap / caret highlight — unchanged from the original single-dot
