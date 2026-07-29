@@ -10,7 +10,54 @@
     0 1px 1px rgba(25, 25, 25, 0.04),
     0 10px 24px -8px rgba(25, 25, 25, 0.18),
     0 24px 48px -18px rgba(25, 25, 25, 0.22);
-  transition: border-radius 0.3s ease-in-out
+  transition: border-radius 0.3s ease-in-out;
+}
+
+/* While a freshly poured note is still morphing in from its ink pot, the
+   card's own box is the wrong shape to be seen at all — it's a plain
+   rounded rectangle sitting underneath the real, organically-morphing
+   blob (see .spawn-blob below and utils/blob.js). Hiding it — background,
+   shadow, and every direct child except the blob itself — means the only
+   thing on screen during the morph really is that hand-drawn ink outline,
+   not a rectangle wearing a wobble.
+   This class is toggled imperatively by Note.jsx (a plain classList call,
+   not React state) and lifts the instant the blob has actually finished
+   dissolving — content and background reappear as a flat cut at that exact
+   moment, which reads as a crossfade only because the blob sitting on top
+   of them is simultaneously fading to transparent; there's nothing left
+   underneath to visibly "pop". A React-state-driven class couldn't lift at
+   that exact mid-sequence moment without also handing this element's
+   `animate` prop away from the spawnControls still driving its landing
+   jelly — see the comment above the spawning state in Note.jsx.
+   !important is required only because the color utilities in colors.css
+   assert `background-color` with the same importance; two classes
+   (.note.spawn-veil) beats one (.yellow-bg etc.) on specificity, so this
+   still wins while the veil is up. */
+.note.spawn-veil {
+  background-color: transparent !important;
+  box-shadow: none;
+}
+
+.note.spawn-veil > *:not(.spawn-blob) {
+  opacity: 0;
+}
+
+/* The morphing blob itself: a single <path>, its `d` attribute driven
+   frame-by-frame by flubber (utils/blob.js createBlobMorph) rather than
+   any CSS property — genuine shape interpolation between real outlines,
+   not a border-radius number pretending to be one. Sized to the note's
+   own fixed coordinate space (NOTE_WIDTH × NOTE_HEIGHT in Note.jsx) and
+   stretched to fill the card exactly; opacity is driven by GSAP directly,
+   fading out the instant the outline has resolved to flat.
+   pointer-events: none — the note underneath isn't interactive yet. */
+.spawn-blob {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
 }
 
 /* Live-editing lift: while the title or body has the caret, the paper rises
