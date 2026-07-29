@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useAnimationControls, useMotionValue, useSpring, useTransform } from "framer-motion";
 import anime from "animejs";
+import gsap from "gsap";
 
 import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRight, FaCheck } from "react-icons/fa6";
 import { FaEye, FaTrash } from "react-icons/fa";
@@ -9,12 +10,14 @@ import { FaEye, FaTrash } from "react-icons/fa";
 import useLongPress from "../../hooks/useLongPress";
 import PullString from "./PullString";
 import MoveString from "./MoveString";
+import { blobPath, roundedRectPath, createBlobMorph } from "../../utils/blob";
 
 import "./Note.css";
 
 const debounceTimer = 500;
 
 const NOTE_WIDTH = 340;   // matches the .note CSS width and the rope svg viewBox
+const NOTE_HEIGHT = 350;  // matches the .note CSS height and the spawn-blob svg viewBox
 
 const RING_RADIUS = 68;   // matches the delete-ring svg below
 
@@ -246,25 +249,58 @@ const Note = ({
   ];
 
   // A freshly poured note doesn't float in from nowhere — it morphs out of
-  // the ink pot that made it: a dot-sized circle at the pot's position that
-  // springs across the desk, swelling and squaring off into paper with a
-  // starchy overshoot. Only the mount that created the note plays this.
+  // the ink pot that made it: a small blob of ink at the pot's position
+  // that travels across the desk on a spring while a *real* SVG path (see
+  // utils/blob.js, driven by flubber) works its outline through a couple
+  // of lopsided, organic shapes and settles into this note's own rounded
+  // corners — an actual shape morph, not a border-radius number pretending
+  // to be one. The blob dissolves the instant it's flat, revealing the
+  // real, already-formed note underneath — held back until exactly that
+  // moment by an imperative "veil" class (see below) rather than React
+  // state, since content needs to reappear mid-sequence while spawnControls
+  // still needs to keep driving this same element for the landing jelly
+  // that follows; flipping `spawning` that early would hand the element's
+  // `animate` prop back to its normal branch out from under those controls.
+  // Only the mount that created the note plays any of this.
   const [spawning, setSpawning] = useState(() => !!spawnOrigin);
   const spawnControls = useAnimationControls();
   const cardRef = useRef(null);
+  const pathRef = useRef(null);
 
   useLayoutEffect(() => {
-    if (!spawning || !cardRef.current) return;
+    if (!spawning || !cardRef.current || !pathRef.current) return;
 
-    const rect = cardRef.current.getBoundingClientRect();
+    const card = cardRef.current;
+    const rect = card.getBoundingClientRect();
     const dx = spawnOrigin.x - (rect.left + rect.width / 2);
     const dy = spawnOrigin.y - (rect.top + rect.height / 2);
 
-    // Full roundness in px (not "50%") so the corner morph can actually
-    // tween as it squares off — mixed units would snap instead of morphing.
-    const round = Math.min(rect.width, rect.height) / 2;
+    // Applied before the very first paint, so there's never a flash of the
+    // real note before the blob has a chance to cover it. See .spawn-veil
+    // in Note.css: transparent box, no shadow, every child but the blob
+    // hidden. A plain classList toggle rather than a class derived from
+    // React state, so removing it doesn't have to wait on — or race — a
+    // re-render.
+    card.classList.add("spawn-veil");
+
+    // The chain of outlines the blob steps through, in the SVG's own fixed
+    // coordinate space (matching NOTE_WIDTH/NOTE_HEIGHT, not the measured
+    // rect, since scale/x/y above already handle the physical travel and
+    // sizing — this space only needs to describe the shape). A tight,
+    // barely-irregular dab of ink to start; a properly lopsided pour; a
+    // second, calmer wobble; and finally this note's own resting 24px
+    // rounded rectangle.
+    const blobMorph = createBlobMorph(pathRef.current, [
+      blobPath(NOTE_WIDTH, NOTE_HEIGHT, 8, 0.16),
+      blobPath(NOTE_WIDTH, NOTE_HEIGHT, 9, 0.44),
+      blobPath(NOTE_WIDTH, NOTE_HEIGHT, 10, 0.27),
+      roundedRectPath(NOTE_WIDTH, NOTE_HEIGHT, 24),
+    ]);
 
     const morph = async () => {
+      blobMorph.set(0);
+      gsap.set(pathRef.current, { opacity: 1 });
+
       // A dot of ink, sitting right in the pot that was tapped.
       spawnControls.set({
         x: dx,
@@ -272,40 +308,59 @@ const Note = ({
         scale: 32 / rect.width,
         scaleX: 1,
         scaleY: 1,
-        borderRadius: `${ round }px`,
         opacity: 1,
       });
 
+      // The shape's own morph runs on its own GSAP clock, entirely
+      // independent of the position/scale spring below — flubber
+      // interpolates the real outline through every stage while the note
+      // is simultaneously traveling and growing.
+      const shapeState = { t: 0 };
+      const shapeTween = gsap.to(shapeState, {
+        t: blobMorph.stageCount,
+        duration: .86,
+        ease: "power1.inOut",
+        onUpdate: () => blobMorph.set(shapeState.t),
+      });
+
       // 1 — The squeeze: a beat of anticipation as the drop pulls free of
-      //     the pot, stretching thin before it lets go — still a perfect
-      //     circle, just an elongated one.
+      //     the pot, stretching thin before it lets go.
       await spawnControls.start({
         scaleY: 1.5,
         scaleX: .78,
         transition: { duration: .16, ease: "easeOut" },
       });
 
-      // 2 — The bloom: travels to its slot, grows, un-stretches, and
-      //     squares off from circle to paper — all in one loose, starchy
-      //     spring, so it reads as one continuous fluid motion rather than
-      //     separate steps.
+      // 2 — The pour: travels to its slot and grows on one loose spring,
+      //     while the shape above keeps working through its own chain of
+      //     organic outlines toward the flat rectangle.
       await spawnControls.start({
         x: 0,
         y: 0,
         scale: 1,
         scaleX: 1,
         scaleY: 1,
-        borderRadius: "24px",
-        transition: {
-          type: "spring",
-          stiffness: 170,
-          damping: 15,
-          mass: .9,
-        },
+        transition: { type: "spring", stiffness: 170, damping: 15, mass: .9 },
       });
 
-      // 3 — Landing jelly: one last squash-and-stretch as the paper's own
-      //     weight settles, the same wobble the focus editor plays.
+      // Let the shape chain actually finish resolving into the rectangle
+      // before anything is allowed to dissolve — only waits further if the
+      // position spring above genuinely settled first.
+      if (shapeTween.progress() < 1) await shapeTween;
+
+      // 3 — The now-flat blob dissolves — awaited, so the veil lifts the
+      //     instant it's actually gone, with no gap where the desk would
+      //     otherwise show a bare, transparent hole.
+      await gsap.to(pathRef.current, { opacity: 0, duration: .22, ease: "power1.in" });
+
+      card.classList.remove("spawn-veil");
+
+      // 4 — Landing jelly: one last squash-and-stretch as the paper's own
+      //     weight lands, now playing on the real, already-revealed note —
+      //     the same wobble the focus editor plays. spawnControls still
+      //     owns this element's `animate` prop (spawning hasn't flipped
+      //     yet), so this plays exactly as intended before the component
+      //     ever re-renders into its normal, non-spawning branch.
       await spawnControls.start({
         scaleX: [1, 1.06, .97, 1.01, 1],
         scaleY: [1, .94, 1.05, .99, 1],
@@ -874,6 +929,25 @@ const Note = ({
             onMove={ (targetId) => reorderNotes(note.id, targetId) }
           />
         </motion.div>
+        {/* The blob a freshly poured note morphs out of — a real SVG path
+            (utils/blob.js) stepped through a chain of organic outlines by
+            flubber into this note's own resting shape, then dissolved.
+            Only ever mounted for the spawn that created this note. */}
+        {
+          spawning && (
+            <svg
+              className="spawn-blob"
+              viewBox={ `0 0 ${ NOTE_WIDTH } ${ NOTE_HEIGHT }` }
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <path
+                ref={ pathRef }
+                style={{ fill: `var(--${ note.color }-color)` }}
+              />
+            </svg>
+          )
+        }
       </motion.div>
       {
         createPortal(

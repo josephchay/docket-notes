@@ -1,6 +1,38 @@
-/* A single ink drop: solid ink as a free dot, translucent ink while it wraps
-   a control. Position, size, and shape are driven per-frame from JS; only
-   color and visibility transition here. */
+.cursor-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 999999;
+}
+
+/* The stretchy capsule: one solid pill, its width/height/radius/rotation
+   all written per-frame from JS (see CursorDot.jsx) — a head circle that
+   snaps to the pointer and a tail circle that lags a beat behind it,
+   rendered as a single rounded div spanning the distance between them.
+   Default ink is a soft neutral gray; dipping into a note or a nav color
+   pot (see .is-inked below) swaps it for that color, solid. */
+.cursor-capsule {
+  position: fixed;
+  left: 0;
+  top: 0;
+  background-color: var(--black-even-more-transclucent-color);
+  pointer-events: none;
+  will-change: transform, width, height, opacity;
+  transition: background-color 0.4s ease-in-out, opacity 0.35s ease-in-out;
+}
+
+:root[data-theme="dark"] .cursor-capsule {
+  background-color: rgba(255, 254, 255, 0.22);
+}
+
+.cursor-capsule.is-inked {
+  background-color: var(--pen-ink, var(--black-even-more-transclucent-color));
+}
+
+/* The wrap / caret highlight — unchanged from the original single-dot
+   cursor. Solid ink as a wrapped-control halo's inverse would read wrong,
+   so this stays a separate, simpler element from the capsule above; the
+   two crossfade via opacity, driven every frame from the same JS. */
 .cursor-ink {
   position: fixed;
   left: 0;
@@ -10,8 +42,7 @@
   border-radius: 50%;
   background-color: var(--black-color);
   pointer-events: none;
-  z-index: 999999;
-  will-change: transform, width, height;
+  will-change: transform, width, height, opacity;
   transition:
     background-color 0.3s ease-in-out,
     opacity 0.35s ease-in-out;
@@ -21,7 +52,7 @@
   background-color: var(--black-even-more-transclucent-color);
 }
 
-/* On dark paper the ink drop writes in white. */
+/* On dark paper the ink drop writes in white... */
 :root[data-theme="dark"] .cursor-ink {
   background-color: var(--white-color);
 }
@@ -30,8 +61,53 @@
   background-color: rgba(255, 254, 255, 0.22);
 }
 
-.cursor-ink.is-hidden {
-  opacity: 0;
+/* ...except over a note, whose paper stays light and whose ink stays black
+   in either theme — so the drop does too. */
+.cursor-ink.on-note,
+:root[data-theme="dark"] .cursor-ink.on-note {
+  background-color: var(--black-color);
+}
+
+.cursor-ink.on-note.is-wrap,
+:root[data-theme="dark"] .cursor-ink.on-note.is-wrap {
+  background-color: var(--black-even-more-transclucent-color);
+}
+
+/* Narrowed into a caret over text, the drop blinks like one. */
+@keyframes caret-blink {
+  0%, 55% { opacity: 1; }
+  70%, 85% { opacity: .25; }
+  100% { opacity: 1; }
+}
+
+.cursor-ink.is-caret {
+  animation: caret-blink 1.15s ease-in-out 0.4s infinite;
+}
+
+/* A press lands a drop on the paper: a ring of the current ink swells
+   outward and soaks in. */
+@keyframes cursor-ripple {
+  from {
+    transform: translate(-50%, -50%) scale(0.15);
+    opacity: .5;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+.cursor-ripple {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 48px;
+  height: 48px;
+  border: 2px solid var(--pen-ink, var(--page-ink-color));
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 999997;
+  animation: cursor-ripple 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
 }
 
 /* When the effect steps aside (touch, reduced motion), the OS cursor returns. */
