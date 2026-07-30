@@ -560,6 +560,7 @@ const Home = () => {
         id: copyId,
         x: sourceRect.left + sourceRect.width / 2,
         y: sourceRect.top + sourceRect.height / 2,
+        duplicate: true,
       });
     }
   }
