@@ -123,7 +123,17 @@ const CardContent = ({ step, config, walkIndex, reduced, send }) => {
                   <i
                     key={ name }
                     className={ `tour-dot ${ index < walkIndex ? "past" : "" } ${ index === walkIndex ? "live" : "" }` }
-                  />
+                  >
+                    {
+                      !reduced && index === walkIndex && (
+                        <motion.span
+                          layoutId="tourDotLive"
+                          className="tour-dot-ring"
+                          transition={{ type: "spring", stiffness: 380, damping: 16 }}
+                        />
+                      )
+                    }
+                  </i>
                 ))
               }
             </span>
@@ -158,13 +168,16 @@ const CardContent = ({ step, config, walkIndex, reduced, send }) => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: .24, type: "spring", stiffness: 300, damping: 14 }}
           >
-            <button
+            <motion.button
               type="button"
               className="tour-skip"
+              whileHover={{ opacity: .8 }}
+              whileTap={{ scale: .94 }}
+              transition={{ type: "spring", stiffness: 700, damping: 35 }}
               onClick={ () => send("SKIP") }
             >
               { isGreeting ? "I'll wander" : "Skip" }
-            </button>
+            </motion.button>
             <div className="tour-actions-right">
               {
                 walkIndex > 0 && (
@@ -209,11 +222,12 @@ const CardContent = ({ step, config, walkIndex, reduced, send }) => {
 // card blooms up out of a drop the same dot-to-sheet way the command
 // palette and every other panel does, then rides loose springs from stop
 // to stop — wobbling upright and jelly-squashing on landing exactly the
-// way a freshly poured note does. At each stop the desk itself leans in
-// too: gsap pushes the whole .home page in toward the spotlit control
-// with a bouncy overshoot, and eases it back out for the bookend scenes.
-// The walk itself is still one xstate machine (TourState.js); this
-// component just measures the desk and points.
+// way a freshly poured note does. At each stop the control itself leans
+// in: gsap grows just that element, in place around its own center, with
+// a bouncy overshoot — never the page around it — and eases back down the
+// moment the walk moves to a different one (or to a bookend scene, which
+// has nothing to zoom into). The walk itself is still one xstate machine
+// (TourState.js); this component just measures the desk and points.
 const TourGuide = () => {
   const [service] = useState(() => interpret(tourMachine));
   const [step, setStep] = useState("closed");
@@ -236,6 +250,7 @@ const TourGuide = () => {
 
   const primedRef = useRef(false);
   const cameraRef = useRef(null);
+  const zoomedElRef = useRef(null); // whichever control the camera is currently (or was last) leaning into
   const pokeRef = useRef(null);
 
   const send = useCallback((event) => service.send(event), [service]);
@@ -262,35 +277,27 @@ const TourGuide = () => {
 
   const open = step !== "closed" && step !== "done";
 
-  // While the walk is on, the camera owns .home — the body class suppresses
-  // .home's own transform transition so gsap's zoom isn't smeared by it.
-  useEffect(() => {
-    document.body.classList.toggle("tour-active", open);
-    return () => document.body.classList.remove("tour-active");
-  }, [open]);
-
-  // Ease the camera home and hand the page's transform back to the
-  // stylesheet. Runs whenever the walk ends, and again on unmount in case
-  // the app is torn down mid-zoom.
+  // Ease the last zoomed control back to rest and hand its transform back
+  // to the stylesheet. Runs whenever the walk ends, and again on unmount in
+  // case the app is torn down mid-zoom.
   const releaseCamera = useCallback((instant) => {
-    const home = document.querySelector(".home");
-    if (!home) return;
-
     cameraRef.current?.kill();
     cameraRef.current = null;
 
+    const target = zoomedElRef.current;
+    zoomedElRef.current = null;
+    if (!target) return;
+
     if (instant) {
-      gsap.set(home, { clearProps: "transform,transformOrigin" });
+      gsap.set(target, { clearProps: "transform,transformOrigin" });
       return;
     }
 
-    cameraRef.current = gsap.to(home, {
-      x: 0,
-      y: 0,
+    gsap.to(target, {
       scale: 1,
       duration: .8,
       ease: "back.out(1.2)",
-      onComplete: () => gsap.set(home, { clearProps: "transform,transformOrigin" }),
+      onComplete: () => gsap.set(target, { clearProps: "transform,transformOrigin" }),
     });
   }, []);
 
@@ -352,50 +359,35 @@ const TourGuide = () => {
       }
     };
 
-    // The camera: push the page in toward this stop's control with a
-    // bouncy overshoot. Working with transform-origin pinned at 0,0 keeps
-    // the arithmetic honest across stops — the current translate/scale can
-    // always be read back and re-aimed without a visible jump.
+    // The camera: lean this stop's own control in toward the viewer with a
+    // bouncy overshoot — the control grows in place, around its own
+    // center; the page around it never moves or scales. Whatever the
+    // previous stop had zoomed eases back down first if this one is a
+    // different control (or none at all, for the bookend scenes).
     const aimCamera = () => {
-      const home = document.querySelector(".home");
       const el = config.selector && document.querySelector(config.selector);
-      if (!home) return;
 
       cameraRef.current?.kill();
 
-      if (!el) {
-        // Bookend scenes watch from the armchair.
-        cameraRef.current = gsap.to(home, {
-          x: 0,
-          y: 0,
+      const previouslyZoomed = zoomedElRef.current;
+      if (previouslyZoomed && previouslyZoomed !== el) {
+        gsap.to(previouslyZoomed, {
           scale: 1,
-          duration: .9,
+          duration: .8,
           ease: "back.out(1.2)",
+          onComplete: () => gsap.set(previouslyZoomed, { clearProps: "transform,transformOrigin" }),
         });
-        return;
       }
+      zoomedElRef.current = el || null;
 
-      gsap.set(home, { transformOrigin: "0 0" });
+      if (!el) return; // Bookend scenes: nothing to zoom into.
+
+      gsap.set(el, { transformOrigin: "50% 50%" });
 
       const rect = el.getBoundingClientRect();
       const scale = clamp(1.6 - rect.width / 700, 1.25, 1.5);
-      const curScale = Number(gsap.getProperty(home, "scaleX")) || 1;
-      const curX = Number(gsap.getProperty(home, "x")) || 0;
-      const curY = Number(gsap.getProperty(home, "y")) || 0;
 
-      // The control's current screen position, its position in the page's
-      // own untransformed coordinates, and where on screen it should end
-      // up — nudged a third of the way toward centre stage.
-      const fx = rect.left + rect.width / 2;
-      const fy = rect.top + rect.height / 2;
-      const lx = (fx - curX) / curScale;
-      const ly = (fy - curY) / curScale;
-      const dx = fx + (window.innerWidth / 2 - fx) * .3;
-      const dy = fy + (window.innerHeight / 2 - fy) * .3;
-
-      cameraRef.current = gsap.to(home, {
-        x: dx - scale * lx,
-        y: dy - scale * ly,
+      cameraRef.current = gsap.to(el, {
         scale,
         duration: 1.15,
         ease: "back.out(1.4)",

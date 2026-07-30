@@ -1,3 +1,13 @@
+/* Registering this as a real <color> lets every property that reads it
+   (the dots' box-shadow below, the accent-tinted bits elsewhere) fade
+   between stops' inks on its own existing transition, instead of the
+   custom property just snapping to its new value mid-transition. */
+@property --tour-accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #191919;
+}
+
 /* The walk's whole layer is pointer-transparent — no dim, no click-jail.
    Only the card itself takes the pointer; the desk stays fully usable
    while the walk makes its rounds. */
@@ -5,14 +15,6 @@
   position: fixed;
   inset: 0;
   z-index: 960;
-}
-
-/* While the walk is on, gsap leans the whole page in toward each stop —
-   .home's own transform transition (the recede-behind-the-editor spring)
-   would smear every frame of that zoom if it stayed live. */
-.tour-active .home {
-  transition: none !important;
-  will-change: transform;
 }
 
 /* The springs, travel tilt, arrival wiggle and landing jelly all live on
@@ -110,6 +112,7 @@
 }
 
 .tour-dot {
+  position: relative;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -120,6 +123,17 @@
     background-color .45s cubic-bezier(.3, 2.1, .45, 1),
     box-shadow .45s cubic-bezier(.3, 2.1, .45, 1),
     transform .45s cubic-bezier(.3, 2.1, .45, 1);
+}
+
+/* A ring slides between whichever dot is live — framer's layoutId doing
+   the same sticky-thumb trick as the sort/tag/color thumbs elsewhere in
+   the app — so the walk's progress reads as one continuous line morphing
+   forward rather than dots just recoloring in place. */
+.tour-dot-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--page-ink-color);
 }
 
 .tour-dot.past {
