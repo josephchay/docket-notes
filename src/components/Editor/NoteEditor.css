@@ -46,6 +46,11 @@
   box-shadow:
     0 0 0 4px var(--white-transclucent-color),
     0 40px 90px -30px rgba(25, 25, 25, 0.55);
+  /* The preset classes (.cozy/.grand/.epic below) only change padding and
+    border-radius, and only ever at the end of a drag-resize (see
+    handleResizeEnd in NoteEditor.jsx) rather than continuously through
+    it — this just softens that one jump instead of a hard cut. */
+  transition: padding 0.25s ease-in-out, border-radius 0.25s ease-in-out;
 }
 
 .note-editor.cozy {

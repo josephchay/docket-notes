@@ -107,6 +107,74 @@
   margin-bottom: 26px;
 }
 
+/* The day trend's fluid line+area chart (replaces bars for this one
+   section — see InsightsPanel.jsx for why: categorical color counts still
+   suit discrete bars, but a day-over-day count is a real trend). */
+.insights-trend {
+  position: relative;
+}
+
+.insights-trend-svg {
+  display: block;
+  width: 100%;
+  height: 80px;
+  overflow: visible;
+}
+
+.insights-trend-area {
+  fill: url(#insights-trend-fill);
+}
+
+.insights-trend-line {
+  fill: none;
+  stroke: var(--page-ink-color);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.4s ease-in-out;
+}
+
+.insights-trend-marker {
+  fill: var(--page-ink-color);
+  transition: fill 0.4s ease-in-out;
+}
+
+/* Invisible hit areas over each data point, positioned by percentage to
+   track the SVG's own (preserveAspectRatio: none, so non-uniformly scaled)
+   coordinate space — reuses .insights-tooltip's exact hover language. */
+.insights-trend-point {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+}
+
+.insights-trend-point .insights-tooltip {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 7px;
+  transform: translate(-50%, 4px);
+}
+
+.insights-trend-point:hover .insights-tooltip,
+.insights-trend-point:focus-visible .insights-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.insights-trend-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 8px;
+  margin-bottom: 26px;
+}
+
 .insights-bar-column {
   position: relative;
   display: flex;

@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
+import { MILESTONES } from "../../constants/milestones";
 import { COMMAND_EVENT } from "../Command/CommandPalette";
 import { INSIGHTS_EVENT } from "../Insights/InsightsPanel";
 import { TRASH_EVENT } from "../Trash/TrashPanel";
@@ -10,6 +11,7 @@ import searchIcon from '../../assets/icons/search.svg';
 import useJellyTap from "../../hooks/useJellyTap";
 import useInkPulse from "../../hooks/useInkPulse";
 import useMagnetic from "../../hooks/useMagnetic";
+import LiquidMeter from "../Meter/LiquidMeter";
 
 import './Header.css';
 
@@ -143,6 +145,19 @@ const Header = ({
 
   const paletteNames = Object.keys(NOTE_COLORS);
   const maxCount = Math.max(1, ...paletteNames.map((name) => colorCounts?.[name] ?? 0));
+
+  // The ink vial's fill: how far the desk has come from the last milestone
+  // toward the next one (not just totalCount/nextMilestone from zero —
+  // that would look nearly full for most of the app's life once a few
+  // milestones have passed). Maxed out once every milestone is behind it.
+  const nextMilestone = MILESTONES.find((m) => m > totalCount) ?? null;
+  const prevMilestone = [...MILESTONES].reverse().find((m) => m <= totalCount) ?? 0;
+  const milestoneRatio = nextMilestone
+    ? (totalCount - prevMilestone) / (nextMilestone - prevMilestone)
+    : 1;
+  const milestoneLabel = nextMilestone
+    ? `${ totalCount } / ${ nextMilestone } to the next milestone`
+    : `${ totalCount } notes — every milestone reached`;
 
   // The ink wash washes out from wherever the theme button actually sits,
   // not the pointer — so it looks the same whether it was clicked, tapped,
@@ -429,6 +444,9 @@ const Header = ({
                 }}
                 transition={{ type: "spring", stiffness: 240, damping: 15 }}
               >
+                <div className="ink-meter-row">
+                  <LiquidMeter ratio={ milestoneRatio } color="var(--page-ink-color)" label={ milestoneLabel } />
+                </div>
                 <div className="ink-row">
                   {
                     paletteNames.map((name, index) => {
