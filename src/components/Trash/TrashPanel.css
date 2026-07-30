@@ -1,0 +1,190 @@
+.trash-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+
+.trash-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(25, 25, 25, 0.28);
+}
+
+:root[data-theme="dark"] .trash-backdrop {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* border-radius is animated by framer during the drop-to-sheet morph, so it
+   is deliberately not set here. */
+.trash-panel {
+  position: relative;
+  width: min(420px, 92vw);
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
+  will-change: transform;
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+}
+
+.trash-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--page-line-color);
+  transition: border-color 0.4s ease-in-out;
+}
+
+.trash-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.trash-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.trash-empty-all {
+  padding: 7px 12px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: .7;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.trash-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 9px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.trash-body {
+  padding: 10px 14px 14px;
+  overflow-y: auto;
+}
+
+.trash-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.trash-empty-icon {
+  font-size: 26px;
+  color: var(--page-ink-color);
+  opacity: .3;
+}
+
+.trash-empty p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--page-ink-color);
+  opacity: .5;
+}
+
+.trash-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+
+.trash-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 12px;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.trash-item-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.trash-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.trash-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--page-ink-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.4s ease-in-out;
+}
+
+.trash-item-time {
+  font-size: 11px;
+  color: var(--page-ink-color);
+  opacity: .5;
+  transition: color 0.4s ease-in-out;
+}
+
+.trash-item-restore,
+.trash-item-shred {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 9px;
+  background-color: var(--page-bg-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  flex-shrink: 0;
+  opacity: .6;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out, opacity 0.2s ease-in-out;
+}
+
+.trash-item-restore:hover,
+.trash-item-shred:hover {
+  opacity: 1;
+}

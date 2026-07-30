@@ -290,6 +290,28 @@ header.header {
   transition: color 0.4s ease-in-out;
 }
 
+.header .wand.trash-trigger {
+  position: relative;
+}
+
+.trash-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background-color: var(--red-color);
+  color: var(--white-color);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .header .ink-levels .ink-button.open {
   background-color: var(--page-ink-color);
 }
@@ -382,6 +404,31 @@ header.header {
 }
 
 .header .theme .theme-icon {
+  font-size: 15px;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+/* Locks (or unlocks) whether notes survive closing the tab. */
+.header .persist {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  height: 40px;
+  width: 40px;
+  flex-shrink: 0;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.header .persist .persist-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header .persist .persist-icon {
   font-size: 15px;
   color: var(--page-ink-color);
   transition: color 0.4s ease-in-out;

@@ -18,12 +18,16 @@ import {
   FaCompress,
   FaHourglassHalf,
   FaClapperboard,
+  FaLock,
+  FaLockOpen,
+  FaTrashCan,
+  FaTimeline,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
 import { formattedDateNow } from "../utils/date";
 import { randomQuote } from "../utils/data";
-import { loadNotes, saveNotes, loadSettings, saveSettings } from "../utils/storage";
+import { loadNotes, saveNotes, loadSettings, saveSettings, getPersistPref, setPersistPref } from "../utils/storage";
 import { NOTE_COLORS } from "../constants/colors";
 import Navigation from "../components/Navigation/Navigation";
 import GooeyEffectSvg from "../components/Svg/GooeyEffectSvg";
@@ -39,6 +43,8 @@ import TourGuide from "../components/Tour/TourGuide";
 import ShotReplay, { REPLAY_EVENT } from "../components/Replay/ShotReplay";
 import BulkActionBar from "../components/Bulk/BulkActionBar";
 import InsightsPanel, { INSIGHTS_EVENT } from "../components/Insights/InsightsPanel";
+import TrashPanel, { TRASH_EVENT } from "../components/Trash/TrashPanel";
+import HistoryPanel, { HISTORY_EVENT } from "../components/History/HistoryPanel";
 import ActionStamp from "../components/Stamp/ActionStamp";
 import ScrollProgress from "../components/Scroll/ScrollProgress";
 import DropZoneOverlay from "../components/DropZone/DropZoneOverlay";
@@ -65,16 +71,19 @@ import "./Home.css";
 // DeletedEntry shape:
 // {
 //   note: Note,
-//   index: number
+//   index: number,
+//   deletedAt: number,   // Date.now() at the moment of deletion
+//   dismissed: boolean   // no longer shown in the toast deck; still in the trash
 // }
 
 // The note counts worth a little ink shower over the desk.
 const MILESTONES = [5, 10, 25, 50, 100, 200, 500];
 
 const Home = () => {
-  // Notes live in sessionStorage only — they survive reloads within this
-  // tab and reset when the tab closes. The list starts empty and is
-  // hydrated in an effect so SSR never touches sessionStorage.
+  // Notes live in sessionStorage by default — surviving reloads within this
+  // tab, resetting when it closes — or in localStorage if the visitor has
+  // opted into remembering across sessions (persistNotes below). The list
+  // starts empty and is hydrated in an effect so SSR never touches storage.
   const [notes, setNotes] = useState([]);
   const [hydrated, setHydrated] = useState(false);
 
@@ -83,8 +92,37 @@ const Home = () => {
   const [notesSortColor, setNotesSortColor] = useState(null);
   const [notesSortTag, setNotesSortTag] = useState(null);
 
-  // Fresh paper or the Ink theme — kept in sessionStorage alongside the notes.
+  // Fresh paper or the Ink theme — kept alongside the notes, in whichever
+  // store the persist preference below currently points at.
   const [theme, setTheme] = useState("light");
+
+  // Off by default: notes and settings live in sessionStorage and clear the
+  // moment this tab closes. Flipping it on moves the exact same reads and
+  // writes over to localStorage instead (see storage.js) — the choice
+  // itself always lives in localStorage regardless, so it's still known
+  // the next time the visitor opens a fresh tab.
+  const [persistNotes, setPersistNotesFlag] = useState(false);
+
+  const togglePersistNotes = () => {
+    setPersistNotesFlag((prev) => {
+      const next = !prev;
+      setPersistPref(next);
+
+      // Carry this tab's current notes and settings over to whichever
+      // store just became active, rather than leaving them stranded in the
+      // old one until the next unrelated edit happens to re-save them.
+      saveNotes(notes);
+      saveSettings({ theme });
+
+      showStamp(
+        next
+          ? "Notes will now stick around after you close this tab"
+          : "Notes will clear when you close this tab, like before"
+      );
+
+      return next;
+    });
+  }
 
   // The drop of ink that washes over the desk when the theme flips — see
   // ThemeWipe. Cleared once the wash has finished playing.
@@ -124,8 +162,11 @@ const Home = () => {
   const everHadNotesRef = useRef(false);
   const [deskCleared, setDeskCleared] = useState(0);
 
-  // Hydrate notes and settings from sessionStorage once, on mount.
+  // Hydrate the persist choice first — loadNotes/loadSettings below read
+  // whichever store it points at — then the notes and settings themselves.
   useEffect(() => {
+    setPersistNotesFlag(getPersistPref());
+
     const stored = loadNotes();
     if (stored.length > 0) setNotes(stored);
 
@@ -173,8 +214,8 @@ const Home = () => {
     }
   }, [notes.length, hydrated]);
 
-  // Mirror every change back into sessionStorage — but only after hydration,
-  // so the initial empty list never overwrites what the session already holds.
+  // Mirror every change back into storage — but only after hydration, so
+  // the initial empty list never overwrites what was already there.
   useEffect(() => {
     if (!hydrated) return;
     saveNotes(notes);
@@ -196,8 +237,13 @@ const Home = () => {
   const [focusMode, setFocusMode] = useState(false);
   const toggleFocusMode = () => setFocusMode((prev) => !prev);
 
-  // Long-press-deleted notes and where each sat, kept around as a toast deck
-  // for their undo windows. Oldest first; only the freshest few are shown.
+  // Every note deleted this session, oldest first, and where each sat —
+  // this desk's whole trash, not capped and never auto-expired on its own.
+  // Two views read it: the toast deck below only ever shows the freshest
+  // few, undismissed ones (see visibleDeleted), while the Trash panel
+  // (TrashPanel.jsx) shows the lot. `dismissed` marks an entry whose toast
+  // has run its course or been swiped away — it stays in the trash either
+  // way, just stops competing for room in the toast deck.
   const [deletedNotes, setDeletedNotes] = useState([]);
 
   // Which note is stretched open in the focus editor, if any.
@@ -302,8 +348,13 @@ const Home = () => {
 
     setDeletedNotes((prev) => [
       ...prev.filter((entry) => !selectedIds.has(entry.note.id)),
-      ...toDelete.map((note) => ({ note, index: notes.findIndex((n) => n.id === note.id) })),
-    ].slice(-4));
+      ...toDelete.map((note) => ({
+        note,
+        index: notes.findIndex((n) => n.id === note.id),
+        deletedAt: Date.now(),
+        dismissed: false,
+      })),
+    ]);
     setNotes((prev) => prev.filter((note) => !selectedIds.has(note.id)));
 
     if (editingNoteId && selectedIds.has(editingNoteId)) setEditingNoteId(null);
@@ -431,14 +482,17 @@ const Home = () => {
 
     setDeletedNotes((prev) => [
       ...prev.filter((entry) => entry.note.id !== noteId),
-      { note: notes[index], index },
-    ].slice(-4));
+      { note: notes[index], index, deletedAt: Date.now(), dismissed: false },
+    ]);
     setNotes(notes.filter((note) => note.id !== noteId));
 
     if (editingNoteId === noteId) setEditingNoteId(null);
   }
 
-  const undoDelete = (noteId) => {
+  // Brings a note back — called from the toast's Undo button or from the
+  // Trash panel, whichever still has it. Either way it leaves the trash
+  // for good, restored to as close to its old spot as the desk allows.
+  const restoreNote = (noteId) => {
     const entry = deletedNotes.find((item) => item.note.id === noteId);
     if (!entry) return;
 
@@ -452,9 +506,30 @@ const Home = () => {
     setDeletedNotes((prev) => prev.filter((item) => item.note.id !== noteId));
   }
 
+  // The toast's own timer (or a swipe) retiring it from the toast deck —
+  // the note stays in the trash regardless, just stops competing for one
+  // of the few slots the toast deck shows at once.
   const dismissUndo = useCallback((noteId) => {
+    setDeletedNotes((prev) => prev.map((entry) =>
+      entry.note.id === noteId ? { ...entry, dismissed: true } : entry
+    ));
+  }, []);
+
+  // Gone for good, skipping the desk entirely — the Trash panel's shred.
+  const shredNote = useCallback((noteId) => {
     setDeletedNotes((prev) => prev.filter((entry) => entry.note.id !== noteId));
   }, []);
+
+  const emptyTrash = useCallback(() => {
+    setDeletedNotes([]);
+  }, []);
+
+  // Only the freshest few, undismissed deletes get a toast — the Trash
+  // panel is where the rest (and these, once their moment passes) live on.
+  const visibleDeleted = useMemo(
+    () => deletedNotes.filter((entry) => !entry.dismissed).slice(-3),
+    [deletedNotes]
+  );
 
   // The copy lands right beside its source in the grid, starting unstarred —
   // and, reusing the same spawn morph a fresh note plays, peels out from the
@@ -499,34 +574,50 @@ const Home = () => {
   // step back a character or two — "just keep typing" is the real undo
   // there. Deletes stay on their own toast deck rather than joining this
   // stack, so the two systems never fight over the same keystroke.
-  const undoStackRef = useRef([]);
-  const redoStackRef = useRef([]);
+  //
+  // undoStack and redoStack are state (not refs) so the History panel can
+  // actually render them. The two combine into one chronological timeline
+  // — everything undoStack remembers, wherever the desk sits right now,
+  // then everything still queued up in redoStack — which is what jumpTo
+  // below actually operates on: one function that lands anywhere on that
+  // line in a single step, whether that's one Ctrl+Z or the History
+  // panel's scrub landing several stops away at once. cursor is always
+  // exactly undoStack.length; nothing separately tracks "where we are."
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
 
   const pushUndo = (label) => {
-    undoStackRef.current = [...undoStackRef.current, { notes, label }].slice(-20);
-    redoStackRef.current = [];   // a fresh edit forks away from any undone branch
+    setUndoStack((prev) => [...prev, { notes, label, at: Date.now() }].slice(-20));
+    setRedoStack([]);   // a fresh edit forks away from any undone branch
+  }
+
+  // redoStack stores nearest-future last (performRedo below pops off its
+  // end), so reading it forward in time means reversing it first.
+  const timeline = useMemo(
+    () => [...undoStack, { notes, label: "now", at: null }, ...[...redoStack].reverse()],
+    [undoStack, redoStack, notes]
+  );
+  const cursor = undoStack.length;
+
+  const jumpTo = (targetIndex) => {
+    const clamped = Math.max(0, Math.min(targetIndex, timeline.length - 1));
+    if (clamped === cursor) return;
+
+    setUndoStack(timeline.slice(0, clamped));
+    setRedoStack([...timeline.slice(clamped + 1)].reverse());
+    setNotes(timeline[clamped].notes);
   }
 
   const performUndo = () => {
-    const stack = undoStackRef.current;
-    if (stack.length === 0) return;
-
-    const last = stack[stack.length - 1];
-    undoStackRef.current = stack.slice(0, -1);
-    redoStackRef.current = [...redoStackRef.current, { notes, label: last.label }].slice(-20);
-    setNotes(last.notes);
-    showStamp(`Undid: ${ last.label }`);
+    if (cursor === 0) return;
+    showStamp(`Undid: ${ timeline[cursor - 1].label }`);
+    jumpTo(cursor - 1);
   }
 
   const performRedo = () => {
-    const stack = redoStackRef.current;
-    if (stack.length === 0) return;
-
-    const last = stack[stack.length - 1];
-    redoStackRef.current = stack.slice(0, -1);
-    undoStackRef.current = [...undoStackRef.current, { notes, label: last.label }].slice(-20);
-    setNotes(last.notes);
-    showStamp(`Redid: ${ last.label }`);
+    if (cursor >= timeline.length - 1) return;
+    showStamp(`Redid: ${ timeline[cursor + 1].label }`);
+    jumpTo(cursor + 1);
   }
 
   useEffect(() => {
@@ -847,10 +938,22 @@ const Home = () => {
     { key: "undo", label: "Undo the last edit", hint: "⌘Z", icon: <FaClockRotateLeft />, perform: performUndo },
     { key: "redo", label: "Redo the last undo", hint: "⌘⇧Z", icon: <FaArrowRotateRight />, perform: performRedo },
     {
+      key: "history",
+      label: "Show edit history",
+      icon: <FaTimeline />,
+      perform: () => window.dispatchEvent(new CustomEvent(HISTORY_EVENT)),
+    },
+    {
       key: "theme",
       label: theme === "dark" ? "Switch to fresh paper" : "Switch to Ink",
       icon: theme === "dark" ? <FaSun /> : <FaMoon />,
       perform: toggleTheme,
+    },
+    {
+      key: "persist",
+      label: persistNotes ? "Stop remembering notes after this tab" : "Remember notes across sessions",
+      icon: persistNotes ? <FaLock /> : <FaLockOpen />,
+      perform: togglePersistNotes,
     },
     { key: "export", label: "Export a backup", icon: <FaFileArrowDown />, perform: exportNotes },
     { key: "clear", label: "Clear every filter", icon: <FaRotateLeft />, perform: clearFilters },
@@ -873,6 +976,12 @@ const Home = () => {
       label: "Show desk insights",
       icon: <FaChartLine />,
       perform: () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)),
+    },
+    {
+      key: "trash",
+      label: deletedNotes.length > 0 ? `Open the trash · ${ deletedNotes.length }` : "Open the trash",
+      icon: <FaTrashCan />,
+      perform: () => window.dispatchEvent(new CustomEvent(TRASH_EVENT)),
     },
     {
       key: "sprint",
@@ -925,6 +1034,9 @@ const Home = () => {
           toggleTheme={ toggleTheme }
           focusMode={ focusMode }
           toggleFocusMode={ toggleFocusMode }
+          persistNotes={ persistNotes }
+          togglePersistNotes={ togglePersistNotes }
+          trashCount={ deletedNotes.length }
         />
         <NoteList
           notes={ filteredNotes }
@@ -1003,6 +1115,17 @@ const Home = () => {
         sortColor={ notesSortColor }
         setSortColor={ setNotesSortColor }
       />
+      <TrashPanel
+        entries={ deletedNotes }
+        onRestore={ restoreNote }
+        onShred={ shredNote }
+        onEmpty={ emptyTrash }
+      />
+      <HistoryPanel
+        timeline={ timeline }
+        cursor={ cursor }
+        onJump={ jumpTo }
+      />
       <BulkActionBar
         count={ selectedIds.size }
         onStar={ bulkStar }
@@ -1041,12 +1164,12 @@ const Home = () => {
       <div className="undo-toast-layer">
         <AnimatePresence>
           {
-            deletedNotes.map((entry, index) => (
+            visibleDeleted.map((entry, index) => (
               <UndoToast
                 key={ entry.note.id }
                 note={ entry.note }
-                depth={ deletedNotes.length - 1 - index }
-                onUndo={ undoDelete }
+                depth={ visibleDeleted.length - 1 - index }
+                onUndo={ restoreNote }
                 onDismiss={ dismissUndo }
               />
             ))

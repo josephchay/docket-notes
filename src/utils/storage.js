@@ -1,6 +1,9 @@
-// Session-only persistence. Notes and settings live in the browser's
+// Session-only by default. Notes and settings live in the browser's
 // sessionStorage — they survive reloads within the tab, and vanish when the
-// tab closes. There is no database and no network involved.
+// tab closes — unless the visitor has opted into remembering across
+// sessions (see getPersistPref/setPersistPref below), in which case the
+// exact same reads/writes go to localStorage instead. There is no database
+// and no network involved either way.
 //
 // This module replaces the old api.js (fetchNotes / syncNotes /
 // fetchSettings / saveSettings). Delete api.js from the project.
@@ -8,6 +11,7 @@
 const NOTES_KEY = "docket-notes";
 const SETTINGS_KEY = "docket-settings";
 const TOUR_KEY = "docket-tour-seen";
+const PERSIST_KEY = "docket-persist";
 
 // StoredNote shape:
 // {
@@ -28,21 +32,49 @@ const TOUR_KEY = "docket-tour-seen";
 //   [key: string]: unknown
 // }
 
-// sessionStorage only exists in the browser; every helper no-ops safely
-// during SSR / prerendering.
-const storageAvailable = () => {
+// A given storage kind only exists in the browser; every helper no-ops
+// safely during SSR / prerendering.
+const storageAvailable = (kind) => {
   try {
-    return typeof window !== "undefined" && !!window.sessionStorage;
+    return typeof window !== "undefined" && !!window[kind];
   } catch {
     return false;
   }
 };
 
-export const loadNotes = () => {
-  if (!storageAvailable()) return [];
+// Whether the visitor has asked notes and settings to survive closing the
+// tab. Always read/written in localStorage regardless of the preference's
+// own value — this one flag has to outlive the tab to know which store to
+// boot into next time, even when the notes themselves are session-only.
+export const getPersistPref = () => {
+  if (!storageAvailable("localStorage")) return false;
 
   try {
-    const raw = window.sessionStorage.getItem(NOTES_KEY);
+    return window.localStorage.getItem(PERSIST_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+export const setPersistPref = (on) => {
+  if (!storageAvailable("localStorage")) return;
+
+  try {
+    window.localStorage.setItem(PERSIST_KEY, on ? "1" : "0");
+  } catch {
+    // Storage blocked — the choice just won't stick past this tab.
+  }
+};
+
+// Which Web Storage object notes/settings currently read and write.
+const activeKind = () => (getPersistPref() ? "localStorage" : "sessionStorage");
+
+export const loadNotes = () => {
+  const kind = activeKind();
+  if (!storageAvailable(kind)) return [];
+
+  try {
+    const raw = window[kind].getItem(NOTES_KEY);
     if (!raw) return [];
 
     const parsed = JSON.parse(raw);
@@ -67,20 +99,22 @@ export const loadNotes = () => {
 };
 
 export const saveNotes = (notes) => {
-  if (!storageAvailable()) return;
+  const kind = activeKind();
+  if (!storageAvailable(kind)) return;
 
   try {
-    window.sessionStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+    window[kind].setItem(NOTES_KEY, JSON.stringify(notes));
   } catch {
     // Quota exceeded or storage blocked — the in-memory state still works.
   }
 };
 
 export const loadSettings = () => {
-  if (!storageAvailable()) return {};
+  const kind = activeKind();
+  if (!storageAvailable(kind)) return {};
 
   try {
-    const raw = window.sessionStorage.getItem(SETTINGS_KEY);
+    const raw = window[kind].getItem(SETTINGS_KEY);
     if (!raw) return {};
 
     const parsed = JSON.parse(raw);
@@ -91,19 +125,23 @@ export const loadSettings = () => {
 };
 
 export const saveSettings = (settings) => {
-  if (!storageAvailable()) return;
+  const kind = activeKind();
+  if (!storageAvailable(kind)) return;
 
   try {
     const merged = { ...loadSettings(), ...settings };
-    window.sessionStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
+    window[kind].setItem(SETTINGS_KEY, JSON.stringify(merged));
   } catch {
     // Storage blocked — theme just won't persist this session.
   }
 };
 
 // Whether the first-run coach-mark tour has already played this session.
+// Always sessionStorage, deliberately independent of the persist
+// preference — a returning visitor with remembered notes still gets the
+// tour once per fresh tab, same as before this preference existed.
 export const hasSeenTour = () => {
-  if (!storageAvailable()) return true;
+  if (!storageAvailable("sessionStorage")) return true;
 
   try {
     return window.sessionStorage.getItem(TOUR_KEY) === "1";
@@ -113,7 +151,7 @@ export const hasSeenTour = () => {
 };
 
 export const markTourSeen = () => {
-  if (!storageAvailable()) return;
+  if (!storageAvailable("sessionStorage")) return;
 
   try {
     window.sessionStorage.setItem(TOUR_KEY, "1");

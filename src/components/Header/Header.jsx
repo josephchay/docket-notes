@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
-import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand } from "react-icons/fa6";
+import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { COMMAND_EVENT } from "../Command/CommandPalette";
 import { INSIGHTS_EVENT } from "../Insights/InsightsPanel";
+import { TRASH_EVENT } from "../Trash/TrashPanel";
 import searchIcon from '../../assets/icons/search.svg';
 import useJellyTap from "../../hooks/useJellyTap";
 import useInkPulse from "../../hooks/useInkPulse";
@@ -62,6 +63,9 @@ const Header = ({
   toggleTheme,
   focusMode,
   toggleFocusMode,
+  persistNotes,
+  togglePersistNotes,
+  trashCount,
 }) => {
   const filtersActive = searchText !== "" || notesSortByFavorite || sortColor !== null;
 
@@ -74,6 +78,7 @@ const Header = ({
   const insightsJelly = useJellyTap();
   const commandJelly = useJellyTap();
   const focusJelly = useJellyTap();
+  const trashJelly = useJellyTap();
 
   // The color-filter ring borrows the free cursor's own press pulse and
   // idle pool (see useInkPulse) so it carries the same elastic personality
@@ -483,6 +488,37 @@ const Header = ({
       </motion.div>
       <motion.div
         role="button"
+        aria-label={ trashCount > 0 ? `Open the trash — ${ trashCount } ${ trashCount === 1 ? "note" : "notes" }` : "Open the trash" }
+        title="Trash"
+        whileHover={{ scale: 1.14, rotate: -10 }}
+        whileTap={{ scale: .9 }}
+        transition={ springy }
+        onTapStart={ trashJelly.squash }
+        onClick={ () => window.dispatchEvent(new CustomEvent(TRASH_EVENT)) }
+        className="wand trash-trigger"
+      >
+        <motion.span animate={ trashJelly.jelly } style={{ display: "inline-flex" }}>
+          <FaTrashCan className="wand-icon" />
+        </motion.span>
+        <AnimatePresence>
+          {
+            trashCount > 0 && (
+              <motion.span
+                key="badge"
+                className="trash-badge"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0, opacity: 0 }}
+                transition={{ type: "spring", stiffness: 500, damping: 20 }}
+              >
+                { trashCount }
+              </motion.span>
+            )
+          }
+        </AnimatePresence>
+      </motion.div>
+      <motion.div
+        role="button"
         aria-label="Open the command palette"
         title="Command ink (Ctrl K)"
         whileHover={{ scale: 1.14, rotate: -10 }}
@@ -551,6 +587,46 @@ const Header = ({
                 <FaSun className="theme-icon" />
               ) : (
                 <FaMoon className="theme-icon" />
+              )
+            }
+          </motion.span>
+        </AnimatePresence>
+      </motion.div>
+      <motion.div
+        role="button"
+        aria-label={ persistNotes ? "Stop remembering notes after this tab" : "Remember notes across sessions" }
+        title={ persistNotes ? "Notes stick around after you close this tab — click to stop" : "Notes clear when this tab closes — click to remember them" }
+        whileHover={{ scale: 1.14, rotate: -10 }}
+        whileTap={{ scale: .9 }}
+        transition={ springy }
+        onClick={ togglePersistNotes }
+        className="persist"
+      >
+        {/* The same spring-in/spin-out changeover as the theme toggle beside
+            it — the lock clicks shut or springs back open. */}
+        <AnimatePresence mode="wait" initial={ false }>
+          <motion.span
+            key={ persistNotes ? "locked" : "unlocked" }
+            className="persist-icon-wrap"
+            initial={{ rotate: -140, scale: 0, opacity: 0 }}
+            animate={{ rotate: 0, scale: 1, opacity: 1 }}
+            exit={{
+              rotate: 140,
+              scale: 0,
+              opacity: 0,
+              transition: { duration: .15, ease: "easeIn" },
+            }}
+            transition={{
+              type: "spring",
+              stiffness: 420,
+              damping: 15,
+            }}
+          >
+            {
+              persistNotes ? (
+                <FaLock className="persist-icon" />
+              ) : (
+                <FaLockOpen className="persist-icon" />
               )
             }
           </motion.span>
