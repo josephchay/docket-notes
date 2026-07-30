@@ -15,6 +15,7 @@ import {
 import { NOTE_COLORS } from "../../constants/colors";
 import { COMMAND_EVENT } from "../Command/CommandPalette";
 import { SPRINT_EVENT } from "../Sprint/SprintPanel";
+import useInkPulse from "../../hooks/useInkPulse";
 
 import "./QuickDock.css";
 
@@ -43,6 +44,7 @@ const QuickDock = ({
   const itemRefs = useRef([]);
   const quickTweens = useRef([]);
   const [hovered, setHovered] = useState(null);
+  const dockPulse = useInkPulse(hovered);
 
   const handleThemeToggle = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -146,15 +148,18 @@ const QuickDock = ({
             transition={{ type: "spring", stiffness: 420, damping: 17 }}
             onMouseEnter={ () => setHovered(index) }
             onMouseLeave={ () => setHovered((prev) => (prev === index ? null : prev)) }
+            onTapStart={ dockPulse.squash }
             onClick={ item.onRun }
           >
             {
               hovered === index && (
                 <motion.span
                   layoutId="dockHighlight"
-                  className="quick-dock-highlight"
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                />
+                  style={{ position: "absolute", inset: 0, zIndex: -1 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 20 }}
+                >
+                  <motion.span className="quick-dock-highlight" animate={ dockPulse.jelly } />
+                </motion.span>
               )
             }
             <span

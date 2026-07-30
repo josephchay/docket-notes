@@ -5,6 +5,7 @@ import gsap from "gsap";
 import { FaPlay, FaPause, FaRotateLeft, FaForward, FaXmark, FaMugHot, FaFeatherPointed } from "react-icons/fa6";
 
 import { sprintMachine, SPRINT_PRESETS } from "./SprintState";
+import useInkPulse from "../../hooks/useInkPulse";
 
 import "./SprintPanel.css";
 
@@ -36,6 +37,11 @@ const SprintPanel = () => {
   const [phase, setPhase] = useState("idle");
   const [context, setContext] = useState(sprintMachine.context);
   const [open, setOpen] = useState(false);
+
+  // The sprint-length thumb borrows the free cursor's own press pulse and
+  // idle pool (see useInkPulse) so it carries the same elastic personality
+  // as it slides between presets.
+  const lengthPulse = useInkPulse(context.sprintSeconds);
 
   useEffect(() => {
     service
@@ -249,16 +255,22 @@ const SprintPanel = () => {
                             whileHover={{ scale: 1.08 }}
                             whileTap={{ scale: .92 }}
                             transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                            onTapStart={ lengthPulse.squash }
                             onClick={ () => setLength(preset.seconds) }
                           >
                             {
                               context.sprintSeconds === preset.seconds && (
                                 <motion.span
                                   layoutId="sprintLengthThumb"
-                                  className="sprint-length-thumb"
-                                  style={{ borderRadius: 999 }}
-                                  transition={{ type: "spring", stiffness: 480, damping: 30 }}
-                                />
+                                  style={{ position: "absolute", inset: 0, borderRadius: 999 }}
+                                  transition={{ type: "spring", stiffness: 480, damping: 19 }}
+                                >
+                                  <motion.span
+                                    className="sprint-length-thumb"
+                                    animate={ lengthPulse.jelly }
+                                    style={{ borderRadius: "inherit" }}
+                                  />
+                                </motion.span>
                               )
                             }
                             <span>{ preset.label }m</span>

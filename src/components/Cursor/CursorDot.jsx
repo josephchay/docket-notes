@@ -27,6 +27,9 @@ const PEN_HOLD_MS = 4000; // how long dipped ink stays on the pen
 const IDLE_DELAY = 2.5;   // seconds still before the ink starts pooling
 const MAX_RIPPLES = 6;
 
+const SHAPE_STIFFNESS = 220; // spring constant the wrap/caret box's shape converts with
+const SHAPE_DAMPING = 14;    // underdamped enough for a visible pop-and-settle
+
 // The cursor is a three-point chain — a head that snaps to the pointer, a
 // neck that drags a beat behind the head, and a tail that drags a beat
 // behind the neck — rendered as ONE stroked SVG path: a quadratic curve
@@ -51,9 +54,21 @@ const MAX_RIPPLES = 6;
 // arbitrary button's own rectangle, so the two renderers simply crossfade
 // based on which state is active. Crossing a note or a nav color pot dips
 // the pen into that color: the capsule carries it for a few seconds
-// before drying back to a neutral gray. Left still for a moment, GSAP
-// eases the capsule through one gentle elastic pool. Touch and
-// reduced-motion visitors keep the OS cursor.
+// before drying back to a neutral gray. Both renderers share the same two
+// punctual reactions: a press snaps through one elastic jelly pulse, and
+// — left still for a moment, free or wrapped alike — GSAP eases whichever
+// shape is showing through one gentle elastic pool.
+//
+// The ink's position (x/y) always drifts continuously — the magnet lean
+// keeps chasing the live pointer even while parked on one control — so it
+// stays on the same plain decay as the capsule's own tracking. Its shape
+// (w/h/r) only ever moves at all when the target itself converts: a new
+// control, or crossing into/out of text mode. That box is a real
+// mass-spring instead, tuned to actually overshoot before it settles — so
+// every conversion pops and wobbles once rather than just resizing, with
+// no extra bookkeeping needed, since a spring already sitting on its
+// target simply stays put. Touch and reduced-motion visitors keep the OS
+// cursor.
 const CursorDot = () => {
   const layerRef = useRef(null);
   const capsuleRef = useRef(null);
@@ -83,9 +98,10 @@ const CursorDot = () => {
     const prevMouse = { x: mouse.x, y: mouse.y };
     const vel = { x: 0, y: 0 };
 
-    // The wrap/caret highlight's own eased box — unchanged from the
-    // original single-dot cursor.
+    // The wrap/caret highlight's own box — position eased as before, shape
+    // (below) a real spring so a conversion between targets can overshoot.
     const cur = { x: mouse.x, y: mouse.y, w: R * 2, h: R * 2, r: R };
+    const curShapeVel = { w: 0, h: 0, r: 0 };
 
     let wrapEl = null;
     let textMode = false;
@@ -235,9 +251,10 @@ const CursorDot = () => {
 
       // Left alone long enough, GSAP takes the idle swell from here — one
       // elastic pool rather than a continuous per-frame sine, so it reads
-      // as a deliberate little settle.
+      // as a deliberate little settle. Applies whether the pointer is
+      // roaming free or currently wrapping a control.
       const still = (now - lastMoveAt) / 1000;
-      if (!pooled && still > IDLE_DELAY && press < 0.01 && free) {
+      if (!pooled && still > IDLE_DELAY && press < 0.01) {
         pooled = true;
         poolTween?.kill();
         poolTween = gsap.to(pool, { amount: 1, duration: 0.9, ease: "elastic.out(1, 0.4)" });
@@ -295,7 +312,8 @@ const CursorDot = () => {
       capsule.style.strokeWidth = `${ r * 2 }px`;
       capsule.style.opacity = (free && seen && !pointerGone) ? 1 : 0;
 
-      // ---- The wrap / caret highlight — unchanged single-dot recipe. ----
+      // ---- The wrap / caret highlight — shares the capsule's own press
+      // pulse and idle pool, so it carries the same elastic personality. ----
       let gx = mouse.x, gy = mouse.y, gw = R * 2, gh = R * 2, gr = R;
 
       if (wrapEl) {
@@ -315,17 +333,36 @@ const CursorDot = () => {
 
       cur.x += (gx - cur.x) * ease(0.3);
       cur.y += (gy - cur.y) * ease(0.3);
-      cur.w += (gw - cur.w) * ease(0.24);
-      cur.h += (gh - cur.h) * ease(0.24);
-      cur.r += (gr - cur.r) * ease(0.24);
 
-      let inkTransform = `translate3d(${ cur.x - cur.w / 2 }px, ${ cur.y - cur.h / 2 }px, 0)`;
-      if (press > 0.01) inkTransform += ` scale(${ 1 - press * 0.14 })`;
+      // The shape springs to its target rather than just decaying toward
+      // it — sitting still (target unchanged) it stays put, but a genuine
+      // conversion gives it real mass to overshoot and settle with.
+      const springTo = (key, target) => {
+        const accel = -(cur[key] - target) * SHAPE_STIFFNESS - curShapeVel[key] * SHAPE_DAMPING;
+        curShapeVel[key] += accel * dt;
+        cur[key] += curShapeVel[key] * dt;
+      };
+      springTo("w", gw);
+      springTo("h", gh);
+      springTo("r", gr);
+
+      // A big enough overshoot (a wide wrapped control converting straight
+      // into a caret, say) can swing the spring past zero — clamp only the
+      // painted value, the spring's own state keeps integrating untouched.
+      const paintW = Math.max(0, cur.w);
+      const paintH = Math.max(0, cur.h);
+      const paintR = Math.max(0, cur.r);
+
+      let inkScale = 1 - pulse.amount * 0.14;
+      if (pool.amount > 0.001) inkScale *= 1 + pool.amount * 0.16 * Math.sin(pool.amount * Math.PI);
+
+      let inkTransform = `translate3d(${ cur.x - paintW / 2 }px, ${ cur.y - paintH / 2 }px, 0)`;
+      if (Math.abs(inkScale - 1) > 0.001) inkTransform += ` scale(${ inkScale })`;
 
       ink.style.transform = inkTransform;
-      ink.style.width = `${ cur.w }px`;
-      ink.style.height = `${ cur.h }px`;
-      ink.style.borderRadius = `${ cur.r }px`;
+      ink.style.width = `${ paintW }px`;
+      ink.style.height = `${ paintH }px`;
+      ink.style.borderRadius = `${ paintR }px`;
       ink.style.opacity = (!free && seen && !pointerGone) ? 1 : 0;
 
       raf = requestAnimationFrame(frame);

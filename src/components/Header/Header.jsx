@@ -7,6 +7,7 @@ import { COMMAND_EVENT } from "../Command/CommandPalette";
 import { INSIGHTS_EVENT } from "../Insights/InsightsPanel";
 import searchIcon from '../../assets/icons/search.svg';
 import useJellyTap from "../../hooks/useJellyTap";
+import useInkPulse from "../../hooks/useInkPulse";
 
 import './Header.css';
 
@@ -73,6 +74,11 @@ const Header = ({
   const insightsJelly = useJellyTap();
   const commandJelly = useJellyTap();
   const focusJelly = useJellyTap();
+
+  // The color-filter ring borrows the free cursor's own press pulse and
+  // idle pool (see useInkPulse) so it carries the same elastic personality
+  // as it slides between squares.
+  const colorRingPulse = useInkPulse(sortColor);
 
   const handleSearch = (e) => {
     setNotesSortText(e.target.value);
@@ -318,6 +324,7 @@ const Header = ({
               whileHover={{ scale: 1.1, translateY: -2 }}
               whileTap={{ scale: .88 }}
               transition={ springy }
+              onTapStart={ colorRingPulse.squash }
               onClick={ () => setSortColor(sortColor === name ? null : name) }
             >
               <span className={ `color-chip ${ name }-bg` } />
@@ -325,14 +332,19 @@ const Header = ({
                 sortColor === name && (
                   <motion.span
                     layoutId="colorFilterRing"
-                    className="color-ring"
-                    style={{ borderRadius: 10 }}
+                    style={{ position: "absolute", inset: 0, borderRadius: 10 }}
                     transition={{
                       type: "spring",
                       stiffness: 500,
-                      damping: 28,
+                      damping: 19,
                     }}
-                  />
+                  >
+                    <motion.span
+                      className="color-ring"
+                      animate={ colorRingPulse.jelly }
+                      style={{ borderRadius: "inherit" }}
+                    />
+                  </motion.span>
                 )
               }
             </motion.button>

@@ -5,6 +5,7 @@ import { FaEye } from "react-icons/fa";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import useJellyTap from "../../hooks/useJellyTap";
+import useInkPulse from "../../hooks/useInkPulse";
 
 import "./NoteEditor.css";
 
@@ -87,6 +88,11 @@ const NoteEditor = ({
   const lockTap = useJellyTap();
   const copyTap = useJellyTap();
   const resizeTap = useJellyTap();
+
+  // The palette's ring borrows the free cursor's own press pulse and idle
+  // pool (see useInkPulse) so it carries the same elastic personality as
+  // it slides between colors.
+  const paletteRingPulse = useInkPulse(note.color);
   const closeTap = useJellyTap();
 
   const wobble = useCallback(() => {
@@ -225,16 +231,22 @@ const NoteEditor = ({
                       whileHover={{ scale: 1.25 }}
                       whileTap={{ scale: .85 }}
                       transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                      onTapStart={ paletteRingPulse.squash }
                       onClick={ () => setNoteColor(name, note.id) }
                     >
                       {
                         name === note.color && (
                           <motion.span
                             layoutId="editorPaletteRing"
-                            className="note-editor-dot-ring"
-                            style={{ borderRadius: "50%" }}
-                            transition={{ type: "spring", stiffness: 450, damping: 24 }}
-                          />
+                            style={{ position: "absolute", inset: -3, borderRadius: "50%" }}
+                            transition={{ type: "spring", stiffness: 450, damping: 17 }}
+                          >
+                            <motion.span
+                              className="note-editor-dot-ring"
+                              animate={ paletteRingPulse.jelly }
+                              style={{ position: "absolute", inset: 0, borderRadius: "inherit" }}
+                            />
+                          </motion.span>
                         )
                       }
                     </motion.button>

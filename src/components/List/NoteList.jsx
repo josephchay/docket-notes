@@ -10,6 +10,7 @@ import { NOTE_COLORS } from "../../constants/colors";
 
 import "./NoteList.css";
 import { itemsPerFlexRow } from "../../utils/math";
+import useInkPulse from "../../hooks/useInkPulse";
 
 const GRID_RADIAL_RADIUS = 58;
 const GRID_RADIAL_MARGIN = 100;
@@ -139,6 +140,12 @@ const NoteList = ({
   const ref = useRef(null);
 
   const allSelected = notes.length > 0 && notes.every((note) => selectedIds?.has(note.id));
+
+  // The sort-mode and tag-filter thumbs borrow the free cursor's own press
+  // pulse and idle pool (see useInkPulse) so they carry the same elastic
+  // personality instead of just sliding flatly between labels.
+  const sortPulse = useInkPulse(sortMode);
+  const tagPulse = useInkPulse(sortTag);
 
   const [numPerRow, setNumPerRow] = useState(0);
   const [renderFirstRow, setRenderFirstRow] = useState(false);  // To delay the rendering of the notes list group.
@@ -316,20 +323,26 @@ const NoteList = ({
                   whileHover={{ scale: 1.06 }}
                   whileTap={{ scale: .92 }}
                   transition={ springy }
+                  onTapStart={ sortPulse.squash }
                   onClick={ () => setSortMode?.(mode.key) }
                 >
                   {
                     sortMode === mode.key && (
                       <motion.span
                         layoutId="sortThumb"
-                        className="sort-thumb"
-                        style={{ borderRadius: 8 }}
+                        style={{ position: "absolute", inset: 0, borderRadius: 8 }}
                         transition={{
                           type: "spring",
                           stiffness: 480,
-                          damping: 30,
+                          damping: 19,
                         }}
-                      />
+                      >
+                        <motion.span
+                          className="sort-thumb"
+                          animate={ sortPulse.jelly }
+                          style={{ borderRadius: "inherit" }}
+                        />
+                      </motion.span>
                     )
                   }
                   <span className="sort-label">{ mode.label }</span>
@@ -410,16 +423,22 @@ const NoteList = ({
               type="button"
               aria-pressed={ !sortTag }
               className={ `tag-filter ${ !sortTag ? "active" : "" }` }
+              onPointerDown={ tagPulse.squash }
               onClick={ () => setSortTag?.(null) }
             >
               {
                 !sortTag && (
                   <motion.span
                     layoutId="tagThumb"
-                    className="tag-thumb"
-                    style={{ borderRadius: 999 }}
-                    transition={{ type: "spring", stiffness: 480, damping: 30 }}
-                  />
+                    style={{ position: "absolute", inset: 0, borderRadius: 999 }}
+                    transition={{ type: "spring", stiffness: 480, damping: 19 }}
+                  >
+                    <motion.span
+                      className="tag-thumb"
+                      animate={ tagPulse.jelly }
+                      style={{ borderRadius: "inherit" }}
+                    />
+                  </motion.span>
                 )
               }
               <span className="tag-filter-label">All</span>
@@ -431,16 +450,22 @@ const NoteList = ({
                   type="button"
                   aria-pressed={ sortTag === tag }
                   className={ `tag-filter ${ sortTag === tag ? "active" : "" }` }
+                  onPointerDown={ tagPulse.squash }
                   onClick={ () => setSortTag?.(sortTag === tag ? null : tag) }
                 >
                   {
                     sortTag === tag && (
                       <motion.span
                         layoutId="tagThumb"
-                        className="tag-thumb"
-                        style={{ borderRadius: 999 }}
-                        transition={{ type: "spring", stiffness: 480, damping: 30 }}
-                      />
+                        style={{ position: "absolute", inset: 0, borderRadius: 999 }}
+                        transition={{ type: "spring", stiffness: 480, damping: 19 }}
+                      >
+                        <motion.span
+                          className="tag-thumb"
+                          animate={ tagPulse.jelly }
+                          style={{ borderRadius: "inherit" }}
+                        />
+                      </motion.span>
                     )
                   }
                   <span className="tag-filter-label">#{ tag }</span>

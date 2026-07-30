@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { interpret } from "xstate";
 
 import { commandMachine } from "./CommandState";
+import useInkPulse from "../../hooks/useInkPulse";
 
 import "./CommandPalette.css";
 
@@ -109,6 +110,7 @@ const CommandPalette = ({ actions }) => {
   };
 
   const highlight = Math.min(selected, Math.max(filtered.length - 1, 0));
+  const commandPulse = useInkPulse(highlight);
 
   return (
     <AnimatePresence>
@@ -173,16 +175,22 @@ const CommandPalette = ({ actions }) => {
                         delay: .05 + index * .035,
                       }}
                       onMouseEnter={ () => setSelected(index) }
+                      onTapStart={ commandPulse.squash }
                       onClick={ () => run(action) }
                     >
                       {
                         index === highlight && (
                           <motion.span
                             layoutId="commandThumb"
-                            className="command-thumb"
-                            style={{ borderRadius: 12 }}
-                            transition={{ type: "spring", stiffness: 520, damping: 32 }}
-                          />
+                            style={{ position: "absolute", inset: 0, borderRadius: 12 }}
+                            transition={{ type: "spring", stiffness: 520, damping: 20 }}
+                          >
+                            <motion.span
+                              className="command-thumb"
+                              animate={ commandPulse.jelly }
+                              style={{ borderRadius: "inherit" }}
+                            />
+                          </motion.span>
                         )
                       }
                       <span className="command-item-icon">{ action.icon }</span>
