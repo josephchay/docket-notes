@@ -1,0 +1,37 @@
+.liquid-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.liquid-meter-svg {
+  width: 44px;
+  height: 56px;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.liquid-meter-vial {
+  fill: var(--page-surface-color);
+  transition: fill 0.4s ease-in-out;
+}
+
+.liquid-meter-wave {
+  transition: fill 0.4s ease-in-out;
+}
+
+.liquid-meter-rim {
+  fill: none;
+  stroke: var(--page-line-color);
+  stroke-width: 1.5;
+  transition: stroke 0.4s ease-in-out;
+}
+
+.liquid-meter-label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--page-ink-color);
+  opacity: .7;
+  transition: color 0.4s ease-in-out;
+}

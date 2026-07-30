@@ -29,6 +29,7 @@ import { formattedDateNow } from "../utils/date";
 import { randomQuote } from "../utils/data";
 import { loadNotes, saveNotes, loadSettings, saveSettings, getPersistPref, setPersistPref } from "../utils/storage";
 import { NOTE_COLORS } from "../constants/colors";
+import { MILESTONES } from "../constants/milestones";
 import Navigation from "../components/Navigation/Navigation";
 import GooeyEffectSvg from "../components/Svg/GooeyEffectSvg";
 import LiquidTextFilter from "../components/Svg/LiquidTextFilter";
@@ -78,9 +79,6 @@ import "./Home.css";
 //   deletedAt: number,   // Date.now() at the moment of deletion
 //   dismissed: boolean   // no longer shown in the toast deck; still in the trash
 // }
-
-// The note counts worth a little ink shower over the desk.
-const MILESTONES = [5, 10, 25, 50, 100, 200, 500];
 
 const Home = () => {
   // Notes live in sessionStorage by default — surviving reloads within this

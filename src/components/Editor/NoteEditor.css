@@ -46,6 +46,11 @@
   box-shadow:
     0 0 0 4px var(--white-transclucent-color),
     0 40px 90px -30px rgba(25, 25, 25, 0.55);
+  /* The preset classes (.cozy/.grand/.epic below) only change padding and
+     border-radius, and only ever at the end of a drag-resize (see
+     handleResizeEnd in NoteEditor.jsx) rather than continuously through
+     it — this just softens that one jump instead of a hard cut. */
+  transition: padding 0.25s ease-in-out, border-radius 0.25s ease-in-out;
 }
 
 .note-editor.cozy {
@@ -384,4 +389,35 @@
 .note-editor.cozy .note-editor-action {
   width: 34px;
   height: 34px;
+}
+
+/* The stretchy resize corner — see NoteEditor.jsx for the drag math. Sits
+   fully inside the padded corner (not hanging off the edge) so .note-editor's
+   own overflow:hidden never clips it under normal use, only very slightly
+   during the drag itself, which the tight dragConstraints there already
+   keep small. */
+.note-editor-resize-handle {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  touch-action: none;
+}
+
+.note-editor-resize-handle .note-editor-resize-grip {
+  width: 12px;
+  height: 12px;
+  border-radius: 0 0 4px 0;
+  border-right: 3px solid var(--black-transclucent-color);
+  border-bottom: 3px solid var(--black-transclucent-color);
+  transition: border-color 0.2s ease-in-out;
+}
+
+.note-editor-resize-handle:hover .note-editor-resize-grip {
+  border-color: var(--black-color);
 }

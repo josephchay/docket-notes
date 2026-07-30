@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
+import { AnimatePresence, animate, motion, useAnimationControls, useMotionValue } from "framer-motion";
 import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle, FaTag } from "react-icons/fa6";
 import { FaEye } from "react-icons/fa";
 
@@ -45,7 +45,14 @@ const NoteEditor = ({
 }) => {
   const [draftTitle, setDraftTitle] = useState(note.title);
   const [draftText, setDraftText] = useState(note.text);
+  // `size` still names which of the 4 presets the paper currently reads
+  // closest to — driving the CSS type-scale classes (.cozy/.grand/.epic)
+  // and the cycle button's label — but the paper's actual box is now these
+  // two motion values, so the drag handle below can stretch it continuously
+  // between (and past) presets rather than only jumping to one of the 4.
   const [size, setSize] = useState("roomy");
+  const width = useMotionValue(sizeFor("roomy").width);
+  const height = useMotionValue(sizeFor("roomy").height);
   const [copied, setCopied] = useState(false);
 
   // Tags pop in bouncy, shrink away when removed. Notes from before this
@@ -106,6 +113,76 @@ const NoteEditor = ({
   useEffect(() => {
     wobble();
   }, [size, wobble]);
+
+  const sizeSpring = { type: "spring", stiffness: 260, damping: 14, mass: .9 };
+
+  // The preset button's jump: names the target size (for the CSS type-scale
+  // class and the button's own label) and springs both motion values there
+  // together — the same spring the paper used to animate on every render
+  // via `animate={sizeFor(size)}` before the drag handle needed direct
+  // control of these as motion values instead.
+  const goToSize = (name) => {
+    const target = sizeFor(name);
+    setSize(name);
+    animate(width, target.width, sizeSpring);
+    animate(height, target.height, sizeSpring);
+  };
+
+  // Diminishing resistance beyond a bound, rather than a hard wall — the
+  // further past cozy/epic the drag goes, the less further pixel movement
+  // actually moves the edge.
+  const rubberband = (value, min, max, reach = 70) => {
+    if (value < min) {
+      const over = min - value;
+      return min - over / (1 + over / reach);
+    }
+    if (value > max) {
+      const over = value - max;
+      return max + over / (1 + over / reach);
+    }
+    return value;
+  };
+
+  // The bottom-right handle: framer's drag reports the handle's own
+  // (tightly constrained, see the JSX below) visual offset separately from
+  // `info.offset`, which stays the raw, unclamped pointer delta the whole
+  // time — so the handle's nub can stay pinned near the corner (never
+  // fighting `.note-editor`'s own overflow:hidden) while still driving the
+  // full, unbounded stretch off of that raw delta.
+  const resizeStartRef = useRef({ width: 0, height: 0 });
+
+  const handleResizeStart = () => {
+    resizeStartRef.current = { width: width.get(), height: height.get() };
+  };
+
+  const handleResizeDrag = (_e, info) => {
+    const min = sizeFor("cozy");
+    const max = sizeFor("epic");
+
+    width.set(rubberband(resizeStartRef.current.width + info.offset.x, min.width, max.width));
+    height.set(rubberband(resizeStartRef.current.height + info.offset.y, min.height, max.height));
+  };
+
+  const handleResizeEnd = () => {
+    const min = sizeFor("cozy");
+    const max = sizeFor("epic");
+    const clampedW = Math.max(min.width, Math.min(max.width, width.get()));
+    const clampedH = Math.max(min.height, Math.min(max.height, height.get()));
+
+    // A visibly softer spring than the button's own jump — this one has to
+    // sell the "snapping back from a stretch" moment, not just settle.
+    const snapBack = { type: "spring", stiffness: 220, damping: 13 };
+    animate(width, clampedW, snapBack);
+    animate(height, clampedH, snapBack);
+
+    const closest = EDITOR_SIZES.reduce((best, name) => {
+      const target = sizeFor(name);
+      const dist = Math.abs(target.width - clampedW) + Math.abs(target.height - clampedH);
+      return dist < best.dist ? { name, dist } : best;
+    }, { name: EDITOR_SIZES[0], dist: Infinity }).name;
+
+    setSize(closest);
+  };
 
   const titleRef = useRef(null);
   const textRef = useRef(null);
@@ -210,14 +287,7 @@ const NoteEditor = ({
         >
           <motion.div
             className={ `note-editor ${ size } ${ note.color }-bg ${ note.lock ? "locked" : "" }` }
-            initial={ sizeFor("roomy") }
-            animate={ sizeFor(size) }
-            transition={{
-              type: "spring",
-              stiffness: 260,
-              damping: 14,
-              mass: .9,
-            }}
+            style={{ width, height }}
           >
             <div className="note-editor-header">
               <div className="note-editor-palette">
@@ -328,7 +398,7 @@ const NoteEditor = ({
                   whileTap={{ scale: .8 }}
                   transition={{ type: "spring", stiffness: 420, damping: 16 }}
                   onTapStart={ resizeTap.squash }
-                  onClick={ () => setSize(EDITOR_SIZES[(EDITOR_SIZES.indexOf(size) + 1) % EDITOR_SIZES.length]) }
+                  onClick={ () => goToSize(EDITOR_SIZES[(EDITOR_SIZES.indexOf(size) + 1) % EDITOR_SIZES.length]) }
                 >
                   <motion.span animate={ resizeTap.jelly } style={{ display: "inline-flex" }}>
                     <span className={ `note-editor-size-box s${ EDITOR_SIZES.indexOf(size) }` } />
@@ -464,6 +534,31 @@ const NoteEditor = ({
                 <span className="note-editor-count muted">{ draftText.length } chars</span>
               </div>
             </div>
+            {/* A genuinely stretchy corner: dragging it resizes the paper
+                live, with diminishing resistance past cozy/epic and an
+                elastic snap-back on release (see handleResizeDrag/End
+                above) — the tight dragConstraints below just keep the nub
+                itself from wandering out past .note-editor's own
+                overflow:hidden; the actual resize reads off the drag's raw,
+                unconstrained offset regardless. */}
+            <motion.div
+              className="note-editor-resize-handle"
+              aria-hidden="true"
+              drag
+              dragSnapToOrigin
+              dragElastic={ 0.5 }
+              dragConstraints={{ left: -16, right: 16, top: -16, bottom: 16 }}
+              dragTransition={{ bounceStiffness: 380, bounceDamping: 18 }}
+              whileHover={{ scale: 1.18 }}
+              whileTap={{ scale: .9 }}
+              transition={{ type: "spring", stiffness: 420, damping: 17 }}
+              onPointerDown={ (e) => e.stopPropagation() }
+              onDragStart={ handleResizeStart }
+              onDrag={ handleResizeDrag }
+              onDragEnd={ handleResizeEnd }
+            >
+              <span className="note-editor-resize-grip" />
+            </motion.div>
           </motion.div>
         </motion.div>
       </motion.div>

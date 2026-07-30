@@ -1,14 +1,22 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FaXmark } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
+import { smoothPath, smoothAreaPath } from "../../utils/svgPath";
 
 import "./InsightsPanel.css";
 
 // The event the command palette's "Show desk insights" entry (and the
 // toolbar's chart button) fire to summon this panel from anywhere.
 export const INSIGHTS_EVENT = "docket:insights";
+
+// The day-trend chart's own coordinate space — see smoothPath/smoothAreaPath
+// (utils/svgPath.js) for how points become the drawn curve.
+const TREND_W = 320;
+const TREND_H = 80;
+const TREND_PAD_TOP = 10;
+const TREND_BASELINE = TREND_H - 8;
 
 // Real numbers about the desk, not decoration. Two bar charts and two stat
 // tiles, opened the same dot-to-sheet way as the command palette. The "by
@@ -46,6 +54,24 @@ const InsightsPanel = ({
   const maxColorCount = Math.max(1, ...paletteNames.map((name) => colorCounts?.[name] ?? 0));
   const maxDayCount = Math.max(1, ...(days || []).map((day) => day.count));
   const starredRatio = totalCount > 0 ? favoriteCount / totalCount : 0;
+
+  // The day-trend's own points, plus the smoothed line and area built from
+  // them — kept as real numbers straight off `days`, no idle wobble on the
+  // drawn curve itself, so the shape stays an accurate read of the data
+  // (only the draw-on and the latest-point marker animate).
+  const trendPoints = useMemo(() => {
+    if (!days || days.length === 0) return [];
+    const usableH = TREND_BASELINE - TREND_PAD_TOP;
+
+    return days.map((day, index) => ({
+      x: days.length === 1 ? TREND_W / 2 : (index / (days.length - 1)) * TREND_W,
+      y: TREND_BASELINE - (day.count / maxDayCount) * usableH,
+    }));
+  }, [days, maxDayCount]);
+
+  const trendLinePath = useMemo(() => smoothPath(trendPoints), [trendPoints]);
+  const trendAreaPath = useMemo(() => smoothAreaPath(trendPoints, TREND_BASELINE), [trendPoints]);
+  const trendLastPoint = trendPoints[trendPoints.length - 1];
 
   return (
     <AnimatePresence>
@@ -92,40 +118,74 @@ const InsightsPanel = ({
                   <h4>Notes by day</h4>
                   {
                     days?.length > 0 ? (
-                      <div className="insights-bars">
-                        {
-                          days.map((day, index) => (
-                            <div
-                              key={ day.label }
-                              className="insights-bar-column"
-                              title={ `${ day.count } ${ day.count === 1 ? "note" : "notes" } on ${ day.label }` }
-                            >
-                              <span className="insights-tooltip">
-                                { day.count } { day.count === 1 ? "note" : "notes" } · { day.label }
-                              </span>
-                              <motion.span
-                                className="insights-bar-count"
-                                initial={{ opacity: 0, scale: .5 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ type: "spring", stiffness: 500, damping: 20, delay: .05 + index * .04 }}
+                      <>
+                        <div className="insights-trend">
+                          <svg
+                            className="insights-trend-svg"
+                            viewBox={ `0 0 ${ TREND_W } ${ TREND_H }` }
+                            preserveAspectRatio="none"
+                            aria-hidden="true"
+                          >
+                            <defs>
+                              <linearGradient id="insights-trend-fill" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="var(--page-ink-color)" stopOpacity=".28" />
+                                <stop offset="100%" stopColor="var(--page-ink-color)" stopOpacity="0" />
+                              </linearGradient>
+                            </defs>
+                            <motion.path
+                              className="insights-trend-area"
+                              d={ trendAreaPath }
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              transition={{ duration: .5, delay: .3 }}
+                            />
+                            <motion.path
+                              className="insights-trend-line"
+                              d={ trendLinePath }
+                              initial={{ pathLength: 0 }}
+                              animate={{ pathLength: 1 }}
+                              transition={{ duration: .9, ease: "easeInOut", delay: .05 }}
+                            />
+                            {
+                              trendLastPoint && (
+                                <motion.circle
+                                  className="insights-trend-marker"
+                                  cx={ trendLastPoint.x }
+                                  cy={ trendLastPoint.y }
+                                  r="3.2"
+                                  initial={{ scale: 0 }}
+                                  animate={{ scale: [0, 1.5, 1, 1.25, 1] }}
+                                  transition={{ duration: 1.2, times: [0, .3, .5, .8, 1], delay: 1, repeat: Infinity, repeatDelay: 1.6 }}
+                                />
+                              )
+                            }
+                          </svg>
+                          {
+                            trendPoints.map((point, index) => (
+                              <button
+                                key={ days[index].label }
+                                type="button"
+                                className="insights-trend-point"
+                                style={{ left: `${ (point.x / TREND_W) * 100 }%`, top: `${ (point.y / TREND_H) * 100 }%` }}
+                                aria-label={ `${ days[index].count } ${ days[index].count === 1 ? "note" : "notes" } on ${ days[index].label }` }
                               >
-                                { day.count }
-                              </motion.span>
-                              <motion.span
-                                className="insights-bar insights-bar-ink"
-                                style={{
-                                  height: 8 + Math.round((day.count / maxDayCount) * 70),
-                                  originY: 1,
-                                }}
-                                initial={{ scaleY: 0 }}
-                                animate={{ scaleY: 1 }}
-                                transition={{ type: "spring", stiffness: 300, damping: 13, delay: index * .04 }}
-                              />
-                              <span className="insights-bar-label">{ day.label.replace(/, \d{4}$/, "") }</span>
-                            </div>
-                          ))
-                        }
-                      </div>
+                                <span className="insights-tooltip">
+                                  { days[index].count } { days[index].count === 1 ? "note" : "notes" } · { days[index].label }
+                                </span>
+                              </button>
+                            ))
+                          }
+                        </div>
+                        <div className="insights-trend-labels">
+                          {
+                            days.map((day) => (
+                              <span key={ day.label } className="insights-bar-label">
+                                { day.label.replace(/, \d{4}$/, "") }
+                              </span>
+                            ))
+                          }
+                        </div>
+                      </>
                     ) : (
                       <p className="insights-empty">No notes on the desk yet.</p>
                     )

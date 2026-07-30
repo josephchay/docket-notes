@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useAnimationControls, useMotionValue, useSpring, useTransform } from "framer-motion";
 import anime from "animejs";
 
-import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRight, FaCheck } from "react-icons/fa6";
+import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRight, FaCheck, FaRotate, FaTag } from "react-icons/fa6";
 import { FaEye, FaTrash } from "react-icons/fa";
 
+import useJellyTap from "../../hooks/useJellyTap";
 import useLongPress from "../../hooks/useLongPress";
 import PullString from "./PullString";
 import MoveString from "./MoveString";
@@ -51,6 +52,13 @@ const Note = ({
   const [draftTitle, setDraftTitle] = useState(note.title);
   const [draftText, setDraftText] = useState(note.text);
   const [isTyping, setIsTyping] = useState(false);
+
+  // The paper's back face — created/word/char count, tags — flipped to in
+  // 3D via .note-flip-inner further down, rather than swapped in place.
+  const [flipped, setFlipped] = useState(false);
+  const flipTap = useJellyTap();
+  const wordCount = draftText.trim() ? draftText.trim().split(/\s+/).length : 0;
+  const charCount = draftText.length;
 
   const titleRef = useRef(null);
   const textRef = useRef(null);
@@ -498,6 +506,17 @@ const Note = ({
         onContextMenu={ openRadialMenu }
         className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" } ${ isTyping ? "editing" : "" } ${ selectMode && selected ? "selected" : "" }` }
       >
+        {/* Flips the whole paper 180° in 3D to its back, rather than
+            swapping content in place — reuses the tilt's own perspective
+            (set on this same element above) so the flip and the hover tilt
+            compose naturally instead of fighting over two separate 3D
+            contexts. */}
+        <motion.div
+          className="note-flip-inner"
+          animate={{ rotateY: flipped ? 180 : 0 }}
+          transition={{ type: "spring", stiffness: 210, damping: 17 }}
+        >
+        <div className="note-face note-face-front">
         {/* The checkmark badge only exists in select mode, and blooms in
             with a bouncy overshoot rather than just appearing. Its own
             pointerdown is shielded from the card's long-press handlers,
@@ -560,6 +579,38 @@ const Note = ({
           }
         </AnimatePresence>
         <div className="header">
+          {/* Flips the paper over to its back — see .note-flip-inner
+              further down — a real <button> (unlike the footer's own
+              .edit div-as-button) so handleCardClick's select-mode
+              exclusion (closest("button, input, textarea")) actually
+              catches it. */}
+          <motion.button
+            type="button"
+            aria-label={ flipped ? "Show the front of this note" : "Show note details" }
+            aria-pressed={ flipped }
+            className="note-flip-trigger"
+            initial={{ opacity: 0, scale: 1, translateY: -80 }}
+            animate={
+              isDeleting ? {
+                opacity: 0,
+                scale: .8,
+                translateY: 80,
+              } : {
+                opacity: 1,
+                scale: 1,
+                translateY: 0,
+              }
+            }
+            whileHover={{ scale: 1.2, rotate: flipped ? -20 : 20 }}
+            whileTap={{ scale: .88 }}
+            onTapStart={ flipTap.squash }
+            onClick={ () => setFlipped((prev) => !prev) }
+            transition={{ type: "spring", stiffness: 240 }}
+          >
+            <motion.span animate={ flipTap.jelly } style={{ display: "inline-flex" }}>
+              <FaRotate className="note-flip-trigger-icon" />
+            </motion.span>
+          </motion.button>
           <motion.div
             initial={{
               opacity: 0,
@@ -904,6 +955,46 @@ const Note = ({
             onPullEnd={ () => setIsPulling(false) }
             onMove={ (targetId) => reorderNotes(note.id, targetId) }
           />
+        </motion.div>
+        </div>
+        <div
+          className="note-face note-face-back"
+          role="button"
+          aria-label="Show the front of this note"
+          onClick={ () => setFlipped(false) }
+        >
+          <FaRotate className="note-back-hint" aria-hidden="true" />
+          <div className="note-back-header">
+            <span className="note-back-title">{ draftTitle?.trim() || "Untitled note" }</span>
+            <span className="note-back-time">{ note.time }</span>
+          </div>
+          <div className="note-back-stats">
+            <div className="note-back-stat">
+              <span className="note-back-stat-value">{ wordCount }</span>
+              <span className="note-back-stat-label">{ wordCount === 1 ? "word" : "words" }</span>
+            </div>
+            <div className="note-back-stat">
+              <span className="note-back-stat-value">{ charCount }</span>
+              <span className="note-back-stat-label">{ charCount === 1 ? "char" : "chars" }</span>
+            </div>
+          </div>
+          {
+            (note.tags || []).length > 0 ? (
+              <div className="note-back-tags">
+                {
+                  note.tags.map((tag) => (
+                    <span key={ tag } className="note-back-tag">
+                      <FaTag className="note-back-tag-icon" />
+                      { tag }
+                    </span>
+                  ))
+                }
+              </div>
+            ) : (
+              <span className="note-back-no-tags">No tags yet</span>
+            )
+          }
+        </div>
         </motion.div>
       </motion.div>
       {

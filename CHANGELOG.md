@@ -18,6 +18,13 @@
     - Liquid SVG text (src/components/Svg/LiquidTextFilter.jsx) — applied to empty-state headings and the intro wordmark.
     - To verify: npm install (already done), then npm start and check: clear localStorage + reload for the intro; hover header/dock icons for the magnetic pull; scroll the desk for the inertia/skew/QuoteCard drift; delete a note → open Trash → shred + "Empty trash" for the physics tumble; toggle themes/focus mode to make sure nothing fights the existing .receded/grid-collapse states.
 
+- Liquid ink-level meter — LiquidMeter.jsx (animated dual sine-wave SVG fill), mounted in Header's ink popover, showing real progress toward the next note-count milestone (shared MILESTONES constant extracted so it drives both this and the existing celebration).
+- 3D flip note cards — Note.jsx now wraps its content in .note-flip-inner with front/back faces; a new header button flips the card to reveal created date, word/char count, and tags (tap the back to flip it closed). Reuses the card's existing tilt perspective so hover-tilt and flip compose correctly.
+- Elastic resize handle — the focus editor's size is now driven by motion values; a new bottom-right drag handle stretches it continuously with rubber-band resistance past the cozy/epic bounds and an elastic snap-back on release, while the 4-preset button still jumps directly.
+- Fluid morphing insights chart — "Notes by day" is now a smooth Catmull-Rom-interpolated line + gradient area chart (utils/svgPath.js) that draws on with Framer's native pathLength, with a breathing ink-drop marker on the latest point; "Notes by color" bars are untouched.
+[Also saved a memory (ink-native-celebration-constraint) after finding InkCelebration.jsx's own comment ruling out confetti/particle effects — worth knowing for any future work here.
+Same as before: I didn't run a build. Worth checking in the browser — flip a note with tags set, drag the editor's new corner handle past its limits, and open the ink popover after adding a few notes.]
+
 ## Fixed
 
 - One real bug I caught and fixed mid-build: the history banner's "current state" label would have always read the same generic text regardless of where you'd scrubbed to, since edit labels describe transitions between states, not the states themselves — fixed to show the label of whatever transition led to the current position.

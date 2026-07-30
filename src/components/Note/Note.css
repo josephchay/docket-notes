@@ -89,9 +89,11 @@
   right: 0;
   top: 0;
   justify-content: flex-end;
+  gap: 10px;
 }
 
 .note .header .star,
+.note .header .note-flip-trigger,
 .note .footer .edit {
   display: flex;
   align-items: center;
@@ -100,6 +102,146 @@
   border: none;
   outline: none;
   transition: background-color 0.3s ease-in-out;
+}
+
+.note .header .note-flip-trigger {
+  position: relative;
+  height: 34px;
+  width: 34px;
+  padding: 0;
+  background: var(--black-color);
+}
+
+.note .header .note-flip-trigger-icon {
+  font-size: 12px;
+  color: var(--white-color);
+}
+
+/* --- The 3D flip -----------------------------------------------------
+   .note-flip-inner is the sole direct child of .note now, sized to fill
+   its exact padding-box (position:absolute; inset:0 with zero padding —
+   the same "coincides with the padding-box" trick .header/.footer already
+   relied on when they were direct children of .note) so every existing
+   absolutely-positioned front-face element (.header, .footer,
+   .trash-container, the select badge, the focus halo) lands in exactly
+   the same visual spot as before, just one level deeper. .note already
+   carries transformPerspective (set inline in Note.jsx, for the hover
+   tilt) — the flip rotates within that same 3D space rather than opening
+   a second one, so tilting a flipped card still composes correctly. */
+.note .note-flip-inner {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+
+.note .note-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.note .note-face-back {
+  position: relative;
+  transform: rotateY(180deg);
+  display: flex;
+  flex-direction: column;
+  padding: 30px 24px 24px;
+}
+
+.note .note-back-hint {
+  position: absolute;
+  right: 20px;
+  top: 20px;
+  font-size: 13px;
+  color: var(--black-more-transclucent-color);
+}
+
+.note .note-back-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 26px;
+}
+
+.note .note-back-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--black-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.note .note-back-time {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--black-transclucent-color);
+}
+
+.note .note-back-stats {
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.note .note-back-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background-color: var(--black-even-more-transclucent-color);
+}
+
+.note .note-back-stat-value {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--black-color);
+}
+
+.note .note-back-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: var(--black-transclucent-color);
+}
+
+.note .note-back-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 20px;
+}
+
+.note .note-back-tag {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--black-color);
+  background: var(--black-even-more-transclucent-color);
+}
+
+.note .note-back-tag .note-back-tag-icon {
+  font-size: 9px;
+  opacity: .7;
+}
+
+.note .note-back-no-tags {
+  margin-top: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--black-transclucent-color);
 }
 
 .note .footer .edit {
