@@ -11,7 +11,7 @@ const TEXT_FIELDS = "input[type='text'], input[type='search'], input:not([type])
 const INK_COLOR_CLASS = /^(yellow|orange|green|blue|purple|pink|red)-bg$/;
 const INK_SOURCE = ".note, .selector, .note-radial-item";
 
-const R = 7;            // resting capsule radius (px) — a 14px dot at rest
+const R = 10;           // resting capsule radius (px) — a 20px dot at rest
 const CARET_W = 2.5;    // text caret size (px)
 const CARET_H = 24;
 const WRAP_MAX = 140;   // controls larger than this are not wrapped
@@ -54,7 +54,9 @@ const SHAPE_DAMPING = 14;    // underdamped enough for a visible pop-and-settle
 // arbitrary button's own rectangle, so the two renderers simply crossfade
 // based on which state is active. Crossing a note or a nav color pot dips
 // the pen into that color: the capsule carries it for a few seconds
-// before drying back to a neutral gray. Both renderers share the same two
+// before drying back to a neutral gray — or instantly, the moment text
+// mode takes over, so the caret itself never picks up a note's color even
+// mid-dip. Both renderers share the same two
 // punctual reactions: a press snaps through one elastic jelly pulse, and
 // — left still for a moment, free or wrapped alike — GSAP eases whichever
 // shape is showing through one gentle elastic pool.
@@ -179,20 +181,32 @@ const CursorDot = () => {
         if (rect.width <= WRAP_MAX && rect.height <= WRAP_MAX) wrapEl = control;
       }
 
-      // Crossing a note's paper or a nav-rail color pot dips the pen into
-      // that color — the same ink-well, whichever one the pointer found.
-      const inkEl = e.target.closest(INK_SOURCE);
-      if (inkEl) {
-        for (const cls of inkEl.classList) {
-          const match = cls.match(INK_COLOR_CLASS);
-          if (match) {
-            if (penColor !== match[1]) {
-              penColor = match[1];
-              layer.style.setProperty("--pen-ink", `var(--${ penColor }-color)`);
+      if (textMode) {
+        // The caret always stays neutral, even mid-note — dipping the pen
+        // is a free-roam/wrap thing only, so any dip already drying out
+        // gets cut short here instead of bleeding through the capsule/ink
+        // crossfade the instant text mode takes over.
+        if (penColor) {
+          penColor = null;
+          layer.style.removeProperty("--pen-ink");
+          capsule.classList.remove("is-inked");
+        }
+      } else {
+        // Crossing a note's paper or a nav-rail color pot dips the pen into
+        // that color — the same ink-well, whichever one the pointer found.
+        const inkEl = e.target.closest(INK_SOURCE);
+        if (inkEl) {
+          for (const cls of inkEl.classList) {
+            const match = cls.match(INK_COLOR_CLASS);
+            if (match) {
+              if (penColor !== match[1]) {
+                penColor = match[1];
+                layer.style.setProperty("--pen-ink", `var(--${ penColor }-color)`);
+              }
+              penUntil = performance.now() + PEN_HOLD_MS;
+              capsule.classList.add("is-inked");
+              break;
             }
-            penUntil = performance.now() + PEN_HOLD_MS;
-            capsule.classList.add("is-inked");
-            break;
           }
         }
       }
