@@ -53,7 +53,7 @@ import DropZoneOverlay from "../components/DropZone/DropZoneOverlay";
 import SprintPanel, { SPRINT_EVENT } from "../components/Sprint/SprintPanel";
 import QuickDock from "../components/Dock/QuickDock";
 import AmbientField from "../components/Ambient/AmbientField";
-import useLenisScroll from "../hooks/useLenisScroll";
+// import useLenisScroll from "../hooks/useLenisScroll";
 
 import quotes from "../assets/data/quotes.json";
 
@@ -474,7 +474,8 @@ const Home = () => {
     setSpawn(spawnOrigin ? { id: noteId, ...spawnOrigin } : null);
 
     // New notes land at the front of the list — bring the desk back up to it.
-    scrollHomeToTop();
+    homeRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    // scrollHomeToTop();
   }
 
   const deleteNote = (noteId) => {
@@ -881,18 +882,18 @@ const Home = () => {
 
   const editingNote = notes.find((note) => note.id === editingNoteId);
 
-  // Smooth inertia scroll on the desk itself — paused whenever .receded's
-  // own overflow:hidden lock is active (the focus editor open) so Lenis
-  // never fights it. See useLenisScroll.jsx.
-  const lenisRef = useLenisScroll(homeRef, { paused: !!editingNote });
+  // // Smooth inertia scroll on the desk itself — paused whenever .receded's
+  // // own overflow:hidden lock is active (the focus editor open) so Lenis
+  // // never fights it. See useLenisScroll.jsx.
+  // const lenisRef = useLenisScroll(homeRef, { paused: !!editingNote });
 
-  // Prefers Lenis's own smooth scrollTo (so the same inertia easing carries
-  // the jump) once it's live; falls back to the native smooth-scroll this
-  // already did before Lenis existed.
-  const scrollHomeToTop = useCallback(() => {
-    if (lenisRef.current) lenisRef.current.scrollTo(0, { duration: 1.1 });
-    else homeRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-  }, [lenisRef]);
+  // // Prefers Lenis's own smooth scrollTo (so the same inertia easing carries
+  // // the jump) once it's live; falls back to the native smooth-scroll this
+  // // already did before Lenis existed.
+  // const scrollHomeToTop = useCallback(() => {
+  //   if (lenisRef.current) lenisRef.current.scrollTo(0, { duration: 1.1 });
+  //   else homeRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  // }, [lenisRef]);
 
   // How much of each ink the desk holds — the toolbar's ink-levels chart
   // draws these as springy bars.
@@ -1207,7 +1208,8 @@ const Home = () => {
               whileHover={{ scale: 1.12 }}
               whileTap={{ scale: .9 }}
               transition={{ type: "spring", stiffness: 360, damping: 20 }}
-              onClick={ scrollHomeToTop }
+              onClick={ () => homeRef.current?.scrollTo({ top: 0, behavior: "smooth" }) }
+              // onClick={ scrollHomeToTop }
             >
               <FaArrowUp className="back-to-top-icon" />
             </motion.button>
