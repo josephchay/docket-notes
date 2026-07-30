@@ -1,0 +1,16 @@
+.trash-physics-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 960;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.trash-physics-chip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 6px;
+  box-shadow: 0 6px 14px -6px rgba(25, 25, 25, 0.35);
+  will-change: transform, opacity;
+}

@@ -88,3 +88,9 @@
   background-color: var(--black-color) !important;
   color: var(--red-color) !important;
 }
+
+/* A living wobble for type — see LiquidTextFilter.jsx for the filter this
+   references. */
+.liquid-text {
+  filter: url(#liquid-text);
+}

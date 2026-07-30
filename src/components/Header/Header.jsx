@@ -9,6 +9,7 @@ import { TRASH_EVENT } from "../Trash/TrashPanel";
 import searchIcon from '../../assets/icons/search.svg';
 import useJellyTap from "../../hooks/useJellyTap";
 import useInkPulse from "../../hooks/useInkPulse";
+import useMagnetic from "../../hooks/useMagnetic";
 
 import './Header.css';
 
@@ -84,6 +85,16 @@ const Header = ({
   // idle pool (see useInkPulse) so it carries the same elastic personality
   // as it slides between squares.
   const colorRingPulse = useInkPulse(sortColor);
+
+  // The toolbar's icon buttons feel the pointer's distance the same way
+  // QuickDock's icons do (see useMagnetic.jsx) — "xy" rather than the
+  // dock's "x" since this row can wrap onto a second line on narrow windows,
+  // where an x-only distance would still tug at icons sitting on a
+  // different line directly above or below the pointer. Each icon gets its
+  // own plain wrapper span as the GSAP target, never the same node framer's
+  // jelly/hover/tap animations already control, so the two never fight over
+  // one transform.
+  const toolbarMagnetic = useMagnetic({ range: 80, maxLift: 10, maxScale: 1.28, axis: "xy" });
 
   const handleSearch = (e) => {
     setNotesSortText(e.target.value);
@@ -165,6 +176,8 @@ const Header = ({
           once, with its own one-time delay) for control of translateY. */}
       <motion.div
         className="header-toolbar"
+        onMouseMove={ toolbarMagnetic.handleMove }
+        onMouseLeave={ toolbarMagnetic.handleLeave }
         animate={{
           translateY: focusMode ? -90 : 0,
           opacity: focusMode ? 0 : 1,
@@ -233,9 +246,11 @@ const Header = ({
           onClick={ handleStarFilter }
           className={ `star ${ notesSortByFavorite ? "active" : "" }` }
         >
-          <motion.span animate={ starJelly.jelly } style={{ display: "inline-flex" }}>
-            <FaStar className="star-icon" />
-          </motion.span>
+          <span ref={ toolbarMagnetic.registerItem(0) } style={{ display: "inline-flex" }}>
+            <motion.span animate={ starJelly.jelly } style={{ display: "inline-flex" }}>
+              <FaStar className="star-icon" />
+            </motion.span>
+          </span>
           <AnimatePresence>
             {
               starBurst && (
@@ -392,7 +407,9 @@ const Header = ({
           transition={ springy }
           onClick={ () => setInkOpen((prev) => !prev) }
         >
-          <FaChartSimple className="ink-button-icon" />
+          <span ref={ toolbarMagnetic.registerItem(1) } style={{ display: "inline-flex" }}>
+            <FaChartSimple className="ink-button-icon" />
+          </span>
         </motion.button>
         <AnimatePresence>
           {
@@ -482,9 +499,11 @@ const Header = ({
         onClick={ () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)) }
         className="wand"
       >
-        <motion.span animate={ insightsJelly.jelly } style={{ display: "inline-flex" }}>
-          <FaChartLine className="wand-icon" />
-        </motion.span>
+        <span ref={ toolbarMagnetic.registerItem(2) } style={{ display: "inline-flex" }}>
+          <motion.span animate={ insightsJelly.jelly } style={{ display: "inline-flex" }}>
+            <FaChartLine className="wand-icon" />
+          </motion.span>
+        </span>
       </motion.div>
       <motion.div
         role="button"
@@ -497,9 +516,11 @@ const Header = ({
         onClick={ () => window.dispatchEvent(new CustomEvent(TRASH_EVENT)) }
         className="wand trash-trigger"
       >
-        <motion.span animate={ trashJelly.jelly } style={{ display: "inline-flex" }}>
-          <FaTrashCan className="wand-icon" />
-        </motion.span>
+        <span ref={ toolbarMagnetic.registerItem(3) } style={{ display: "inline-flex" }}>
+          <motion.span animate={ trashJelly.jelly } style={{ display: "inline-flex" }}>
+            <FaTrashCan className="wand-icon" />
+          </motion.span>
+        </span>
         <AnimatePresence>
           {
             trashCount > 0 && (
@@ -528,9 +549,11 @@ const Header = ({
         onClick={ () => window.dispatchEvent(new CustomEvent(COMMAND_EVENT)) }
         className="wand"
       >
-        <motion.span animate={ commandJelly.jelly } style={{ display: "inline-flex" }}>
-          <FaWandMagicSparkles className="wand-icon" />
-        </motion.span>
+        <span ref={ toolbarMagnetic.registerItem(4) } style={{ display: "inline-flex" }}>
+          <motion.span animate={ commandJelly.jelly } style={{ display: "inline-flex" }}>
+            <FaWandMagicSparkles className="wand-icon" />
+          </motion.span>
+        </span>
       </motion.div>
       <motion.div
         role="button"
@@ -543,9 +566,11 @@ const Header = ({
         onClick={ toggleFocusMode }
         className="wand"
       >
-        <motion.span animate={ focusJelly.jelly } style={{ display: "inline-flex" }}>
-          <FaExpand className="wand-icon" />
-        </motion.span>
+        <span ref={ toolbarMagnetic.registerItem(5) } style={{ display: "inline-flex" }}>
+          <motion.span animate={ focusJelly.jelly } style={{ display: "inline-flex" }}>
+            <FaExpand className="wand-icon" />
+          </motion.span>
+        </span>
       </motion.div>
       <motion.div
         ref={ themeRef }
@@ -564,33 +589,35 @@ const Header = ({
       >
         {/* The old icon spins out, the new one springs in — a tiny
             celestial changeover. */}
-        <AnimatePresence mode="wait" initial={ false }>
-          <motion.span
-            key={ theme }
-            className="theme-icon-wrap"
-            initial={{ rotate: -140, scale: 0, opacity: 0 }}
-            animate={{ rotate: 0, scale: 1, opacity: 1 }}
-            exit={{
-              rotate: 140,
-              scale: 0,
-              opacity: 0,
-              transition: { duration: .15, ease: "easeIn" },
-            }}
-            transition={{
-              type: "spring",
-              stiffness: 380,
-              damping: 16,
-            }}
-          >
-            {
-              theme === "dark" ? (
-                <FaSun className="theme-icon" />
-              ) : (
-                <FaMoon className="theme-icon" />
-              )
-            }
-          </motion.span>
-        </AnimatePresence>
+        <span ref={ toolbarMagnetic.registerItem(6) } style={{ display: "inline-flex" }}>
+          <AnimatePresence mode="wait" initial={ false }>
+            <motion.span
+              key={ theme }
+              className="theme-icon-wrap"
+              initial={{ rotate: -140, scale: 0, opacity: 0 }}
+              animate={{ rotate: 0, scale: 1, opacity: 1 }}
+              exit={{
+                rotate: 140,
+                scale: 0,
+                opacity: 0,
+                transition: { duration: .15, ease: "easeIn" },
+              }}
+              transition={{
+                type: "spring",
+                stiffness: 380,
+                damping: 16,
+              }}
+            >
+              {
+                theme === "dark" ? (
+                  <FaSun className="theme-icon" />
+                ) : (
+                  <FaMoon className="theme-icon" />
+                )
+              }
+            </motion.span>
+          </AnimatePresence>
+        </span>
       </motion.div>
       <motion.div
         role="button"
@@ -604,33 +631,35 @@ const Header = ({
       >
         {/* The same spring-in/spin-out changeover as the theme toggle beside
             it — the lock clicks shut or springs back open. */}
-        <AnimatePresence mode="wait" initial={ false }>
-          <motion.span
-            key={ persistNotes ? "locked" : "unlocked" }
-            className="persist-icon-wrap"
-            initial={{ rotate: -140, scale: 0, opacity: 0 }}
-            animate={{ rotate: 0, scale: 1, opacity: 1 }}
-            exit={{
-              rotate: 140,
-              scale: 0,
-              opacity: 0,
-              transition: { duration: .15, ease: "easeIn" },
-            }}
-            transition={{
-              type: "spring",
-              stiffness: 420,
-              damping: 15,
-            }}
-          >
-            {
-              persistNotes ? (
-                <FaLock className="persist-icon" />
-              ) : (
-                <FaLockOpen className="persist-icon" />
-              )
-            }
-          </motion.span>
-        </AnimatePresence>
+        <span ref={ toolbarMagnetic.registerItem(7) } style={{ display: "inline-flex" }}>
+          <AnimatePresence mode="wait" initial={ false }>
+            <motion.span
+              key={ persistNotes ? "locked" : "unlocked" }
+              className="persist-icon-wrap"
+              initial={{ rotate: -140, scale: 0, opacity: 0 }}
+              animate={{ rotate: 0, scale: 1, opacity: 1 }}
+              exit={{
+                rotate: 140,
+                scale: 0,
+                opacity: 0,
+                transition: { duration: .15, ease: "easeIn" },
+              }}
+              transition={{
+                type: "spring",
+                stiffness: 420,
+                damping: 15,
+              }}
+            >
+              {
+                persistNotes ? (
+                  <FaLock className="persist-icon" />
+                ) : (
+                  <FaLockOpen className="persist-icon" />
+                )
+              }
+            </motion.span>
+          </AnimatePresence>
+        </span>
       </motion.div>
       </motion.div>
     </motion.header>

@@ -1,0 +1,11 @@
+/* Fixed so it always covers the viewport regardless of .home's own scroll
+   position; z-index: -1 plus .home's `isolation: isolate` (Home.css) keeps
+   it painted below every ordinary, non-positioned child of .home (the nav
+   rail, header, note grid) while still sitting above .home's own flat
+   background-color. */
+.ambient-field {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}

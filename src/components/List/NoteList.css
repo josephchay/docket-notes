@@ -202,6 +202,15 @@ main .notes {
   margin-top: 100px;
   margin-bottom: 46px;
   padding: 0 70px;
+  /* The Lenis velocity-skew signature — --scroll-tilt is written onto .home
+     itself while scrolling (see useLenisScroll.jsx) and inherits down here,
+     giving the whole grid a subtle buttery tilt that eases flat the instant
+     scrolling settles. */
+  transform: skewY(calc(var(--scroll-tilt, 0) * 1deg));
+}
+
+.quote-parallax {
+  will-change: transform;
 }
 
 main .notes .empty-state {

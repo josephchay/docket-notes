@@ -12,6 +12,7 @@ const NOTES_KEY = "docket-notes";
 const SETTINGS_KEY = "docket-settings";
 const TOUR_KEY = "docket-tour-seen";
 const PERSIST_KEY = "docket-persist";
+const INTRO_KEY = "docket-intro-seen";
 
 // StoredNote shape:
 // {
@@ -157,5 +158,30 @@ export const markTourSeen = () => {
     window.sessionStorage.setItem(TOUR_KEY, "1");
   } catch {
     // Storage blocked — the tour will just play again next reload.
+  }
+};
+
+// Whether the cinematic load intro has ever played in this browser —
+// always localStorage (unlike the tour above), since this is a one-time-
+// ever thing rather than a once-per-session coach-mark, and deliberately
+// independent of the persist preference so it survives regardless of
+// whether the visitor has opted into remembering their notes.
+export const hasSeenIntro = () => {
+  if (!storageAvailable("localStorage")) return true;
+
+  try {
+    return window.localStorage.getItem(INTRO_KEY) === "1";
+  } catch {
+    return true;
+  }
+};
+
+export const markIntroSeen = () => {
+  if (!storageAvailable("localStorage")) return;
+
+  try {
+    window.localStorage.setItem(INTRO_KEY, "1");
+  } catch {
+    // Storage blocked — the intro will just play again next visit.
   }
 };

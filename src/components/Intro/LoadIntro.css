@@ -1,0 +1,38 @@
+/* Above literally everything, including the custom cursor layer (which
+   tops out at z-index: 999999 — see src/components/Cursor/*.css) — the
+   intro fully owns the screen for its brief moment. */
+.load-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 1000000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.load-intro-ink {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  border-radius: 50%;
+  transform: scale(0);
+}
+
+.load-intro-word {
+  position: relative;
+  display: flex;
+  margin: 0;
+  font-size: clamp(36px, 6vw, 64px);
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+
+.load-intro-letter {
+  display: inline-block;
+  will-change: transform, opacity;
+}

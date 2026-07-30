@@ -2,6 +2,8 @@ import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import anime from "animejs";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { FaShuffle, FaSquareCheck, FaCheckDouble } from "react-icons/fa6";
 
 import Note from "../Note/Note";
@@ -11,6 +13,8 @@ import { NOTE_COLORS } from "../../constants/colors";
 import "./NoteList.css";
 import { itemsPerFlexRow } from "../../utils/math";
 import useInkPulse from "../../hooks/useInkPulse";
+
+gsap.registerPlugin(ScrollTrigger);
 
 const GRID_RADIAL_RADIUS = 58;
 const GRID_RADIAL_MARGIN = 100;
@@ -248,6 +252,31 @@ const NoteList = ({
     }
   }
 
+  // The daily-ink card drifts a little against the desk's own scroll — the
+  // one static element in the grid that isn't already scroll-reactive the
+  // way every note's whileInView entrance is. Targets the .home scroller
+  // Lenis registered a ScrollTrigger proxy for (see useLenisScroll.jsx) by
+  // its selector, so this stays a lightweight scrub rather than needing the
+  // scroller instance threaded down as a prop.
+  const quoteParallaxRef = useRef(null);
+
+  useEffect(() => {
+    if (!quoteParallaxRef.current) return;
+
+    const trigger = ScrollTrigger.create({
+      trigger: quoteParallaxRef.current,
+      scroller: ".home",
+      start: "top bottom",
+      end: "bottom top",
+      scrub: 0.6,
+      onUpdate: (self) => {
+        gsap.set(quoteParallaxRef.current, { y: (self.progress - 0.5) * 36 });
+      },
+    });
+
+    return () => trigger.kill();
+  }, []);
+
   useEffect(() => {
     const delayTimer = setTimeout(() => {
       setRenderFirstRow(true);
@@ -475,7 +504,9 @@ const NoteList = ({
           </motion.div>
         )
       }
-      <QuoteCard />
+      <div ref={ quoteParallaxRef } className="quote-parallax">
+        <QuoteCard />
+      </div>
       <div
         ref={ ref }
         className="notes"
@@ -516,6 +547,7 @@ const NoteList = ({
               >
                 <GooeyBlobs />
                 <motion.h3
+                  className="liquid-text"
                   initial={{
                     opacity: 0,
                     translateY: 40,
@@ -588,7 +620,7 @@ const NoteList = ({
                     celebrateClean && (
                       <motion.span
                         key="cleanDesk"
-                        className="clean-desk-pill"
+                        className="clean-desk-pill liquid-text"
                         initial={{ opacity: 0, scale: .15, translateY: -10, borderRadius: 40 }}
                         animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 999 }}
                         exit={{
@@ -605,6 +637,7 @@ const NoteList = ({
                   }
                 </AnimatePresence>
                 <motion.h3
+                  className="liquid-text"
                   initial={{
                     opacity: 0,
                     translateY: 40,

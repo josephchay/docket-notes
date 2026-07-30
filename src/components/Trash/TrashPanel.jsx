@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FaXmark, FaArrowRotateLeft, FaTrash, FaBoxArchive } from "react-icons/fa6";
 
 import { timeAgo } from "../../utils/date";
+import TrashPhysics from "./TrashPhysics";
 
 import "./TrashPanel.css";
 
@@ -18,6 +19,29 @@ export const TRASH_EVENT = "docket:trash";
 const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
   const [open, setOpen] = useState(false);
   const [pendingExit, setPendingExit] = useState({});
+
+  // Every shred/empty hands its swatch's own current spot off to
+  // TrashPhysics.jsx, so the piece that takes over visually starts exactly
+  // where the list item was, not wherever the panel happens to sit.
+  const physicsRef = useRef(null);
+  const panelRef = useRef(null);
+  const swatchRefs = useRef({});
+
+  const dropPhysics = (note) => {
+    const swatch = swatchRefs.current[note.id];
+    const panelRect = panelRef.current?.getBoundingClientRect();
+    if (!swatch || !panelRect) return;
+
+    const rect = swatch.getBoundingClientRect();
+    physicsRef.current?.drop({
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      width: rect.width,
+      height: rect.height,
+      color: note.color,
+      panelRect,
+    });
+  };
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -38,9 +62,10 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
     onRestore(noteId);
   };
 
-  const handleShred = (noteId) => {
-    setPendingExit((prev) => ({ ...prev, [noteId]: "shred" }));
-    onShred(noteId);
+  const handleShred = (note) => {
+    dropPhysics(note);
+    setPendingExit((prev) => ({ ...prev, [note.id]: "shred" }));
+    onShred(note.id);
   };
 
   const handleEmptyAll = () => {
@@ -49,6 +74,38 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
       entries.forEach((entry) => { next[entry.note.id] = "shred"; });
       return next;
     });
+
+    // Every swatch's rect has to be read now, while the list is still
+    // mounted — onEmpty() below clears the entries this same tick, so a
+    // deferred read would land on an already-unmounted (or reused) node.
+    // Only the actual physics drop is staggered, off this pre-captured data.
+    const panelRect = panelRef.current?.getBoundingClientRect();
+    const drops = panelRect
+      ? entries
+        .map((entry) => {
+          const swatch = swatchRefs.current[entry.note.id];
+          if (!swatch) return null;
+
+          const rect = swatch.getBoundingClientRect();
+          return {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+            width: rect.width,
+            height: rect.height,
+            color: entry.note.color,
+            panelRect,
+          };
+        })
+        .filter(Boolean)
+      : [];
+
+    // A staggered volley rather than one flat instant — same 18-22ms beat
+    // Home.jsx's selectAllVisible uses for its own wave — so a big trash
+    // doesn't just spawn every piece stacked on frame one.
+    drops.forEach((drop, index) => {
+      setTimeout(() => physicsRef.current?.drop(drop), index * 20);
+    });
+
     onEmpty();
   };
 
@@ -67,7 +124,12 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
   };
 
   return (
-    <AnimatePresence>
+    <>
+      {/* Mounted unconditionally (not gated on `open`) so pieces already
+          tumbling keep settling and fading even if the panel closes
+          mid-shred, rather than being yanked away with it. */}
+      <TrashPhysics ref={ physicsRef } />
+      <AnimatePresence>
       {
         open && (
           <div className="trash-layer">
@@ -79,6 +141,7 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
               onClick={ () => setOpen(false) }
             />
             <motion.div
+              ref={ panelRef }
               className="trash-panel"
               initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
               animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 22 }}
@@ -158,7 +221,13 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
                               }
                               transition={{ type: "spring", stiffness: 380, damping: 26 }}
                             >
-                              <span className={ `trash-item-swatch ${ entry.note.color }-bg` } />
+                              <span
+                                ref={ (el) => {
+                                  if (el) swatchRefs.current[entry.note.id] = el;
+                                  else delete swatchRefs.current[entry.note.id];
+                                } }
+                                className={ `trash-item-swatch ${ entry.note.color }-bg` }
+                              />
                               <div className="trash-item-body">
                                 <span className="trash-item-title">{ labelFor(entry.note) }</span>
                                 <span className="trash-item-time">{ timeAgo(entry.deletedAt) }</span>
@@ -183,7 +252,7 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
                                 whileHover={{ scale: 1.12, rotate: -10 }}
                                 whileTap={{ scale: .88 }}
                                 transition={{ type: "spring", stiffness: 420, damping: 16 }}
-                                onClick={ () => handleShred(entry.note.id) }
+                                onClick={ () => handleShred(entry.note) }
                               >
                                 <FaTrash />
                               </motion.button>
@@ -199,7 +268,8 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
           </div>
         )
       }
-    </AnimatePresence>
+      </AnimatePresence>
+    </>
   );
 };
 
