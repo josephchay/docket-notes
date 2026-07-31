@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FaXmark, FaMoon, FaSun, FaLock, FaLockOpen, FaFeather } from "react-icons/fa6";
+import { FaXmark, FaMoon, FaSun, FaLock, FaLockOpen, FaFeather, FaArrowPointer } from "react-icons/fa6";
 
+import { loadSettings, saveSettings } from "../../utils/storage";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 import HistoryAmbient from "../History/HistoryAmbient";
 import SettingsToggle from "./SettingsToggle";
@@ -12,6 +13,13 @@ import "./SettingsPanel.css";
 // this panel from anywhere — same pattern as every other dot-to-sheet
 // panel in this app (see INSIGHTS_EVENT, HISTORY_EVENT, TRASH_EVENT).
 export const SETTINGS_EVENT = "docket:settings";
+
+// App.jsx renders the cursor as a sibling of Home, not a descendant — this
+// panel lives deep inside Home's own tree, so a preference chosen here
+// reaches App.jsx the same event-based way every other cross-cutting
+// concern in this app already does, rather than threading a new prop down
+// through (and back up past) a boundary that currently has none.
+export const CURSOR_STYLE_EVENT = "docket:cursor-style";
 
 // The app's only three real user preferences, finally given the same
 // dot-to-sheet panel every comparable feature (Trash, Insights, Sprint,
@@ -55,6 +63,19 @@ const SettingsPanel = ({
   const handleThemeToggle = () => {
     const rect = themeRowRef.current?.getBoundingClientRect();
     toggleTheme(rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : undefined);
+  };
+
+  // The only preference this panel owns outright rather than receiving
+  // from Home.jsx — persisted through the same generic saveSettings/
+  // loadSettings store theme already uses, and broadcast live so App.jsx
+  // can swap the mounted cursor component without a reload.
+  const [cursorStyle, setCursorStyle] = useState(() => (loadSettings().cursorStyle === "aura" ? "aura" : "dot"));
+
+  const chooseCursor = (next) => {
+    if (next === cursorStyle) return;
+    setCursorStyle(next);
+    saveSettings({ cursorStyle: next });
+    window.dispatchEvent(new CustomEvent(CURSOR_STYLE_EVENT, { detail: next }));
   };
 
   return (
@@ -189,6 +210,47 @@ const SettingsPanel = ({
                     disabled={ systemReducedMotion }
                     label={ reduceMotion ? "Turn animations back on" : "Reduce motion" }
                   />
+                </div>
+
+                <div className="settings-row">
+                  <span className="settings-row-icon">
+                    <FaArrowPointer />
+                  </span>
+                  <span className="settings-row-text">
+                    <span className="settings-row-label">Cursor style</span>
+                    <span className="settings-row-description">
+                      {
+                        cursorStyle === "aura"
+                          ? "A comet of color trails the pointer"
+                          : "A simple ink pen with a wet nib"
+                      }
+                    </span>
+                  </span>
+                  <div className="settings-segmented" role="radiogroup" aria-label="Cursor style">
+                    {
+                      [{ key: "dot", label: "Pen" }, { key: "aura", label: "Comet" }].map((option) => (
+                        <button
+                          key={ option.key }
+                          type="button"
+                          role="radio"
+                          aria-checked={ cursorStyle === option.key }
+                          className={ `settings-segmented-option ${ cursorStyle === option.key ? "active" : "" }` }
+                          onClick={ () => chooseCursor(option.key) }
+                        >
+                          {
+                            cursorStyle === option.key && (
+                              <motion.span
+                                layoutId="settingsSegmentedThumb"
+                                className="settings-segmented-thumb"
+                                transition={{ type: "spring", stiffness: 480, damping: 30 }}
+                              />
+                            )
+                          }
+                          <span className="settings-segmented-label">{ option.label }</span>
+                        </button>
+                      ))
+                    }
+                  </div>
                 </div>
               </div>
             </motion.div>

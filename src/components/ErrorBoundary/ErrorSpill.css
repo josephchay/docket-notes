@@ -1,0 +1,92 @@
+.error-spill {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background-color: var(--page-bg-color);
+}
+
+.error-spill-blot-svg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(560px, 80vw);
+  height: auto;
+  transform: translate(-50%, -50%);
+  overflow: visible;
+  pointer-events: none;
+}
+
+.error-spill-blot {
+  fill: var(--page-ink-color);
+  opacity: .08;
+  transform-origin: center;
+}
+
+/* A scatter of small drops around the main blot — plain positioned circles
+   rather than more blob paths, enough on their own to read as "spilled"
+   without needing individually hand-tuned shapes. */
+.error-spill-drops {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.error-spill-drop {
+  position: absolute;
+  border-radius: 50%;
+  background-color: var(--page-ink-color);
+  opacity: .06;
+}
+
+.error-spill-drop-0 { width: 18px; height: 16px; top: 30%; left: 38%; }
+.error-spill-drop-1 { width: 10px; height: 9px; top: 62%; left: 32%; }
+.error-spill-drop-2 { width: 26px; height: 22px; top: 68%; left: 58%; }
+.error-spill-drop-3 { width: 8px; height: 7px; top: 24%; left: 62%; }
+.error-spill-drop-4 { width: 14px; height: 12px; top: 44%; left: 68%; }
+.error-spill-drop-5 { width: 12px; height: 11px; top: 40%; left: 26%; }
+
+.error-spill-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 360px;
+  padding: 0 24px;
+  text-align: center;
+}
+
+.error-spill-content h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--page-ink-color);
+}
+
+.error-spill-content p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--page-ink-color);
+  opacity: .65;
+}
+
+.error-spill-button {
+  margin-top: 14px;
+  padding: 12px 22px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  cursor: pointer;
+}
