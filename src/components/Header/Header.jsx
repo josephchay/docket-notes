@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
-import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan, FaClockRotateLeft } from "react-icons/fa6";
+import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan, FaClockRotateLeft, FaGear } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { MILESTONES } from "../../constants/milestones";
@@ -8,6 +8,7 @@ import { COMMAND_EVENT } from "../Command/CommandPalette";
 import { INSIGHTS_EVENT } from "../Insights/InsightsPanel";
 import { TRASH_EVENT } from "../Trash/TrashPanel";
 import { HISTORY_EVENT } from "../History/HistoryPanel";
+import { SETTINGS_EVENT } from "../Settings/SettingsPanel";
 import searchIcon from '../../assets/icons/search.svg';
 import useJellyTap from "../../hooks/useJellyTap";
 import useInkPulse from "../../hooks/useInkPulse";
@@ -84,6 +85,7 @@ const Header = ({
   const commandJelly = useJellyTap();
   const focusJelly = useJellyTap();
   const trashJelly = useJellyTap();
+  const settingsJelly = useJellyTap();
 
   // The color-filter ring borrows the free cursor's own press pulse and
   // idle pool (see useInkPulse) so it carries the same elastic personality
@@ -696,6 +698,23 @@ const Header = ({
               }
             </motion.span>
           </AnimatePresence>
+        </span>
+      </motion.div>
+      <motion.div
+        role="button"
+        aria-label="Open settings"
+        title="Settings"
+        whileHover={{ scale: 1.14, rotate: 14 }}
+        whileTap={{ scale: .9 }}
+        transition={ springy }
+        onTapStart={ settingsJelly.squash }
+        onClick={ () => window.dispatchEvent(new CustomEvent(SETTINGS_EVENT)) }
+        className="wand"
+      >
+        <span ref={ toolbarMagnetic.registerItem(9) } style={{ display: "inline-flex" }}>
+          <motion.span animate={ settingsJelly.jelly } style={{ display: "inline-flex" }}>
+            <FaGear className="wand-icon" />
+          </motion.span>
         </span>
       </motion.div>
       </motion.div>

@@ -77,27 +77,6 @@
   gap: 8px;
 }
 
-.history-reduce-motion {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: none;
-  outline: none;
-  border-radius: 9px;
-  background-color: var(--page-surface-color);
-  color: var(--page-ink-color);
-  font-size: 12px;
-  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
-}
-
-.history-reduce-motion.active {
-  background-color: var(--page-ink-color);
-  color: var(--page-bg-color);
-}
-
 .history-constellation-toggle {
   display: flex;
   align-items: center;

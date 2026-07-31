@@ -22,6 +22,7 @@ import {
   FaLockOpen,
   FaTrashCan,
   FaTimeline,
+  FaGear,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -47,6 +48,8 @@ import BulkActionBar from "../components/Bulk/BulkActionBar";
 import InsightsPanel, { INSIGHTS_EVENT } from "../components/Insights/InsightsPanel";
 import TrashPanel, { TRASH_EVENT } from "../components/Trash/TrashPanel";
 import HistoryPanel, { HISTORY_EVENT } from "../components/History/HistoryPanel";
+import SettingsPanel, { SETTINGS_EVENT } from "../components/Settings/SettingsPanel";
+import usePrefersReducedMotion from "../hooks/usePrefersReducedMotion";
 import ActionStamp from "../components/Stamp/ActionStamp";
 import ScrollProgress from "../components/Scroll/ScrollProgress";
 import DropZoneOverlay from "../components/DropZone/DropZoneOverlay";
@@ -151,6 +154,24 @@ const Home = () => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
+  // The OS-level preference always wins; this only ever adds reduction on
+  // top of it — never something an app-level toggle should be able to
+  // defeat. Previously lived entirely inside the History panel (visible,
+  // and controllable, only while that one panel happened to be open) —
+  // promoted up here so it's a real, always-reachable setting like theme
+  // and persistNotes, surfaced in SettingsPanel.jsx.
+  const systemReducedMotion = usePrefersReducedMotion();
+  const [manualReduceMotion, setManualReduceMotion] = useState(false);
+  const reduceMotion = systemReducedMotion || manualReduceMotion;
+
+  const toggleReduceMotion = () => {
+    setManualReduceMotion((prev) => {
+      const next = !prev;
+      saveSettings({ reduceMotion: next });
+      return next;
+    });
+  };
+
   // Milestone note counts already celebrated this session — seeded from
   // whatever the desk already held on load, so restoring a big session
   // never replays a shower for ground already covered.
@@ -177,6 +198,9 @@ const Home = () => {
     const settings = loadSettings();
     if (settings.theme === "dark" || settings.theme === "light") {
       setTheme(settings.theme);
+    }
+    if (typeof settings.reduceMotion === "boolean") {
+      setManualReduceMotion(settings.reduceMotion);
     }
 
     setHydrated(true);
@@ -1080,6 +1104,12 @@ const Home = () => {
       perform: () => window.dispatchEvent(new CustomEvent(TRASH_EVENT)),
     },
     {
+      key: "settings",
+      label: "Open settings",
+      icon: <FaGear />,
+      perform: () => window.dispatchEvent(new CustomEvent(SETTINGS_EVENT)),
+    },
+    {
       key: "sprint",
       label: "Start a focus sprint",
       hint: "S",
@@ -1227,6 +1257,16 @@ const Home = () => {
         onJump={ jumpTo }
         branchStash={ branchStash }
         onRestoreBranch={ restoreBranch }
+        reduceMotion={ reduceMotion }
+      />
+      <SettingsPanel
+        theme={ theme }
+        toggleTheme={ toggleTheme }
+        persistNotes={ persistNotes }
+        togglePersistNotes={ togglePersistNotes }
+        reduceMotion={ reduceMotion }
+        toggleReduceMotion={ toggleReduceMotion }
+        systemReducedMotion={ systemReducedMotion }
       />
       <BulkActionBar
         count={ selectedIds.size }

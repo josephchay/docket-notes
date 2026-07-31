@@ -9,7 +9,7 @@ import {
   FaLock, FaTag, FaShuffle, FaPlay, FaPause, FaChevronLeft, FaChevronRight,
   FaBackwardStep, FaGaugeHigh, FaMagnifyingGlass, FaFileArrowDown,
   FaUpRightAndDownLeftFromCenter, FaDownLeftAndUpRightToCenter, FaThumbtack,
-  FaCodeBranch, FaCircleNodes, FaFeather,
+  FaCodeBranch, FaCircleNodes,
 } from "react-icons/fa6";
 
 import { timeAgo } from "../../utils/date";
@@ -17,7 +17,6 @@ import { smoothPath } from "../../utils/svgPath";
 import { NOTE_COLORS } from "../../constants/colors";
 import { playbackMachine, PLAYBACK_SPEEDS } from "./HistoryPlaybackState";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
-import usePrefersReducedMotion from "../../hooks/usePrefersReducedMotion";
 import HistoryAmbient from "./HistoryAmbient";
 import HistoryConstellation from "./HistoryConstellation";
 import useOdometer from "./useOdometer";
@@ -149,7 +148,7 @@ const diffNotes = (beforeNotes, afterNotes) => {
 // a transform of its own onto the rail, so the playhead's rendered
 // position stays a single, ordinary React value (cursor) the whole time;
 // nothing here fights over who owns it.
-const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBranch }) => {
+const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBranch, reduceMotion }) => {
   const [open, setOpen] = useState(false);
   // User-controlled sizing rather than another fixed bump to the panel's
   // own dimensions — deliberately persists across closing/reopening within
@@ -164,16 +163,12 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   const trackRef = useRef(null);
   const panelRef = useRef(null);
 
-  // The OS-level preference always wins; the header button below only
-  // ever adds reduction on top of it (rendered only when the system
-  // preference is already off) — an app control should never be able to
-  // defeat a real accessibility setting. Gates the four largest/most
-  // continuous motions this panel has grown across rounds 1–9: the
+  // `reduceMotion` is now a prop — owned by Home.jsx alongside every other
+  // real preference (theme, persistNotes) and surfaced in SettingsPanel.jsx,
+  // rather than computed locally here. Still gates the same four largest/
+  // most continuous motions this panel has grown across rounds 1–9: the
   // constellation's ambient spin, its cinematic tour's camera flight, its
   // gravity well, and the rail's elastic stretch (see each site below).
-  const systemReducedMotion = usePrefersReducedMotion();
-  const [manualReduceMotion, setManualReduceMotion] = useState(false);
-  const reduceMotion = systemReducedMotion || manualReduceMotion;
 
   // The dot-to-sheet morph clips through a real organic blob stage
   // (utils/blob.js's flubber-powered createBlobMorph) on top of the scale
@@ -812,22 +807,6 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                   }
                 </div>
                 <div className="history-header-actions">
-                  {
-                    !systemReducedMotion && (
-                      <motion.button
-                        type="button"
-                        aria-label={ manualReduceMotion ? "Turn animations back on" : "Reduce motion" }
-                        title={ manualReduceMotion ? "Turn animations back on" : "Reduce motion" }
-                        className={ `history-reduce-motion ${ manualReduceMotion ? "active" : "" }` }
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: .9 }}
-                        transition={{ type: "spring", stiffness: 420, damping: 16 }}
-                        onClick={ () => setManualReduceMotion((prev) => !prev) }
-                      >
-                        <FaFeather />
-                      </motion.button>
-                    )
-                  }
                   {
                     timeline.length > 1 && (
                       <motion.button

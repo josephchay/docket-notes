@@ -1,0 +1,171 @@
+.settings-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+
+.settings-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(25, 25, 25, 0.28);
+}
+
+:root[data-theme="dark"] .settings-backdrop {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* border-radius is animated by framer during the drop-to-sheet morph, so it
+   is deliberately not set here. */
+.settings-panel {
+  position: relative;
+  width: min(440px, 92vw);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
+  will-change: transform;
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--page-line-color);
+  transition: border-color 0.4s ease-in-out;
+}
+
+.settings-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.settings-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 9px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.settings-body {
+  padding: 18px 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* HistoryAmbient's own canvas is position:absolute;inset:0 sized off its
+   parent via ResizeObserver — this is just that parent, given a fixed
+   height and clipped corners to read as a little framed sample rather
+   than a stray rectangle of drifting dust. */
+.settings-preview {
+  position: relative;
+  height: 90px;
+  border-radius: 16px;
+  overflow: hidden;
+  background-color: var(--page-surface-color);
+  margin-bottom: 4px;
+  transition: background-color 0.4s ease-in-out;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 4px;
+}
+
+.settings-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  font-size: 14px;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-row-label {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.settings-row-description {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--page-ink-color);
+  opacity: .55;
+  transition: color 0.4s ease-in-out;
+}
+
+/* --- The switch itself — track + thumb, anime.js drives the thumb's own
+   elastic slide (see SettingsToggle.jsx); everything else here is a plain
+   CSS transition, same as every other toggle-ish control in this app. --- */
+
+.settings-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background-color: var(--page-line-color);
+  cursor: pointer;
+  transition: background-color 0.25s ease-in-out;
+}
+
+.settings-toggle.checked {
+  background-color: var(--page-ink-color);
+}
+
+.settings-toggle:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.settings-toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: var(--page-bg-color);
+  box-shadow: 0 2px 6px -2px rgba(25, 25, 25, 0.4);
+  will-change: transform;
+}
