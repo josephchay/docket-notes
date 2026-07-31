@@ -261,6 +261,15 @@ const Home = () => {
     setSelectedIds(new Set());
   }
 
+  // Unlike toggleSelectMode above, guaranteed to actually be ON afterward
+  // rather than flipping whatever it currently is — what the lasso (see
+  // NoteList.jsx) needs the moment a drag crosses its move threshold,
+  // since a lasso started while already in select mode shouldn't
+  // accidentally turn it back off.
+  const enterSelectMode = useCallback(() => {
+    setSelectMode(true);
+  }, []);
+
   const toggleSelectNote = useCallback((noteId) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -268,6 +277,15 @@ const Home = () => {
       else next.add(noteId);
       return next;
     });
+  }, []);
+
+  // A wholesale replace rather than a toggle — the lasso recomputes which
+  // notes it currently covers on every pointer move and hands the whole
+  // set over each time, so a note that drifts back out of the rectangle
+  // correctly falls back out of the selection instead of staying stuck in
+  // (which toggling per-note couldn't express as the rectangle shrinks).
+  const setSelection = useCallback((ids) => {
+    setSelectedIds(new Set(ids));
   }, []);
 
   const endSelection = () => {
@@ -347,6 +365,7 @@ const Home = () => {
     const toDelete = notes.filter((note) => selectedIds.has(note.id));
     if (toDelete.length === 0) return;
 
+    pushUndo("deleted the selection");
     setDeletedNotes((prev) => [
       ...prev.filter((entry) => !selectedIds.has(entry.note.id)),
       ...toDelete.map((note) => ({
@@ -461,6 +480,7 @@ const Home = () => {
       tags: [],
     });
 
+    pushUndo("poured a new note");
     setNotes(newNotes);
 
     let spawnOrigin = origin;
@@ -482,6 +502,7 @@ const Home = () => {
     const index = notes.findIndex((note) => note.id === noteId);
     if (index === -1) return;
 
+    pushUndo("deleted a note");
     setDeletedNotes((prev) => [
       ...prev.filter((entry) => entry.note.id !== noteId),
       { note: notes[index], index, deletedAt: Date.now(), dismissed: false },
@@ -498,6 +519,7 @@ const Home = () => {
     const entry = deletedNotes.find((item) => item.note.id === noteId);
     if (!entry) return;
 
+    pushUndo("restored a note");
     setNotes((prev) => {
       if (prev.some((note) => note.id === entry.note.id)) return prev;
 
@@ -510,7 +532,10 @@ const Home = () => {
 
   // The toast's own timer (or a swipe) retiring it from the toast deck —
   // the note stays in the trash regardless, just stops competing for one
-  // of the few slots the toast deck shows at once.
+  // of the few slots the toast deck shows at once. Purely a display flag,
+  // not a content change, so it deliberately doesn't push its own history
+  // entry — and stays a stable useCallback since UndoToast's own dismiss
+  // timer depends on this reference not changing every render.
   const dismissUndo = useCallback((noteId) => {
     setDeletedNotes((prev) => prev.map((entry) =>
       entry.note.id === noteId ? { ...entry, dismissed: true } : entry
@@ -518,13 +543,16 @@ const Home = () => {
   }, []);
 
   // Gone for good, skipping the desk entirely — the Trash panel's shred.
-  const shredNote = useCallback((noteId) => {
+  const shredNote = (noteId) => {
+    pushUndo("shredded a note");
     setDeletedNotes((prev) => prev.filter((entry) => entry.note.id !== noteId));
-  }, []);
+  };
 
-  const emptyTrash = useCallback(() => {
+  const emptyTrash = () => {
+    if (deletedNotes.length === 0) return;
+    pushUndo("emptied the trash");
     setDeletedNotes([]);
-  }, []);
+  };
 
   // Only the freshest few, undismissed deletes get a toast — the Trash
   // panel is where the rest (and these, once their moment passes) live on.
@@ -567,16 +595,20 @@ const Home = () => {
     }
   }
 
-  // A general undo, beyond just deletes (which already have their own
-  // dedicated toast deck above). Ctrl/Cmd+Z pops the last tracked edit and
-  // restores the whole desk to how it looked right before — recoloring,
-  // starring, locking, tagging, shuffling, moving, duplicating, and the
-  // bulk star/recolor actions all push a snapshot here. Typing (title/text)
-  // deliberately doesn't: it's debounced and continuous, so tracking every
-  // committed keystroke would flood the stack and undo would only ever
-  // step back a character or two — "just keep typing" is the real undo
-  // there. Deletes stay on their own toast deck rather than joining this
-  // stack, so the two systems never fight over the same keystroke.
+  // A general undo covering the whole desk — every content-changing action
+  // (pouring, editing, deleting, restoring, shredding, importing,
+  // recoloring, starring, locking, tagging, shuffling, moving, duplicating,
+  // the bulk actions, all of it) pushes a snapshot here, and jumpTo below
+  // restores the desk AND the trash together so the two can never drift out
+  // of sync with each other while scrubbing. Typing (title/text)
+  // deliberately doesn't push its own snapshot: it's debounced and
+  // continuous, so tracking every committed keystroke would flood the stack
+  // and undo would only ever step back a character or two — "just keep
+  // typing" is the real undo there. Deletes used to live on a separate,
+  // untracked path from this stack; they (and restoring/shredding/emptying
+  // the trash) now push the same way everything else does, so the History
+  // panel is a complete record instead of missing whatever happened to be
+  // routed through the trash.
   //
   // undoStack and redoStack are state (not refs) so the History panel can
   // actually render them. The two combine into one chronological timeline
@@ -590,15 +622,15 @@ const Home = () => {
   const [redoStack, setRedoStack] = useState([]);
 
   const pushUndo = (label) => {
-    setUndoStack((prev) => [...prev, { notes, label, at: Date.now() }].slice(-20));
+    setUndoStack((prev) => [...prev, { notes, deletedNotes, label, at: Date.now() }].slice(-20));
     setRedoStack([]);   // a fresh edit forks away from any undone branch
   }
 
   // redoStack stores nearest-future last (performRedo below pops off its
   // end), so reading it forward in time means reversing it first.
   const timeline = useMemo(
-    () => [...undoStack, { notes, label: "now", at: null }, ...[...redoStack].reverse()],
-    [undoStack, redoStack, notes]
+    () => [...undoStack, { notes, deletedNotes, label: "now", at: null }, ...[...redoStack].reverse()],
+    [undoStack, redoStack, notes, deletedNotes]
   );
   const cursor = undoStack.length;
 
@@ -609,6 +641,7 @@ const Home = () => {
     setUndoStack(timeline.slice(0, clamped));
     setRedoStack([...timeline.slice(clamped + 1)].reverse());
     setNotes(timeline[clamped].notes);
+    setDeletedNotes(timeline[clamped].deletedNotes);
   }
 
   const performUndo = () => {
@@ -786,6 +819,8 @@ const Home = () => {
               ? `${ cleaned.length } ${ cleaned.length === 1 ? "note" : "notes" } poured in`
               : "Nothing to pour in from that file"
           );
+
+          if (cleaned.length > 0) pushUndo("imported a backup");
 
           return [...prev, ...cleaned];
         });
@@ -1068,8 +1103,10 @@ const Home = () => {
           setSortTag={ setNotesSortTag }
           selectMode={ selectMode }
           toggleSelectMode={ toggleSelectMode }
+          enterSelectMode={ enterSelectMode }
           selectedIds={ selectedIds }
           toggleSelectNote={ toggleSelectNote }
+          setSelection={ setSelection }
           selectAllVisible={ selectAllVisible }
           spawn={ spawn }
           clearSpawn={ clearSpawn }

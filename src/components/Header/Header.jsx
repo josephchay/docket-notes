@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
-import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan } from "react-icons/fa6";
+import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan, FaClockRotateLeft } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { MILESTONES } from "../../constants/milestones";
 import { COMMAND_EVENT } from "../Command/CommandPalette";
 import { INSIGHTS_EVENT } from "../Insights/InsightsPanel";
 import { TRASH_EVENT } from "../Trash/TrashPanel";
+import { HISTORY_EVENT } from "../History/HistoryPanel";
 import searchIcon from '../../assets/icons/search.svg';
 import useJellyTap from "../../hooks/useJellyTap";
 import useInkPulse from "../../hooks/useInkPulse";
@@ -79,6 +80,7 @@ const Header = ({
   // icon span so it never fights the button's own hover/tap scale.
   const starJelly = useJellyTap();
   const insightsJelly = useJellyTap();
+  const historyJelly = useJellyTap();
   const commandJelly = useJellyTap();
   const focusJelly = useJellyTap();
   const trashJelly = useJellyTap();
@@ -525,6 +527,23 @@ const Header = ({
       </motion.div>
       <motion.div
         role="button"
+        aria-label="Show edit history"
+        title="Edit history"
+        whileHover={{ scale: 1.14, rotate: 10 }}
+        whileTap={{ scale: .9 }}
+        transition={ springy }
+        onTapStart={ historyJelly.squash }
+        onClick={ () => window.dispatchEvent(new CustomEvent(HISTORY_EVENT)) }
+        className="wand"
+      >
+        <span ref={ toolbarMagnetic.registerItem(3) } style={{ display: "inline-flex" }}>
+          <motion.span animate={ historyJelly.jelly } style={{ display: "inline-flex" }}>
+            <FaClockRotateLeft className="wand-icon" />
+          </motion.span>
+        </span>
+      </motion.div>
+      <motion.div
+        role="button"
         aria-label={ trashCount > 0 ? `Open the trash — ${ trashCount } ${ trashCount === 1 ? "note" : "notes" }` : "Open the trash" }
         title="Trash"
         whileHover={{ scale: 1.14, rotate: -10 }}
@@ -534,7 +553,7 @@ const Header = ({
         onClick={ () => window.dispatchEvent(new CustomEvent(TRASH_EVENT)) }
         className="wand trash-trigger"
       >
-        <span ref={ toolbarMagnetic.registerItem(3) } style={{ display: "inline-flex" }}>
+        <span ref={ toolbarMagnetic.registerItem(4) } style={{ display: "inline-flex" }}>
           <motion.span animate={ trashJelly.jelly } style={{ display: "inline-flex" }}>
             <FaTrashCan className="wand-icon" />
           </motion.span>
@@ -567,7 +586,7 @@ const Header = ({
         onClick={ () => window.dispatchEvent(new CustomEvent(COMMAND_EVENT)) }
         className="wand"
       >
-        <span ref={ toolbarMagnetic.registerItem(4) } style={{ display: "inline-flex" }}>
+        <span ref={ toolbarMagnetic.registerItem(5) } style={{ display: "inline-flex" }}>
           <motion.span animate={ commandJelly.jelly } style={{ display: "inline-flex" }}>
             <FaWandMagicSparkles className="wand-icon" />
           </motion.span>
@@ -584,7 +603,7 @@ const Header = ({
         onClick={ toggleFocusMode }
         className="wand"
       >
-        <span ref={ toolbarMagnetic.registerItem(5) } style={{ display: "inline-flex" }}>
+        <span ref={ toolbarMagnetic.registerItem(6) } style={{ display: "inline-flex" }}>
           <motion.span animate={ focusJelly.jelly } style={{ display: "inline-flex" }}>
             <FaExpand className="wand-icon" />
           </motion.span>
@@ -607,7 +626,7 @@ const Header = ({
       >
         {/* The old icon spins out, the new one springs in — a tiny
             celestial changeover. */}
-        <span ref={ toolbarMagnetic.registerItem(6) } style={{ display: "inline-flex" }}>
+        <span ref={ toolbarMagnetic.registerItem(7) } style={{ display: "inline-flex" }}>
           <AnimatePresence mode="wait" initial={ false }>
             <motion.span
               key={ theme }
@@ -649,7 +668,7 @@ const Header = ({
       >
         {/* The same spring-in/spin-out changeover as the theme toggle beside
             it — the lock clicks shut or springs back open. */}
-        <span ref={ toolbarMagnetic.registerItem(7) } style={{ display: "inline-flex" }}>
+        <span ref={ toolbarMagnetic.registerItem(8) } style={{ display: "inline-flex" }}>
           <AnimatePresence mode="wait" initial={ false }>
             <motion.span
               key={ persistNotes ? "locked" : "unlocked" }

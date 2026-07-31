@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FaXmark } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { smoothPath, smoothAreaPath } from "../../utils/svgPath";
+import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 
 import "./InsightsPanel.css";
 
@@ -35,6 +36,12 @@ const InsightsPanel = ({
   setSortColor,
 }) => {
   const [open, setOpen] = useState(false);
+  const panelRef = useRef(null);
+
+  // The dot-to-sheet morph clips through a real organic blob stage
+  // (utils/blob.js's flubber-powered createBlobMorph) on top of the scale
+  // spring below.
+  const onBlobUpdate = useBlobClipMorph(panelRef, open, 22);
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -86,8 +93,10 @@ const InsightsPanel = ({
               onClick={ () => setOpen(false) }
             />
             <motion.div
+              ref={ panelRef }
               className="insights-panel"
               initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
+              onUpdate={ onBlobUpdate }
               animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 22 }}
               exit={{
                 opacity: 0,

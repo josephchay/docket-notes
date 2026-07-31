@@ -2,6 +2,25 @@ main {
   grid-area: main;
 }
 
+/* The lasso's own selection rectangle — portaled to document.body (see
+   NoteList.jsx) since it tracks the pointer in plain viewport coordinates,
+   the same reasoning Note.jsx's own radial menu portals for. Rounded and
+   soft rather than a hard marquee rectangle, to read as an elastic pull
+   rather than a literal selection tool. */
+.lasso-rect {
+  position: fixed;
+  z-index: 500;
+  border-radius: 14px;
+  border: 1.5px solid var(--page-ink-color);
+  background-color: rgba(25, 25, 25, 0.1);
+  pointer-events: none;
+  transition: border-color 0.4s ease-in-out;
+}
+
+:root[data-theme="dark"] .lasso-rect {
+  background-color: rgba(255, 254, 255, 0.14);
+}
+
 main .header {
   display: flex;
   align-items: flex-end;

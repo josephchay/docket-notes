@@ -4,6 +4,7 @@ import { FaXmark, FaArrowRotateLeft, FaTrash, FaBoxArchive } from "react-icons/f
 
 import { timeAgo } from "../../utils/date";
 import TrashPhysics from "./TrashPhysics";
+import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 
 import "./TrashPanel.css";
 
@@ -26,6 +27,13 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
   const physicsRef = useRef(null);
   const panelRef = useRef(null);
   const swatchRefs = useRef({});
+
+  // The dot-to-sheet morph clips through a real organic blob stage
+  // (utils/blob.js's flubber-powered createBlobMorph) on the way to/from
+  // this shape, layered on top of the scale spring below. clip-path only
+  // affects painting, not layout, so dropPhysics's own getBoundingClientRect
+  // reads off this same ref are unaffected.
+  const onBlobUpdate = useBlobClipMorph(panelRef, open, 22);
 
   const dropPhysics = (note) => {
     const swatch = swatchRefs.current[note.id];
@@ -144,6 +152,7 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
               ref={ panelRef }
               className="trash-panel"
               initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
+              onUpdate={ onBlobUpdate }
               animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 22 }}
               exit={{
                 opacity: 0,

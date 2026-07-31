@@ -123,8 +123,10 @@ const NoteList = ({
   setSortTag,
   selectMode,
   toggleSelectMode,
+  enterSelectMode,
   selectedIds,
   toggleSelectNote,
+  setSelection,
   selectAllVisible,
   spawn,
   clearSpawn,
@@ -232,6 +234,82 @@ const NoteList = ({
       document.removeEventListener("pointerdown", handleOutside);
     };
   }, [gridRadialAt]);
+
+  // Click-drag across empty desk space — same exclusion as the radial menu
+  // above — draws an elastic selection rectangle and picks up every note it
+  // covers as it grows, live. Held in a ref rather than state until it
+  // actually crosses MOVE_THRESHOLD so a plain click on empty space (no
+  // drag at all) never enters select mode or touches the selection.
+  // Client (viewport) coordinates throughout, matched against each note's
+  // own getBoundingClientRect(), so no local coordinate conversion is
+  // needed against the grid's own scroll/layout.
+  const LASSO_THRESHOLD = 6;
+  const lassoStateRef = useRef(null);
+  const [lassoRect, setLassoRect] = useState(null);
+
+  const notesInLasso = (rect) => {
+    const container = ref.current;
+    if (!container) return [];
+
+    const ids = [];
+    container.querySelectorAll("[data-note-id]").forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const overlaps =
+        r.left < rect.x + rect.width && r.left + r.width > rect.x &&
+        r.top < rect.y + rect.height && r.top + r.height > rect.y;
+      if (overlaps) ids.push(el.dataset.noteId);
+    });
+
+    return ids;
+  };
+
+  const handleLassoMove = (e) => {
+    const state = lassoStateRef.current;
+    if (!state) return;
+
+    const dx = e.clientX - state.startX;
+    const dy = e.clientY - state.startY;
+
+    if (!state.active) {
+      if (Math.hypot(dx, dy) < LASSO_THRESHOLD) return;
+      state.active = true;
+      if (!selectMode) enterSelectMode?.();
+    }
+
+    const rect = {
+      x: Math.min(state.startX, e.clientX),
+      y: Math.min(state.startY, e.clientY),
+      width: Math.abs(dx),
+      height: Math.abs(dy),
+    };
+    setLassoRect(rect);
+    setSelection?.(notesInLasso(rect));
+  };
+
+  const handleLassoUp = () => {
+    window.removeEventListener("pointermove", handleLassoMove);
+    window.removeEventListener("pointerup", handleLassoUp);
+    lassoStateRef.current = null;
+    setLassoRect(null);
+  };
+
+  const handleLassoDown = (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest(".note, button, input, textarea, a")) return;
+
+    lassoStateRef.current = { startX: e.clientX, startY: e.clientY, active: false };
+    window.addEventListener("pointermove", handleLassoMove);
+    window.addEventListener("pointerup", handleLassoUp);
+  };
+
+  // The window listeners above are only ever live mid-drag; this just
+  // guarantees they're gone if the component unmounts (a filter change,
+  // navigating away) while one happens to be in flight.
+  useEffect(() => () => {
+    window.removeEventListener("pointermove", handleLassoMove);
+    window.removeEventListener("pointerup", handleLassoUp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // The shuffle die does an elastic tumble while the layout springs riffle
   // the notes into their new random order.
@@ -511,6 +589,7 @@ const NoteList = ({
         ref={ ref }
         className="notes"
         onContextMenu={ openGridRadialMenu }
+        onPointerDown={ handleLassoDown }
       >
         {
           renderFirstRow && (
@@ -697,6 +776,30 @@ const NoteList = ({
           )
         }
       </div>
+      {
+        createPortal(
+          <AnimatePresence>
+            {
+              lassoRect && (
+                <motion.div
+                  className="lasso-rect"
+                  style={{
+                    left: lassoRect.x,
+                    top: lassoRect.y,
+                    width: lassoRect.width,
+                    height: lassoRect.height,
+                  }}
+                  initial={{ opacity: 0, scale: .92 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.05, transition: { duration: .18, ease: "easeIn" } }}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                />
+              )
+            }
+          </AnimatePresence>,
+          document.body
+        )
+      }
       {
         createPortal(
           <AnimatePresence>

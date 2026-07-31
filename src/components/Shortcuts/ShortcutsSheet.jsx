@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FaXmark } from "react-icons/fa6";
+
+import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 
 import "./ShortcutsSheet.css";
 
@@ -29,6 +31,12 @@ const SHORTCUTS = [
 // casting phase — just a look-up, staggered in row by row.
 const ShortcutsSheet = () => {
   const [open, setOpen] = useState(false);
+  const panelRef = useRef(null);
+
+  // The dot-to-sheet morph clips through a real organic blob stage
+  // (utils/blob.js's flubber-powered createBlobMorph) on top of the scale
+  // spring below.
+  const onBlobUpdate = useBlobClipMorph(panelRef, open, 20);
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -65,8 +73,10 @@ const ShortcutsSheet = () => {
               onClick={ () => setOpen(false) }
             />
             <motion.div
+              ref={ panelRef }
               className="shortcuts-panel"
               initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
+              onUpdate={ onBlobUpdate }
               animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 20 }}
               exit={{
                 opacity: 0,

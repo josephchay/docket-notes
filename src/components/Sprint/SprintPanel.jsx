@@ -6,6 +6,7 @@ import { FaPlay, FaPause, FaRotateLeft, FaForward, FaXmark, FaMugHot, FaFeatherP
 
 import { sprintMachine, SPRINT_PRESETS } from "./SprintState";
 import useInkPulse from "../../hooks/useInkPulse";
+import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 
 import "./SprintPanel.css";
 
@@ -37,6 +38,12 @@ const SprintPanel = () => {
   const [phase, setPhase] = useState("idle");
   const [context, setContext] = useState(sprintMachine.context);
   const [open, setOpen] = useState(false);
+  const panelRef = useRef(null);
+
+  // The dot-to-sheet morph clips through a real organic blob stage
+  // (utils/blob.js's flubber-powered createBlobMorph) on top of the scale
+  // spring below.
+  const onBlobUpdate = useBlobClipMorph(panelRef, open, 26);
 
   // The sprint-length thumb borrows the free cursor's own press pulse and
   // idle pool (see useInkPulse) so it carries the same elastic personality
@@ -180,8 +187,10 @@ const SprintPanel = () => {
                 onClick={ () => setOpen(false) }
               />
               <motion.div
+                ref={ panelRef }
                 className={ `sprint-panel ${ onBreak ? "on-break" : "" }` }
                 initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
+                onUpdate={ onBlobUpdate }
                 animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 26 }}
                 exit={{
                   opacity: 0,

@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { interpret } from "xstate";
 
 import { commandMachine } from "./CommandState";
 import useInkPulse from "../../hooks/useInkPulse";
+import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 
 import "./CommandPalette.css";
 
@@ -112,6 +113,13 @@ const CommandPalette = ({ actions }) => {
   const highlight = Math.min(selected, Math.max(filtered.length - 1, 0));
   const commandPulse = useInkPulse(highlight);
 
+  // The dot-to-sheet morph now clips through a real organic blob stage
+  // (utils/blob.js's flubber-powered createBlobMorph) on top of the scale
+  // spring above, rather than relying on the border-radius keyframes alone
+  // to sell the "grown from a drop of ink" feeling.
+  const panelRef = useRef(null);
+  const onBlobUpdate = useBlobClipMorph(panelRef, open, 18);
+
   return (
     <AnimatePresence>
       {
@@ -125,8 +133,10 @@ const CommandPalette = ({ actions }) => {
               onClick={ () => service.send("CLOSE") }
             />
             <motion.div
+              ref={ panelRef }
               className="command-panel"
               initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
+              onUpdate={ onBlobUpdate }
               animate={
                 phase === "casting" ? {
                   opacity: 1,
