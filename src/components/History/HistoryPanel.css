@@ -34,6 +34,10 @@
   border: 1px solid var(--page-line-color);
   box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
   will-change: transform;
+  /* tabIndex={-1} in the JSX makes this the focus trap's landing spot on
+     open (see the effect in HistoryPanel.jsx) — a visible outline around
+     the entire panel isn't useful the way one around an actual control is. */
+  outline: none;
   transition:
     width 0.45s cubic-bezier(0.34, 1.3, 0.64, 1),
     max-height 0.45s cubic-bezier(0.34, 1.3, 0.64, 1),
@@ -71,6 +75,27 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.history-reduce-motion {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 9px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.history-reduce-motion.active {
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
 }
 
 .history-constellation-toggle {
@@ -150,6 +175,21 @@
   flex-direction: row;
   min-height: 0;
   flex: 1;
+}
+
+/* The linear rail/list/preview's own wrapper — previously a plain fragment
+   directly inside .history-body (a real element is needed now so
+   AnimatePresence/VIEW_TRANSITION in HistoryPanel.jsx has something of its
+   own to animate), so it mirrors .history-body's own row/flex layout
+   exactly rather than changing how .history-left-rail/.history-right-pane
+   size themselves. */
+.history-timeline-view {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
 }
 
 .history-left-rail {
@@ -1387,6 +1427,30 @@
   transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
 }
 
+/* The linear rail's own transport bar is hidden while the constellation
+   fills the body — this is what lets a cinematic tour (see the `touring`
+   prop on HistoryConstellation.jsx) actually be started from in here. */
+.history-constellation-play {
+  position: absolute;
+  z-index: 2;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  font-size: 14px;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  box-shadow: 0 14px 30px -16px rgba(25, 25, 25, 0.4);
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
 .history-constellation {
   position: relative;
   flex: 1;
@@ -1398,7 +1462,41 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+  /* Focus is shown in-scene (a rim-light on the focused node, see the
+     aFocused shader varying in HistoryConstellation.jsx) rather than a
+     native outline around the whole canvas, which would just be a
+     rectangle around a rotating field of points and wouldn't say which
+     one is actually focused. */
+  outline: none;
+}
+
+.history-constellation-canvas:active {
+  cursor: grabbing;
+}
+
+/* Doubles as the aria-live region announcing the keyboard-focused node —
+   always present (not visually hidden) so sighted keyboard users get the
+   same information a screen reader does. Empty and takes no visible space
+   until a node is actually focused. */
+.history-constellation-status {
+  position: absolute;
+  z-index: 2;
+  left: 16px;
+  bottom: 16px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  opacity: .85;
+  pointer-events: none;
+}
+
+.history-constellation-status:empty {
+  display: none;
 }
 
 .history-constellation-label {
@@ -1449,7 +1547,7 @@
 /* Stack back into one column on a narrow window rather than squeezing both
    panes illegibly thin. */
 @media (max-width: 860px) {
-  .history-body {
+  .history-timeline-view {
     flex-direction: column;
   }
 
@@ -1463,5 +1561,33 @@
   .history-right-pane {
     flex: 1;
     min-height: 220px;
+  }
+
+  /* The header has grown to as many as five action buttons plus the
+     export button's own text label across rounds 5–11 — on a phone-width
+     panel (96vw, per .history-panel above) that no longer fits a single
+     non-wrapping row alongside the title. Rather than truncating the
+     title or shrinking tap targets below a comfortable size, the row
+     wraps and the export button drops back to icon-only, matching how
+     every other header button here is already just an icon. */
+  .history-header {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .history-header-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .history-export {
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    justify-content: center;
+  }
+
+  .history-export-label {
+    display: none;
   }
 }

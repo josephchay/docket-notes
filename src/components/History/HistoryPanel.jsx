@@ -9,7 +9,7 @@ import {
   FaLock, FaTag, FaShuffle, FaPlay, FaPause, FaChevronLeft, FaChevronRight,
   FaBackwardStep, FaGaugeHigh, FaMagnifyingGlass, FaFileArrowDown,
   FaUpRightAndDownLeftFromCenter, FaDownLeftAndUpRightToCenter, FaThumbtack,
-  FaCodeBranch, FaCircleNodes,
+  FaCodeBranch, FaCircleNodes, FaFeather,
 } from "react-icons/fa6";
 
 import { timeAgo } from "../../utils/date";
@@ -17,6 +17,7 @@ import { smoothPath } from "../../utils/svgPath";
 import { NOTE_COLORS } from "../../constants/colors";
 import { playbackMachine, PLAYBACK_SPEEDS } from "./HistoryPlaybackState";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
+import usePrefersReducedMotion from "../../hooks/usePrefersReducedMotion";
 import HistoryAmbient from "./HistoryAmbient";
 import HistoryConstellation from "./HistoryConstellation";
 import useOdometer from "./useOdometer";
@@ -31,10 +32,32 @@ export const HISTORY_EVENT = "docket:history";
 const WAVE_W = 400;
 const WAVE_H = 40;
 
+// What the focus trap below treats as "reachable by Tab" — standard set,
+// explicitly excluding anything already opted out via tabindex="-1" (the
+// panel root itself, once the trap lands focus there on open, is exactly
+// such a case — it shouldn't then also count as one of its own boundaries).
+const FOCUSABLE_SELECTOR = [
+  "a[href]", "button:not([disabled])", "input:not([disabled])",
+  "textarea:not([disabled])", "select:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(", ");
+
 // Past this many tracked edits, ticks packed into a fixed-width rail sit
 // only a few px apart — the rail becomes horizontally scrollable instead
 // (see isLongSession below) with a zoomed-out minimap for overview/nav.
 const LONG_SESSION_TICKS = 14;
+
+// Shared by every top-level view .history-body can show (empty state,
+// constellation, the linear timeline) — the outgoing one recedes before
+// the incoming one expands in (see the AnimatePresence mode="wait" this
+// feeds below), rather than the instant hard cut those three used to
+// swap with.
+const VIEW_TRANSITION = {
+  initial: { opacity: 0, scale: .92, filter: "blur(6px)" },
+  animate: { opacity: 1, scale: 1, filter: "blur(0px)" },
+  exit: { opacity: 0, scale: .94, filter: "blur(6px)", transition: { duration: .22 } },
+  transition: { type: "spring", stiffness: 300, damping: 28 },
+};
 
 // Total title+text length across a set of notes — shared by the waveform's
 // own magnitude below and both diff lines (step-over-step and vs-pinned).
@@ -141,6 +164,17 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   const trackRef = useRef(null);
   const panelRef = useRef(null);
 
+  // The OS-level preference always wins; the header button below only
+  // ever adds reduction on top of it (rendered only when the system
+  // preference is already off) — an app control should never be able to
+  // defeat a real accessibility setting. Gates the four largest/most
+  // continuous motions this panel has grown across rounds 1–9: the
+  // constellation's ambient spin, its cinematic tour's camera flight, its
+  // gravity well, and the rail's elastic stretch (see each site below).
+  const systemReducedMotion = usePrefersReducedMotion();
+  const [manualReduceMotion, setManualReduceMotion] = useState(false);
+  const reduceMotion = systemReducedMotion || manualReduceMotion;
+
   // The dot-to-sheet morph clips through a real organic blob stage
   // (utils/blob.js's flubber-powered createBlobMorph) on top of the scale
   // spring below.
@@ -193,6 +227,72 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
     if (!open) setConstellation(false);
   }, [open]);
 
+  // Returns focus to whatever had it before the panel opened (typically
+  // Header's own wand button, or the command palette) once it closes —
+  // otherwise a keyboard user tabbing through the app loses their place
+  // entirely the moment this panel's content unmounts. Nothing else in
+  // this app currently does this for any of its own panels either; scoped
+  // to History alone here, matching every other round's own scope.
+  const previouslyFocusedRef = useRef(null);
+  useEffect(() => {
+    if (open) {
+      previouslyFocusedRef.current = document.activeElement;
+      // Deferred a frame: the panel's own content hasn't necessarily
+      // painted yet in this same tick, and focusing before that lands
+      // unreliably. The panel itself (tabIndex=-1 in the JSX below, so
+      // it's programmatically focusable without joining the normal tab
+      // order) is the landing spot rather than guessing at a specific
+      // button, since which header buttons even exist varies (export and
+      // the constellation toggle are both conditional).
+      requestAnimationFrame(() => panelRef.current?.focus());
+    } else if (previouslyFocusedRef.current instanceof HTMLElement) {
+      previouslyFocusedRef.current.focus({ preventScroll: true });
+      previouslyFocusedRef.current = null;
+    }
+  }, [open]);
+
+  // A real focus trap — Tab/Shift+Tab now cycle only among the panel's own
+  // focusable elements while it's open, rather than escaping to whatever
+  // sits behind the backdrop. Only intervenes right at the two boundaries
+  // (wrapping first→last and last→first); everything in between is left
+  // to the browser's own native Tab handling. The focusable set is
+  // queried live on every Tab press rather than cached, since it changes
+  // with which view is showing (constellation vs. the two-pane timeline)
+  // and which header buttons happen to be conditionally rendered.
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key !== "Tab") return;
+
+      const panel = panelRef.current;
+      if (!panel) return;
+
+      const focusable = Array.from(panel.querySelectorAll(FOCUSABLE_SELECTOR))
+        .filter((el) => el.offsetParent !== null);
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      // document.activeElement === panel covers the moment right after
+      // opening (see the effect above) — focus starts on the panel root
+      // itself, not yet on `first`, so a Shift+Tab pressed before ever
+      // tabbing forward would otherwise slip past this guard and escape
+      // the trap backward immediately.
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
   const stopPlayback = () => playbackService.send("STOP");
 
   // Reads scrollWidth/scrollLeft rather than just the visible rect, so this
@@ -227,7 +327,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   const handlePan = (_e, info) => {
     stopPlayback();
     onJump(indexFromPoint(info.point.x));
-    stretchMV.set(Math.max(-1, Math.min(1, info.velocity.x / 900)));
+    if (!reduceMotion) stretchMV.set(Math.max(-1, Math.min(1, info.velocity.x / 900)));
   };
   const handleTrackClick = (e) => { stopPlayback(); onJump(indexFromPoint(e.clientX)); };
 
@@ -417,9 +517,45 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   // ever being clipped by .history-right-pane's or .history-list's own
   // scroll/overflow, regardless of which grid triggered it.
   const [hoveredChip, setHoveredChip] = useState(null);
-  const showChipPreview = (note, e) => setHoveredChip({ note, x: e.clientX, y: e.clientY });
-  const moveChipPreview = (e) => setHoveredChip((prev) => (prev ? { ...prev, x: e.clientX, y: e.clientY } : prev));
+
+  // Keeps the popover's own box (200px wide, CSS's own translate(14px,
+  // 14px) offset baked in here rather than duplicated in CSS) fully
+  // within the viewport rather than following the raw pointer position —
+  // otherwise a chip hovered near the right or bottom edge (routine on a
+  // narrow/phone-width window) would render it partly or fully off-screen.
+  const clampChipPreview = (x, y) => ({
+    x: Math.min(x, Math.max(0, window.innerWidth - 214)),
+    y: Math.min(y, Math.max(0, window.innerHeight - 150)),
+  });
+
+  const showChipPreview = (note, e) => {
+    const p = clampChipPreview(e.clientX, e.clientY);
+    setHoveredChip({ note, x: p.x, y: p.y });
+  };
+  const moveChipPreview = (e) => setHoveredChip((prev) => {
+    if (!prev) return prev;
+    const p = clampChipPreview(e.clientX, e.clientY);
+    return { ...prev, x: p.x, y: p.y };
+  });
   const hideChipPreview = () => setHoveredChip(null);
+
+  // Touch has no hover state, so the popover above — the only way left to
+  // see a chip's title/text/color since the plain title= tooltip was
+  // replaced by it — would otherwise be completely unreachable by tap.
+  // Tapping now shows it too, auto-dismissing itself shortly after rather
+  // than needing a "tap elsewhere to close" listener; harmless for mouse
+  // users, who've typically already seen it via hover before the click
+  // lands anyway.
+  const chipPreviewTimeoutRef = useRef(null);
+  const tapChipPreview = (note, e) => {
+    showChipPreview(note, e);
+    if (chipPreviewTimeoutRef.current) clearTimeout(chipPreviewTimeoutRef.current);
+    chipPreviewTimeoutRef.current = setTimeout(() => setHoveredChip(null), 3200);
+  };
+
+  useEffect(() => () => {
+    if (chipPreviewTimeoutRef.current) clearTimeout(chipPreviewTimeoutRef.current);
+  }, []);
 
   // The focused note can drop out of whatever moment is currently
   // previewed while scrubbing elsewhere — scan the whole timeline, newest
@@ -515,6 +651,25 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
       return true;
     });
   }, [rows, activeFilter, query, focusNoteId, timeline]);
+
+  // Lets the constellation view dim nodes that don't match the same
+  // search/category filter the activity list already applies — null (no
+  // dimming) when neither is active, rather than every node reading as
+  // "matched." Deliberately independent of focusNoteId above — a single-
+  // note focus is its own, separate lens, not folded into this one.
+  const visibleIndices = useMemo(() => {
+    if (!query.trim() && !activeFilter) return null;
+    return new Set(
+      rows
+        .filter((row) => {
+          if (activeFilter && row.categoryKey !== activeFilter) return false;
+          const q = query.trim().toLowerCase();
+          if (q && !row.label.toLowerCase().includes(q)) return false;
+          return true;
+        })
+        .map((row) => row.index)
+    );
+  }, [rows, activeFilter, query]);
 
   // Time-lapse: one tracked step forward per tick of the current speed
   // while playing, stopping itself the instant it reaches "now" — the
@@ -623,6 +778,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
             />
             <motion.div
               ref={ panelRef }
+              tabIndex={ -1 }
               className={ `history-panel ${ maximized ? "maximized" : "" }` }
               initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
               onUpdate={ onBlobUpdate }
@@ -656,6 +812,22 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                   }
                 </div>
                 <div className="history-header-actions">
+                  {
+                    !systemReducedMotion && (
+                      <motion.button
+                        type="button"
+                        aria-label={ manualReduceMotion ? "Turn animations back on" : "Reduce motion" }
+                        title={ manualReduceMotion ? "Turn animations back on" : "Reduce motion" }
+                        className={ `history-reduce-motion ${ manualReduceMotion ? "active" : "" }` }
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: .9 }}
+                        transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                        onClick={ () => setManualReduceMotion((prev) => !prev) }
+                      >
+                        <FaFeather />
+                      </motion.button>
+                    )
+                  }
                   {
                     timeline.length > 1 && (
                       <motion.button
@@ -708,7 +880,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                         onClick={ exportHistory }
                       >
                         <FaFileArrowDown className="history-export-icon" />
-                        Export
+                        <span className="history-export-label">Export</span>
                       </motion.button>
                     )
                   }
@@ -727,14 +899,15 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
               </div>
 
               <div className="history-body">
+                <AnimatePresence mode="wait">
                 {
                   timeline.length < 2 ? (
-                    <div className="history-empty">
+                    <motion.div key="empty" className="history-empty" { ...VIEW_TRANSITION }>
                       <FaClockRotateLeft className="history-empty-icon" />
                       <p>Nothing tracked yet this session — edit a note or two.</p>
-                    </div>
+                    </motion.div>
                   ) : constellation ? (
-                    <div className="history-constellation-wrap">
+                    <motion.div key="constellation" className="history-constellation-wrap" { ...VIEW_TRANSITION }>
                       <motion.button
                         type="button"
                         className="history-constellation-back"
@@ -745,16 +918,42 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                       >
                         <FaChevronLeft /> Back to timeline
                       </motion.button>
+                      <motion.button
+                        type="button"
+                        aria-label={ playPhase === "playing" ? "Pause the tour" : "Play a cinematic tour" }
+                        title={ playPhase === "playing" ? "Pause the tour" : "Play a cinematic tour" }
+                        className="history-constellation-play"
+                        whileHover={{ scale: 1.08 }}
+                        whileTap={{ scale: .92 }}
+                        transition={{ type: "spring", stiffness: 380, damping: 16 }}
+                        onClick={ togglePlay }
+                      >
+                        <AnimatePresence mode="wait" initial={ false }>
+                          <motion.span
+                            key={ playPhase }
+                            initial={{ scale: 0, rotate: -30, opacity: 0 }}
+                            animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                            exit={{ scale: 0, rotate: 30, opacity: 0 }}
+                            transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                            style={{ display: "flex" }}
+                          >
+                            { playPhase === "playing" ? <FaPause /> : <FaPlay /> }
+                          </motion.span>
+                        </AnimatePresence>
+                      </motion.button>
                       <HistoryConstellation
                         timeline={ timeline }
                         cursor={ cursor }
                         branchStash={ branchStash }
                         onJump={ (index) => { stopPlayback(); onJump(index); } }
                         onRestoreBranch={ onRestoreBranch }
+                        touring={ playPhase === "playing" }
+                        visibleIndices={ visibleIndices }
+                        reduceMotion={ reduceMotion }
                       />
-                    </div>
+                    </motion.div>
                   ) : (
-                    <>
+                    <motion.div key="timeline" className="history-timeline-view" { ...VIEW_TRANSITION }>
                     <div className="history-left-rail">
                     <div className="history-controls">
                       <motion.div
@@ -1284,12 +1483,13 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                     {
                                       pinnedEntry.notes.length > 0 ? (
                                         pinnedEntry.notes.map((note) => (
-                                          <span
+                                          <motion.span
                                             key={ note.id }
                                             role="button"
                                             tabIndex={ 0 }
+                                            layout
                                             className={ `history-note-chip ${ note.color }-bg ${ note.id === focusNoteId ? "focused" : "" }` }
-                                            onClick={ () => toggleFocusNote(note.id) }
+                                            onClick={ (e) => { toggleFocusNote(note.id); tapChipPreview(note, e); } }
                                             onKeyDown={ (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFocusNote(note.id); } } }
                                             onMouseEnter={ (e) => showChipPreview(note, e) }
                                             onMouseMove={ moveChipPreview }
@@ -1351,12 +1551,13 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                     {
                                       secondPinnedEntry.notes.length > 0 ? (
                                         secondPinnedEntry.notes.map((note) => (
-                                          <span
+                                          <motion.span
                                             key={ note.id }
                                             role="button"
                                             tabIndex={ 0 }
+                                            layout
                                             className={ `history-note-chip ${ note.color }-bg ${ note.id === focusNoteId ? "focused" : "" }` }
-                                            onClick={ () => toggleFocusNote(note.id) }
+                                            onClick={ (e) => { toggleFocusNote(note.id); tapChipPreview(note, e); } }
                                             onKeyDown={ (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFocusNote(note.id); } } }
                                             onMouseEnter={ (e) => showChipPreview(note, e) }
                                             onMouseMove={ moveChipPreview }
@@ -1396,12 +1597,13 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                               key={ note.id }
                                               role="button"
                                               tabIndex={ 0 }
+                                              layout
                                               className={ `history-note-chip ${ note.color }-bg ${ diffClass } ${ note.id === focusNoteId ? "focused" : "" }` }
                                               initial={{ opacity: 0, scale: .4 }}
                                               animate={{ opacity: 1, scale: 1 }}
                                               exit={{ opacity: 0, scale: .4 }}
                                               transition={{ type: "spring", stiffness: 460, damping: 20, delay: Math.min(i * .012, .3) }}
-                                              onClick={ () => toggleFocusNote(note.id) }
+                                              onClick={ (e) => { toggleFocusNote(note.id); tapChipPreview(note, e); } }
                                               onKeyDown={ (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFocusNote(note.id); } } }
                                               onMouseEnter={ (e) => showChipPreview(note, e) }
                                               onMouseMove={ moveChipPreview }
@@ -1416,12 +1618,13 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                             key={ `removed-${ note.id }` }
                                             role="button"
                                             tabIndex={ 0 }
+                                            layout
                                             className={ `history-note-chip diff-removed ${ note.color }-bg ${ note.id === focusNoteId ? "focused" : "" }` }
                                             initial={{ opacity: 0, scale: .4 }}
                                             animate={{ opacity: 1, scale: 1 }}
                                             exit={{ opacity: 0, scale: .4 }}
                                             transition={{ type: "spring", stiffness: 460, damping: 20 }}
-                                            onClick={ () => toggleFocusNote(note.id) }
+                                            onClick={ (e) => { toggleFocusNote(note.id); tapChipPreview({ ...note, removed: true }, e); } }
                                             onKeyDown={ (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFocusNote(note.id); } } }
                                             onMouseEnter={ (e) => showChipPreview({ ...note, removed: true }, e) }
                                             onMouseMove={ moveChipPreview }
@@ -1445,9 +1648,10 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                         )
                       }
                     </div>
-                    </>
+                    </motion.div>
                   )
                 }
+                </AnimatePresence>
               </div>
               {
                 createPortal(

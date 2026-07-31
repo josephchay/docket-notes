@@ -59,6 +59,38 @@ export const resolveCssColor = (value) => {
   return resolved || "#191919";
 };
 
+// Smoothly lerps a shader's uColor uniform toward whatever `value` resolves
+// to right now — shared by both triggers below that need a retint: the
+// previewed action changing, and the theme flipping. Most of ACTION_STYLES'
+// colors are theme-invariant by design (see colors.css), but the
+// DEFAULT_STYLE fallback resolves from --page-ink-color, which *does* flip
+// — re-running this against whatever the CSS variable resolves to *right
+// now* is what keeps that case from going stale after a theme toggle.
+const retintUniform = (uniforms, value) => {
+  const target = new THREE.Color(resolveCssColor(value));
+  const start = {
+    r: uniforms.uColor.value.r,
+    g: uniforms.uColor.value.g,
+    b: uniforms.uColor.value.b,
+  };
+  const duration = 500;
+  const startTime = performance.now();
+  let raf = null;
+
+  const step = (now) => {
+    const t = Math.min(1, (now - startTime) / duration);
+    uniforms.uColor.value.setRGB(
+      start.r + (target.r - start.r) * t,
+      start.g + (target.g - start.g) * t,
+      start.b + (target.b - start.b) * t,
+    );
+    if (t < 1) raf = requestAnimationFrame(step);
+  };
+  raf = requestAnimationFrame(step);
+
+  return () => { if (raf) cancelAnimationFrame(raf); };
+};
+
 // A faint drifting-dust wash behind the right pane's preview, re-tinted to
 // whichever action's color is currently previewed — the same raw-Three.js
 // Points-cloud technique AmbientField.jsx already uses for the page's own
@@ -68,6 +100,8 @@ export const resolveCssColor = (value) => {
 const HistoryAmbient = ({ color }) => {
   const canvasRef = useRef(null);
   const uniformsRef = useRef(null);
+  const colorRef = useRef(color);
+  colorRef.current = color;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -164,35 +198,29 @@ const HistoryAmbient = ({ color }) => {
   }, []);
 
   // Re-tints smoothly toward whatever action is currently previewed rather
-  // than snapping — the same manual RAF-lerp AmbientField.jsx's own
-  // light/dark theme-flip observer already does.
+  // than snapping.
   useEffect(() => {
     const uniforms = uniformsRef.current;
     if (!uniforms) return;
-
-    const target = new THREE.Color(resolveCssColor(color));
-    const start = {
-      r: uniforms.uColor.value.r,
-      g: uniforms.uColor.value.g,
-      b: uniforms.uColor.value.b,
-    };
-    const duration = 500;
-    const startTime = performance.now();
-    let raf = null;
-
-    const step = (now) => {
-      const t = Math.min(1, (now - startTime) / duration);
-      uniforms.uColor.value.setRGB(
-        start.r + (target.r - start.r) * t,
-        start.g + (target.g - start.g) * t,
-        start.b + (target.b - start.b) * t,
-      );
-      if (t < 1) raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-
-    return () => { if (raf) cancelAnimationFrame(raf); };
+    return retintUniform(uniforms, color);
   }, [color]);
+
+  // Also re-tints on a theme flip alone — the same manual RAF-lerp
+  // AmbientField.jsx's own light/dark theme-flip observer already does.
+  // Needed because the effect above only fires when the `color` *prop*
+  // changes; if it's currently DEFAULT_STYLE's --page-ink-color (the one
+  // ACTION_STYLES color that isn't theme-invariant) and the theme flips
+  // without the previewed action also changing, that prop string stays
+  // identical even though what it resolves to just changed underneath it.
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const uniforms = uniformsRef.current;
+      if (!uniforms) return;
+      retintUniform(uniforms, colorRef.current);
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
 
   return <canvas ref={ canvasRef } className="history-ambient" aria-hidden="true" />;
 };
