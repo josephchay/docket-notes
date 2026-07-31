@@ -5,7 +5,7 @@ import {
   FaXmark, FaClockRotateLeft, FaPlus, FaTrash, FaArrowRotateLeft, FaTrashCan,
   FaBoxArchive, FaFileArrowUp, FaCopy, FaPalette, FaUpDownLeftRight, FaStar,
   FaLock, FaTag, FaShuffle, FaPlay, FaPause, FaChevronLeft, FaChevronRight,
-  FaBackwardStep, FaGaugeHigh, FaMagnifyingGlass,
+  FaBackwardStep, FaGaugeHigh, FaMagnifyingGlass, FaFileArrowDown,
 } from "react-icons/fa6";
 
 import { timeAgo } from "../../utils/date";
@@ -170,6 +170,27 @@ const HistoryPanel = ({ timeline, cursor, onJump }) => {
   const PreviewIcon = previewStyle.icon;
   const previewColors = previewEntry ? composeColors(previewEntry.notes) : [];
 
+  // What that one step actually changed — real arithmetic against the step
+  // right before it (the same textSum reasoning magnitudeOf already uses
+  // for the waveform, surfaced here as a readable line instead of folded
+  // into one opacity value). null for index 0, which has nothing to diff.
+  const previewDiff = useMemo(() => {
+    if (previewIndex <= 0 || !timeline[previewIndex - 1]) return null;
+
+    const textSum = (notes) => notes.reduce(
+      (sum, note) => sum + (note.title?.length || 0) + (note.text?.length || 0),
+      0
+    );
+
+    const before = timeline[previewIndex - 1].notes;
+    const after = previewEntry.notes;
+
+    return {
+      countDelta: after.length - before.length,
+      textDelta: textSum(after) - textSum(before),
+    };
+  }, [timeline, previewIndex, previewEntry]);
+
   const wavePath = useMemo(() => {
     if (timeline.length < 2) return "";
 
@@ -270,6 +291,33 @@ const HistoryPanel = ({ timeline, cursor, onJump }) => {
   const stepBack = () => { stopPlayback(); onJump(cursor - 1); };
   const stepForward = () => { stopPlayback(); onJump(cursor + 1); };
 
+  // Downloads the tracked session as a JSON file — the same Blob + anchor-
+  // click pattern Home.jsx's own exportNotes/bulkExport already use, built
+  // entirely off the timeline prop this panel already has.
+  const exportHistory = () => {
+    const payload = timeline.map((entry, index) => {
+      const arrival = describedArrival(index);
+      return {
+        step: index,
+        label: arrival ? arrival.label : "session start",
+        at: arrival ? new Date(arrival.at).toISOString() : null,
+        noteCount: entry.notes.length,
+        trashCount: entry.deletedNotes?.length ?? 0,
+      };
+    });
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `docket-history-${ new Date().toISOString().slice(0, 10) }.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <AnimatePresence>
       {
@@ -308,17 +356,36 @@ const HistoryPanel = ({ timeline, cursor, onJump }) => {
                     )
                   }
                 </div>
-                <motion.button
-                  type="button"
-                  aria-label="Close"
-                  className="history-close"
-                  whileHover={{ scale: 1.15, rotate: 90 }}
-                  whileTap={{ scale: .9 }}
-                  transition={{ type: "spring", stiffness: 420, damping: 16 }}
-                  onClick={ () => setOpen(false) }
-                >
-                  <FaXmark />
-                </motion.button>
+                <div className="history-header-actions">
+                  {
+                    timeline.length > 1 && (
+                      <motion.button
+                        type="button"
+                        aria-label="Download the session's edit history as a JSON file"
+                        title="Export history"
+                        className="history-export"
+                        whileHover={{ scale: 1.06 }}
+                        whileTap={{ scale: .94 }}
+                        transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                        onClick={ exportHistory }
+                      >
+                        <FaFileArrowDown className="history-export-icon" />
+                        Export
+                      </motion.button>
+                    )
+                  }
+                  <motion.button
+                    type="button"
+                    aria-label="Close"
+                    className="history-close"
+                    whileHover={{ scale: 1.15, rotate: 90 }}
+                    whileTap={{ scale: .9 }}
+                    transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                    onClick={ () => setOpen(false) }
+                  >
+                    <FaXmark />
+                  </motion.button>
+                </div>
               </div>
 
               <div className="history-body">
@@ -330,6 +397,7 @@ const HistoryPanel = ({ timeline, cursor, onJump }) => {
                     </div>
                   ) : (
                     <>
+                    <div className="history-left-rail">
                     <div className="history-controls">
                       <motion.div
                         key={ `${ previewIndex }-${ hovered !== null ? "preview" : "live" }` }
@@ -624,6 +692,79 @@ const HistoryPanel = ({ timeline, cursor, onJump }) => {
                           }
                         </AnimatePresence>
                       </div>
+                    </div>
+                    </div>
+
+                    <div className="history-right-pane">
+                      {
+                        previewEntry ? (
+                          <>
+                            <div className="history-preview-header">
+                              <span className="history-preview-icon" style={{ "--action-color": previewStyle.color }}>
+                                <PreviewIcon />
+                              </span>
+                              <span className="history-preview-text">
+                                <span className="history-preview-label">
+                                  { previewArrival ? capitalize(previewArrival.label) : "The very start" }
+                                </span>
+                                <span className="history-preview-time">
+                                  { previewArrival ? timeAgo(previewArrival.at) : "session start" }
+                                </span>
+                              </span>
+                            </div>
+
+                            {
+                              previewDiff && (
+                                <div className="history-preview-diff">
+                                  <span
+                                    className={ `history-preview-diff-chip ${ previewDiff.countDelta > 0 ? "positive" : previewDiff.countDelta < 0 ? "negative" : "" }` }
+                                  >
+                                    { previewDiff.countDelta > 0 ? `+${ previewDiff.countDelta }` : previewDiff.countDelta } note{ Math.abs(previewDiff.countDelta) === 1 ? "" : "s" }
+                                  </span>
+                                  <span className="history-preview-diff-chip">
+                                    text { previewDiff.textDelta > 0 ? `+${ previewDiff.textDelta }` : previewDiff.textDelta } chars
+                                  </span>
+                                </div>
+                              )
+                            }
+
+                            <div className="history-preview-grid-label">
+                              {
+                                previewEntry.notes.length > 0
+                                  ? `The desk — ${ previewEntry.notes.length } ${ previewEntry.notes.length === 1 ? "note" : "notes" }`
+                                  : "The desk"
+                              }
+                            </div>
+
+                            <div className="history-note-grid">
+                              <AnimatePresence initial={ false }>
+                                {
+                                  previewEntry.notes.length > 0 ? (
+                                    previewEntry.notes.map((note, i) => (
+                                      <motion.span
+                                        key={ note.id }
+                                        className={ `history-note-chip ${ note.color }-bg` }
+                                        title={ note.title?.trim() || note.text?.trim()?.slice(0, 40) || "Untitled note" }
+                                        initial={{ opacity: 0, scale: .4 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: .4 }}
+                                        transition={{ type: "spring", stiffness: 460, damping: 20, delay: Math.min(i * .012, .3) }}
+                                      />
+                                    ))
+                                  ) : (
+                                    <span className="history-row-empty">Nothing on the desk yet</span>
+                                  )
+                                }
+                              </AnimatePresence>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="history-preview-empty">
+                            <FaClockRotateLeft className="history-preview-empty-icon" />
+                            <p>Hover or scrub the rail to preview a moment</p>
+                          </div>
+                        )
+                      }
                     </div>
                     </>
                   )
