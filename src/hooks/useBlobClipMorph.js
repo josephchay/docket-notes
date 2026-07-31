@@ -65,6 +65,20 @@ const useBlobClipMorph = (ref, active, radius = 22) => {
     if (!morphRef.current || typeof latest.scale !== "number") return;
 
     const t = Math.max(0, Math.min(1, (latest.scale - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)));
+
+    // Fully settled — the native border-radius + overflow:hidden every
+    // panel already animates to draws this exact same rounded rectangle,
+    // so the clip-path has nothing left to add. Dropping it here (rather
+    // than leaving it frozen at whatever size was measured on mount) means
+    // a panel that changes size later — HistoryPanel's own maximize
+    // toggle, or any panel whose content simply grows — is never cut off
+    // by a stale clip shaped for its old dimensions. It resumes the moment
+    // t moves off 1 again (an exit animation starting).
+    if (t >= 1) {
+      if (ref.current) ref.current.style.clipPath = "";
+      return;
+    }
+
     morphRef.current.set(t * morphRef.current.stageCount);
   };
 };

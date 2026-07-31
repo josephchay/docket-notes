@@ -34,7 +34,21 @@
   border: 1px solid var(--page-line-color);
   box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
   will-change: transform;
-  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+  transition:
+    width 0.45s cubic-bezier(0.34, 1.3, 0.64, 1),
+    max-height 0.45s cubic-bezier(0.34, 1.3, 0.64, 1),
+    background-color 0.4s ease-in-out,
+    border-color 0.4s ease-in-out;
+}
+
+/* User-controlled sizing (see the maximize button in the header) rather
+   than another fixed-size bump — plain CSS transitions the resize itself,
+   framer's own scale/opacity handle the panel's own entrance/exit as
+   before, and useBlobClipMorph.js's settle-then-clear fix keeps the
+   entrance's clip-path from being left stale at the old size. */
+.history-panel.maximized {
+  width: min(1600px, 97vw);
+  max-height: 94vh;
 }
 
 .history-header {
@@ -56,6 +70,23 @@
 .history-header-actions {
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+.history-maximize {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 9px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
 }
 
 .history-header h3 {
@@ -615,6 +646,41 @@
   border-radius: 50%;
 }
 
+/* Hidden until the row is hovered/active — pinning is a deliberate,
+   secondary action, not something that should compete with the row's own
+   icon/label/swatches at rest. */
+.history-row-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  font-size: 9px;
+  color: var(--page-ink-color);
+  background: transparent;
+  opacity: 0;
+  transition: opacity 0.15s ease-in-out, background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+.history-row:hover .history-row-pin {
+  opacity: .55;
+}
+
+.history-row-pin:hover {
+  opacity: 1;
+}
+
+.history-row-pin.active {
+  opacity: 1;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+}
+
 .history-row-empty {
   padding: 34px 10px;
   text-align: center;
@@ -709,6 +775,67 @@
   background-color: var(--red-color);
 }
 
+/* Pin & compare — a moment pinned from the list, shown above the live
+   preview with its own diff (against the live moment, not just the step
+   before it) and its own note-grid. */
+.history-pin-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 8px 8px 8px 14px;
+  border-radius: 999px;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.history-pin-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.history-pin-chip-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 9px;
+  color: var(--page-bg-color);
+  background-color: var(--action-color, var(--page-ink-color));
+  transition: background-color 0.2s ease-in-out;
+}
+
+.history-pin-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  font-size: 9px;
+  color: var(--page-ink-color);
+  background-color: var(--page-bg-color);
+  opacity: .6;
+  transition: opacity 0.2s ease-in-out, background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.history-pin-clear:hover {
+  opacity: 1;
+}
+
 .history-preview-grid-label {
   margin-top: 26px;
   margin-bottom: 12px;
@@ -723,10 +850,17 @@
 
 /* Every note on the desk at this moment, in miniature — literally what it
    looked like, rebuilt each time the previewed moment changes. */
+.history-liquid-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
 .history-note-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  filter: url(#history-liquid);
 }
 
 .history-note-chip {
@@ -763,7 +897,6 @@
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  margin-left: 6px;
   border: none;
   outline: none;
   border-radius: 999px;
