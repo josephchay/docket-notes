@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { interpret } from "xstate";
 import gsap from "gsap";
@@ -8,7 +9,7 @@ import {
   FaLock, FaTag, FaShuffle, FaPlay, FaPause, FaChevronLeft, FaChevronRight,
   FaBackwardStep, FaGaugeHigh, FaMagnifyingGlass, FaFileArrowDown,
   FaUpRightAndDownLeftFromCenter, FaDownLeftAndUpRightToCenter, FaThumbtack,
-  FaCodeBranch,
+  FaCodeBranch, FaCircleNodes,
 } from "react-icons/fa6";
 
 import { timeAgo } from "../../utils/date";
@@ -17,6 +18,7 @@ import { NOTE_COLORS } from "../../constants/colors";
 import { playbackMachine, PLAYBACK_SPEEDS } from "./HistoryPlaybackState";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 import HistoryAmbient from "./HistoryAmbient";
+import HistoryConstellation from "./HistoryConstellation";
 import useOdometer from "./useOdometer";
 
 import "./HistoryPanel.css";
@@ -28,6 +30,11 @@ export const HISTORY_EVENT = "docket:history";
 // The waveform's own coordinate space — see smoothPath (utils/svgPath.js).
 const WAVE_W = 400;
 const WAVE_H = 40;
+
+// Past this many tracked edits, ticks packed into a fixed-width rail sit
+// only a few px apart — the rail becomes horizontally scrollable instead
+// (see isLongSession below) with a zoomed-out minimap for overview/nav.
+const LONG_SESSION_TICKS = 14;
 
 // Total title+text length across a set of notes — shared by the waveform's
 // own magnitude below and both diff lines (step-over-step and vs-pinned).
@@ -41,7 +48,7 @@ const textSum = (notes) => notes.reduce(
 // flat weight per note gained or lost, and a smaller one for the trash
 // gaining or losing entries (shredding/restoring/emptying don't touch the
 // desk's own notes, so without this they'd read as flat).
-const magnitudeOf = (prev, next) => {
+export const magnitudeOf = (prev, next) => {
   const textDelta = Math.abs(textSum(next.notes) - textSum(prev.notes));
   const countDelta = Math.abs(next.notes.length - prev.notes.length) * 40;
   const trashDelta = Math.abs((next.deletedNotes?.length || 0) - (prev.deletedNotes?.length || 0)) * 15;
@@ -68,9 +75,9 @@ const ACTION_STYLES = [
   { key: "tagged", chipLabel: "Tags", test: (l) => l.startsWith("edited a tag"), icon: FaTag, color: "var(--purple-color)" },
   { key: "shuffled", chipLabel: "Shuffles", test: (l) => l.startsWith("shuffled"), icon: FaShuffle, color: "var(--gray-color)" },
 ];
-const DEFAULT_STYLE = { icon: FaClockRotateLeft, color: "var(--page-ink-color)" };
+export const DEFAULT_STYLE = { icon: FaClockRotateLeft, color: "var(--page-ink-color)" };
 
-const styleFor = (label) => ACTION_STYLES.find((s) => s.test(label)) || DEFAULT_STYLE;
+export const styleFor = (label) => ACTION_STYLES.find((s) => s.test(label)) || DEFAULT_STYLE;
 
 // How many notes of each ink a given historical desk held — the hover
 // preview's compact minimap.
@@ -82,7 +89,7 @@ const composeColors = (notes) => {
     .filter((c) => c.count > 0);
 };
 
-const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+export const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 
 // Which individual notes changed between two moments — not just the
 // aggregate +/- counts previewDiff/compareDiff already give. Also what the
@@ -126,6 +133,11 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   // the session, the same way a maximized window stays maximized, rather
   // than resetting every time like the search/filter state below does.
   const [maximized, setMaximized] = useState(false);
+  // A fullscreen data-viz alternative to the two-pane rail/list/preview
+  // below — every tracked edit as a node in a slowly-rotating spiral (see
+  // HistoryConstellation.jsx), rather than more decoration on top of the
+  // linear view. Resets on close, unlike `maximized`.
+  const [constellation, setConstellation] = useState(false);
   const trackRef = useRef(null);
   const panelRef = useRef(null);
 
@@ -174,13 +186,30 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
     if (!open) playbackService.send("STOP");
   }, [open, playbackService]);
 
+  // The constellation view resets on close (unlike `maximized`, which
+  // persists) — reopening the panel always lands back on the familiar
+  // rail/list view first.
+  useEffect(() => {
+    if (!open) setConstellation(false);
+  }, [open]);
+
   const stopPlayback = () => playbackService.send("STOP");
 
+  // Reads scrollWidth/scrollLeft rather than just the visible rect, so this
+  // keeps working unchanged once the track becomes horizontally scrollable
+  // past LONG_SESSION_TICKS below — when nothing overflows, scrollWidth
+  // equals the visible width and scrollLeft is 0, so the math is identical
+  // to before.
   const indexFromPoint = (x) => {
-    const rect = trackRef.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0 || timeline.length < 2) return cursor;
+    const el = trackRef.current;
+    if (!el || timeline.length < 2) return cursor;
 
-    const ratio = Math.min(Math.max((x - rect.left) / rect.width, 0), 1);
+    const rect = el.getBoundingClientRect();
+    const contentWidth = el.scrollWidth || rect.width;
+    if (contentWidth === 0) return cursor;
+
+    const localX = x - rect.left + el.scrollLeft;
+    const ratio = Math.min(Math.max(localX / contentWidth, 0), 1);
     return Math.round(ratio * (timeline.length - 1));
   };
 
@@ -212,6 +241,43 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
 
   const pct = timeline.length > 1 ? (cursor / (timeline.length - 1)) * 100 : 0;
   const stepsAhead = timeline.length > 0 ? timeline.length - 1 - cursor : 0;
+
+  // Past the threshold, the rail below scrolls horizontally instead of
+  // compressing every tick into a fixed width — this minimap is the
+  // zoomed-out overview + quick-nav for that scrolled state.
+  const isLongSession = timeline.length > LONG_SESSION_TICKS;
+  const [minimapViewport, setMinimapViewport] = useState({ left: 0, width: 100 });
+
+  useEffect(() => {
+    if (!isLongSession) return;
+    const el = trackRef.current;
+    if (!el) return;
+
+    const update = () => {
+      const contentWidth = el.scrollWidth || 1;
+      setMinimapViewport({
+        left: (el.scrollLeft / contentWidth) * 100,
+        width: Math.min(100, (el.clientWidth / contentWidth) * 100),
+      });
+    };
+
+    update();
+    el.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
+    return () => {
+      el.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [isLongSession, timeline.length]);
+
+  const handleMinimapClick = (e) => {
+    const el = trackRef.current;
+    if (!el) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+    el.scrollTo({ left: ratio * el.scrollWidth - el.clientWidth / 2, behavior: "smooth" });
+  };
 
   const previewIndex = hovered ?? cursor;
   const previewEntry = timeline[previewIndex];
@@ -266,6 +332,39 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   const PinnedIcon = pinnedStyle.icon;
   const pinnedLabel = pinnedArrival ? capitalize(pinnedArrival.label) : "The very start";
 
+  // A second, independent pin — `pinned` above stays "the anchor" of the
+  // comparison (it's left alone once set), this is whichever moment got
+  // pinned after it. Kept as a fully parallel, additive slot rather than
+  // reshaping `pinned` into an array, so none of the code already reading
+  // `pinned`/`pinnedEntry`/`compareDiff` above needs to change.
+  const [secondPinned, setSecondPinned] = useState(null);
+
+  const secondPinnedEntry = secondPinned !== null ? timeline[secondPinned] : null;
+  const secondPinnedArrival = secondPinnedEntry ? describedArrival(secondPinned) : null;
+  const secondPinnedStyle = secondPinnedArrival ? styleFor(secondPinnedArrival.label) : DEFAULT_STYLE;
+  const SecondPinnedIcon = secondPinnedStyle.icon;
+  const secondPinnedLabel = secondPinnedArrival ? capitalize(secondPinnedArrival.label) : "The very start";
+
+  const secondCompareDiff = useMemo(() => {
+    if (!secondPinnedEntry || !previewEntry) return null;
+
+    return {
+      countDelta: previewEntry.notes.length - secondPinnedEntry.notes.length,
+      textDelta: textSum(previewEntry.notes) - textSum(secondPinnedEntry.notes),
+    };
+  }, [secondPinnedEntry, previewEntry]);
+
+  // Toggles whichever slot makes sense for a given row: already pinned
+  // (either slot) unpins it; otherwise it fills `pinned` first, then
+  // `secondPinned`, then replaces `secondPinned` (the more recently added
+  // of the two) once both are full.
+  const togglePin = (index) => {
+    if (pinned === index) { setPinned(null); return; }
+    if (secondPinned === index) { setSecondPinned(null); return; }
+    if (pinned === null) { setPinned(index); return; }
+    setSecondPinned(index);
+  };
+
   const compareDiff = useMemo(() => {
     if (!pinnedEntry || !previewEntry) return null;
 
@@ -313,6 +412,15 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   const [focusNoteId, setFocusNoteId] = useState(null);
   const toggleFocusNote = (noteId) => setFocusNoteId((prev) => (prev === noteId ? null : noteId));
 
+  // A richer floating preview replacing the plain browser tooltip on note
+  // chips — fixed positioning (rather than a portal) is what keeps it from
+  // ever being clipped by .history-right-pane's or .history-list's own
+  // scroll/overflow, regardless of which grid triggered it.
+  const [hoveredChip, setHoveredChip] = useState(null);
+  const showChipPreview = (note, e) => setHoveredChip({ note, x: e.clientX, y: e.clientY });
+  const moveChipPreview = (e) => setHoveredChip((prev) => (prev ? { ...prev, x: e.clientX, y: e.clientY } : prev));
+  const hideChipPreview = () => setHoveredChip(null);
+
   // The focused note can drop out of whatever moment is currently
   // previewed while scrubbing elsewhere — scan the whole timeline, newest
   // first, for the last place it's still known.
@@ -357,6 +465,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
       setQuery("");
       setActiveFilter(null);
       setPinned(null);
+      setSecondPinned(null);
       setFocusNoteId(null);
     }
   }, [open]);
@@ -547,6 +656,22 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                   }
                 </div>
                 <div className="history-header-actions">
+                  {
+                    timeline.length > 1 && (
+                      <motion.button
+                        type="button"
+                        aria-label={ constellation ? "Back to the timeline view" : "View the session as a constellation" }
+                        title={ constellation ? "Back to timeline" : "Constellation view" }
+                        className={ `history-constellation-toggle ${ constellation ? "active" : "" }` }
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: .9 }}
+                        transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                        onClick={ () => setConstellation((prev) => !prev) }
+                      >
+                        <FaCircleNodes />
+                      </motion.button>
+                    )
+                  }
                   <motion.button
                     type="button"
                     aria-label={ maximized ? "Restore the panel to its normal size" : "Maximize the panel" }
@@ -607,6 +732,26 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                     <div className="history-empty">
                       <FaClockRotateLeft className="history-empty-icon" />
                       <p>Nothing tracked yet this session — edit a note or two.</p>
+                    </div>
+                  ) : constellation ? (
+                    <div className="history-constellation-wrap">
+                      <motion.button
+                        type="button"
+                        className="history-constellation-back"
+                        whileHover={{ scale: 1.04 }}
+                        whileTap={{ scale: .96 }}
+                        transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                        onClick={ () => setConstellation(false) }
+                      >
+                        <FaChevronLeft /> Back to timeline
+                      </motion.button>
+                      <HistoryConstellation
+                        timeline={ timeline }
+                        cursor={ cursor }
+                        branchStash={ branchStash }
+                        onJump={ (index) => { stopPlayback(); onJump(index); } }
+                        onRestoreBranch={ onRestoreBranch }
+                      />
                     </div>
                   ) : (
                     <>
@@ -728,88 +873,116 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                         className="history-track"
                         onClick={ handleTrackClick }
                       >
-                        <div className="history-track-rail" />
-                        {
-                          stepsAhead > 0 && (
-                            <div className="history-track-rail-ahead" style={{ left: `${ pct }%` }} />
-                          )
-                        }
-                        <svg
-                          className="history-wave"
-                          viewBox={ `0 0 ${ WAVE_W } ${ WAVE_H }` }
-                          preserveAspectRatio="none"
-                          aria-hidden="true"
+                        <div
+                          className="history-track-content"
+                          style={ isLongSession ? { minWidth: `${ timeline.length * 26 }px` } : undefined }
                         >
-                          <motion.path
-                            className="history-wave-line"
-                            d={ wavePath }
-                            initial={{ pathLength: 0, opacity: 0 }}
-                            animate={{ pathLength: 1, opacity: .22 }}
-                            transition={{ duration: .7, ease: "easeInOut" }}
-                          />
-                        </svg>
-                        {
-                          timeline.map((entry, index) => {
-                            const style = styleFor(describedArrival(index)?.label ?? "");
-
-                            return (
-                              <button
-                                key={ index }
-                                type="button"
-                                className={ `history-tick ${ index === cursor ? "active" : "" } ${ entry.label === "now" ? "is-now" : "" } ${ index > cursor ? "redoable" : "" }` }
-                                style={{ left: `${ timeline.length > 1 ? (index / (timeline.length - 1)) * 100 : 0 }%`, "--tick-color": style.color }}
-                                title={ entry.label === "now" ? "Right now" : entry.label }
-                                onClick={ (e) => { e.stopPropagation(); stopPlayback(); onJump(index); } }
-                                onMouseEnter={ () => setHovered(index) }
-                                onMouseLeave={ () => setHovered((h) => (h === index ? null : h)) }
-                                onFocus={ () => setHovered(index) }
-                                onBlur={ () => setHovered((h) => (h === index ? null : h)) }
-                              />
-                            );
-                          })
-                        }
-                        <motion.div
-                          className="history-playhead"
-                          animate={{ left: `${ pct }%` }}
-                          style={{ scaleX: playheadScaleX, scaleY: playheadScaleY }}
-                          transition={{ type: "spring", stiffness: 500, damping: 32 }}
-                          onPanStart={ stopPlayback }
-                          onPan={ handlePan }
-                          onPanEnd={ () => stretchMV.set(0) }
-                        />
-                        <AnimatePresence>
+                          <div className="history-track-rail" />
                           {
-                            hovered !== null && timeline[hovered] && (
-                              <motion.div
-                                className="history-rail-thumb"
-                                style={{ left: `${ timeline.length > 1 ? (hovered / (timeline.length - 1)) * 100 : 0 }%` }}
-                                initial={{ opacity: 0, y: 6, scale: .85 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: 6, scale: .85 }}
-                                transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                              >
-                                <div className="history-rail-thumb-grid">
-                                  {
-                                    timeline[hovered].notes.length > 0 ? (
-                                      timeline[hovered].notes.map((note) => (
-                                        <span
-                                          key={ note.id }
-                                          className={ `history-rail-thumb-chip ${ note.color }-bg` }
-                                        />
-                                      ))
-                                    ) : (
-                                      <span className="history-rail-thumb-empty">Empty</span>
-                                    )
-                                  }
-                                </div>
-                                <div className="history-rail-thumb-count">
-                                  { timeline[hovered].notes.length } { timeline[hovered].notes.length === 1 ? "note" : "notes" }
-                                </div>
-                              </motion.div>
+                            stepsAhead > 0 && (
+                              <div className="history-track-rail-ahead" style={{ left: `${ pct }%` }} />
                             )
                           }
-                        </AnimatePresence>
+                          <svg
+                            className="history-wave"
+                            viewBox={ `0 0 ${ WAVE_W } ${ WAVE_H }` }
+                            preserveAspectRatio="none"
+                            aria-hidden="true"
+                          >
+                            <motion.path
+                              className="history-wave-line"
+                              d={ wavePath }
+                              initial={{ pathLength: 0, opacity: 0 }}
+                              animate={{ pathLength: 1, opacity: .22 }}
+                              transition={{ duration: .7, ease: "easeInOut" }}
+                            />
+                          </svg>
+                          {
+                            timeline.map((entry, index) => {
+                              const style = styleFor(describedArrival(index)?.label ?? "");
+
+                              return (
+                                <button
+                                  key={ index }
+                                  type="button"
+                                  className={ `history-tick ${ index === cursor ? "active" : "" } ${ entry.label === "now" ? "is-now" : "" } ${ index > cursor ? "redoable" : "" }` }
+                                  style={{ left: `${ timeline.length > 1 ? (index / (timeline.length - 1)) * 100 : 0 }%`, "--tick-color": style.color }}
+                                  title={ entry.label === "now" ? "Right now" : entry.label }
+                                  onClick={ (e) => { e.stopPropagation(); stopPlayback(); onJump(index); } }
+                                  onMouseEnter={ () => setHovered(index) }
+                                  onMouseLeave={ () => setHovered((h) => (h === index ? null : h)) }
+                                  onFocus={ () => setHovered(index) }
+                                  onBlur={ () => setHovered((h) => (h === index ? null : h)) }
+                                />
+                              );
+                            })
+                          }
+                          <motion.div
+                            className="history-playhead"
+                            animate={{ left: `${ pct }%` }}
+                            style={{ scaleX: playheadScaleX, scaleY: playheadScaleY }}
+                            transition={{ type: "spring", stiffness: 500, damping: 32 }}
+                            onPanStart={ stopPlayback }
+                            onPan={ handlePan }
+                            onPanEnd={ () => stretchMV.set(0) }
+                          />
+                          <AnimatePresence>
+                            {
+                              hovered !== null && timeline[hovered] && (
+                                <motion.div
+                                  className="history-rail-thumb"
+                                  style={{ left: `${ timeline.length > 1 ? (hovered / (timeline.length - 1)) * 100 : 0 }%` }}
+                                  initial={{ opacity: 0, y: 6, scale: .85 }}
+                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                  exit={{ opacity: 0, y: 6, scale: .85 }}
+                                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                >
+                                  <div className="history-rail-thumb-grid">
+                                    {
+                                      timeline[hovered].notes.length > 0 ? (
+                                        timeline[hovered].notes.map((note) => (
+                                          <span
+                                            key={ note.id }
+                                            className={ `history-rail-thumb-chip ${ note.color }-bg` }
+                                          />
+                                        ))
+                                      ) : (
+                                        <span className="history-rail-thumb-empty">Empty</span>
+                                      )
+                                    }
+                                  </div>
+                                  <div className="history-rail-thumb-count">
+                                    { timeline[hovered].notes.length } { timeline[hovered].notes.length === 1 ? "note" : "notes" }
+                                  </div>
+                                </motion.div>
+                              )
+                            }
+                          </AnimatePresence>
+                        </div>
                       </div>
+
+                      {
+                        isLongSession && (
+                          <div className="history-minimap" onClick={ handleMinimapClick }>
+                            {
+                              timeline.map((entry, index) => {
+                                const style = styleFor(describedArrival(index)?.label ?? "");
+                                return (
+                                  <span
+                                    key={ index }
+                                    className="history-minimap-tick"
+                                    style={{ left: `${ timeline.length > 1 ? (index / (timeline.length - 1)) * 100 : 0 }%`, "--tick-color": style.color }}
+                                  />
+                                );
+                              })
+                            }
+                            <div
+                              className="history-minimap-viewport"
+                              style={{ left: `${ minimapViewport.left }%`, width: `${ minimapViewport.width }%` }}
+                            />
+                          </div>
+                        )
+                      }
 
                       <div className="history-track-labels">
                         <span>Oldest</span>
@@ -1010,16 +1183,13 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                   </span>
                                   <motion.button
                                     type="button"
-                                    className={ `history-row-pin ${ pinned === row.index ? "active" : "" }` }
-                                    aria-label={ pinned === row.index ? "Unpin this moment" : "Pin this moment to compare" }
-                                    title={ pinned === row.index ? "Unpin" : "Pin to compare" }
+                                    className={ `history-row-pin ${ pinned === row.index ? "active" : "" } ${ secondPinned === row.index ? "active-secondary" : "" }` }
+                                    aria-label={ pinned === row.index || secondPinned === row.index ? "Unpin this moment" : "Pin this moment to compare" }
+                                    title={ pinned === row.index || secondPinned === row.index ? "Unpin" : "Pin to compare" }
                                     whileHover={{ scale: 1.2 }}
                                     whileTap={{ scale: .85 }}
                                     transition={{ type: "spring", stiffness: 420, damping: 16 }}
-                                    onClick={ (e) => {
-                                      e.stopPropagation();
-                                      setPinned((prev) => (prev === row.index ? null : row.index));
-                                    } }
+                                    onClick={ (e) => { e.stopPropagation(); togglePin(row.index); } }
                                   >
                                     <FaThumbtack />
                                   </motion.button>
@@ -1119,9 +1289,78 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                             role="button"
                                             tabIndex={ 0 }
                                             className={ `history-note-chip ${ note.color }-bg ${ note.id === focusNoteId ? "focused" : "" }` }
-                                            title={ note.title?.trim() || note.text?.trim()?.slice(0, 40) || "Untitled note" }
                                             onClick={ () => toggleFocusNote(note.id) }
                                             onKeyDown={ (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFocusNote(note.id); } } }
+                                            onMouseEnter={ (e) => showChipPreview(note, e) }
+                                            onMouseMove={ moveChipPreview }
+                                            onMouseLeave={ hideChipPreview }
+                                          />
+                                        ))
+                                      ) : (
+                                        <span className="history-row-empty">Nothing on the desk yet</span>
+                                      )
+                                    }
+                                  </div>
+                                </>
+                              )
+                            }
+
+                            {
+                              secondPinnedEntry && (
+                                <>
+                                  <div className="history-pin-banner history-pin-banner-secondary">
+                                    <span className="history-pin-chip">
+                                      <span className="history-pin-chip-icon" style={{ "--action-color": secondPinnedStyle.color }}>
+                                        <SecondPinnedIcon />
+                                      </span>
+                                      Pinned: { secondPinnedLabel }
+                                    </span>
+                                    <motion.button
+                                      type="button"
+                                      className="history-pin-clear"
+                                      aria-label="Unpin"
+                                      whileHover={{ scale: 1.15 }}
+                                      whileTap={{ scale: .9 }}
+                                      transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                                      onClick={ () => setSecondPinned(null) }
+                                    >
+                                      <FaXmark />
+                                    </motion.button>
+                                  </div>
+
+                                  {
+                                    secondCompareDiff && (
+                                      <div className="history-preview-diff">
+                                        <span
+                                          className={ `history-preview-diff-chip ${ secondCompareDiff.countDelta > 0 ? "positive" : secondCompareDiff.countDelta < 0 ? "negative" : "" }` }
+                                        >
+                                          { secondCompareDiff.countDelta > 0 ? `+${ secondCompareDiff.countDelta }` : secondCompareDiff.countDelta } note{ Math.abs(secondCompareDiff.countDelta) === 1 ? "" : "s" } vs pinned
+                                        </span>
+                                        <span className="history-preview-diff-chip">
+                                          text { secondCompareDiff.textDelta > 0 ? `+${ secondCompareDiff.textDelta }` : secondCompareDiff.textDelta } chars vs pinned
+                                        </span>
+                                      </div>
+                                    )
+                                  }
+
+                                  <div className="history-preview-grid-label">
+                                    Pinned — { secondPinnedEntry.notes.length } { secondPinnedEntry.notes.length === 1 ? "note" : "notes" }
+                                  </div>
+
+                                  <div className="history-note-grid">
+                                    {
+                                      secondPinnedEntry.notes.length > 0 ? (
+                                        secondPinnedEntry.notes.map((note) => (
+                                          <span
+                                            key={ note.id }
+                                            role="button"
+                                            tabIndex={ 0 }
+                                            className={ `history-note-chip ${ note.color }-bg ${ note.id === focusNoteId ? "focused" : "" }` }
+                                            onClick={ () => toggleFocusNote(note.id) }
+                                            onKeyDown={ (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFocusNote(note.id); } } }
+                                            onMouseEnter={ (e) => showChipPreview(note, e) }
+                                            onMouseMove={ moveChipPreview }
+                                            onMouseLeave={ hideChipPreview }
                                           />
                                         ))
                                       ) : (
@@ -1136,8 +1375,8 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                             <div className="history-preview-grid-label">
                               {
                                 previewEntry.notes.length > 0
-                                  ? `${ pinned !== null ? "Now previewing" : "The desk" } — ${ previewEntry.notes.length } ${ previewEntry.notes.length === 1 ? "note" : "notes" }`
-                                  : (pinned !== null ? "Now previewing" : "The desk")
+                                  ? `${ pinned !== null || secondPinned !== null ? "Now previewing" : "The desk" } — ${ previewEntry.notes.length } ${ previewEntry.notes.length === 1 ? "note" : "notes" }`
+                                  : (pinned !== null || secondPinned !== null ? "Now previewing" : "The desk")
                               }
                             </div>
 
@@ -1158,13 +1397,15 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                               role="button"
                                               tabIndex={ 0 }
                                               className={ `history-note-chip ${ note.color }-bg ${ diffClass } ${ note.id === focusNoteId ? "focused" : "" }` }
-                                              title={ note.title?.trim() || note.text?.trim()?.slice(0, 40) || "Untitled note" }
                                               initial={{ opacity: 0, scale: .4 }}
                                               animate={{ opacity: 1, scale: 1 }}
                                               exit={{ opacity: 0, scale: .4 }}
                                               transition={{ type: "spring", stiffness: 460, damping: 20, delay: Math.min(i * .012, .3) }}
                                               onClick={ () => toggleFocusNote(note.id) }
                                               onKeyDown={ (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFocusNote(note.id); } } }
+                                              onMouseEnter={ (e) => showChipPreview(note, e) }
+                                              onMouseMove={ moveChipPreview }
+                                              onMouseLeave={ hideChipPreview }
                                             />
                                           );
                                         })
@@ -1176,13 +1417,15 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                             role="button"
                                             tabIndex={ 0 }
                                             className={ `history-note-chip diff-removed ${ note.color }-bg ${ note.id === focusNoteId ? "focused" : "" }` }
-                                            title={ `Removed — ${ note.title?.trim() || note.text?.trim()?.slice(0, 40) || "Untitled note" }` }
                                             initial={{ opacity: 0, scale: .4 }}
                                             animate={{ opacity: 1, scale: 1 }}
                                             exit={{ opacity: 0, scale: .4 }}
                                             transition={{ type: "spring", stiffness: 460, damping: 20 }}
                                             onClick={ () => toggleFocusNote(note.id) }
                                             onKeyDown={ (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFocusNote(note.id); } } }
+                                            onMouseEnter={ (e) => showChipPreview({ ...note, removed: true }, e) }
+                                            onMouseMove={ moveChipPreview }
+                                            onMouseLeave={ hideChipPreview }
                                           />
                                         ))
                                       }
@@ -1206,6 +1449,48 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                   )
                 }
               </div>
+              {
+                createPortal(
+                  <AnimatePresence>
+                    {
+                      hoveredChip && (
+                        <motion.div
+                          className="history-chip-preview"
+                          style={{ left: hoveredChip.x, top: hoveredChip.y }}
+                          initial={{ opacity: 0, scale: .85, y: 6 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: .85, y: 6 }}
+                          transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                        >
+                          <div className="history-chip-preview-header">
+                            <span className={ `history-chip-preview-swatch ${ hoveredChip.note.color }-bg` } />
+                            {
+                              hoveredChip.note.favorite && <FaStar className="history-chip-preview-icon" />
+                            }
+                            {
+                              hoveredChip.note.lock && <FaLock className="history-chip-preview-icon" />
+                            }
+                            {
+                              hoveredChip.note.removed && <span className="history-chip-preview-tag">Removed</span>
+                            }
+                          </div>
+                          <div className="history-chip-preview-title">
+                            { hoveredChip.note.title?.trim() || "Untitled note" }
+                          </div>
+                          {
+                            hoveredChip.note.text?.trim() && (
+                              <div className="history-chip-preview-text">
+                                { hoveredChip.note.text.trim().slice(0, 160) }
+                              </div>
+                            )
+                          }
+                        </motion.div>
+                      )
+                    }
+                  </AnimatePresence>,
+                  document.body
+                )
+              }
             </motion.div>
           </div>
         )

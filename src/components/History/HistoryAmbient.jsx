@@ -49,7 +49,7 @@ const FRAG = `
 // action-color styles in HistoryPanel.jsx hand this a raw `var(--x-color)`
 // reference (see ACTION_STYLES), which THREE has no idea what to do with on
 // its own.
-const resolveCssColor = (value) => {
+export const resolveCssColor = (value) => {
   if (!value) return "#191919";
 
   const match = /var\((--[\w-]+)\)/.exec(value);
