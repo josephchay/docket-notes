@@ -1,7 +1,0 @@
-Animation packages: animejs, xstate, gsap, webgl, threejs, framer motion, three, and other animation libraries or packages.
-
-Animation types: morphical, starchy, fluid, bouncy, jelly, elastic, stretchy, weightier, 
-
------------------------
-
-Design and create more better and beautiful, modernistic, and awwwards style features in the entire project. Sample Animation packages: animejs, xstate, gsap, webgl, threejs, framer motion, three, and other animation libraries or packages. Sample Animation types: morphical, starchy, fluid, bouncy, jelly, elastic, stretchy. Use more, better packages or animation types

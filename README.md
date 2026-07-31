@@ -1,4 +1,6 @@
-# Let there be (Docket) ~ Project with Claude AI
+# Let there be (Docket) ~ Designed, Prompted, and Coded with Claude AI
+
+## 
 
 ![image](https://github.com/user-attachments/assets/152f9046-dd56-4665-baf2-efdefbc465b7)
 ![image](https://github.com/user-attachments/assets/967049da-61de-4733-b9c8-d84c23895de9)
@@ -33,7 +35,8 @@ Session Storage and local storage is being used temporarily.
 # Acknowledgements
 1. Design inspired from <a href="https://dribbble.com/shots/14037848-Docket-note-Side-menu" target="_blank">Docket Note</a>
 2. Side menu animation inspiration and code from <a href="https://www.youtube.com/watch?v=lSzfYAQYKU0" target="_blank">Micro Interactions using Anime.js | HTML, CSS & Javascript</a>
-3. Code helped with <a href="https://claude.ai/" target="_blank">Claude AI</a> (Paid - invoice can be shared upon request), after commit <a href="https://github.com/josephchay/docket-notes/tree/5fcc14fe8b9dcf6bce6d23789cacaa6043f80d08" target="_blank">5fcc14fe8b9dcf6bce6d23789cacaa6043f80d08</a>
+3. Designs and codes helped and made with <a href="https://claude.ai/" target="_blank">Claude AI</a> (Paid - invoice can be shared upon request), after commit <a href="https://github.com/josephchay/docket-notes/tree/5fcc14fe8b9dcf6bce6d23789cacaa6043f80d08" target="_blank">5fcc14fe8b9dcf6bce6d23789cacaa6043f80d08</a>
     - Subscriptions Proofs in <a href="src/assets/miscellaneous" target="_blank">src/assets/miscellaneous</a>
         ![Claude AI Subscription (with $100 Free Usage Credits - Used)](src/assets/miscellaneous/claude-ai-subscription-along-with-free-usage-credits-of-100-free-usage-credits-used.png)
         ![Claude AI Subscription (with $100 Free Usage Credits - Used) for Fable 5](src/assets/miscellaneous/claude-ai-subscription-free-usage-credits-for-fable5.png)
+    - Consistent sample script prompts used: <a href="claude-ai-sample-prompt-scripts" target="_blank">Claude AI Sample Script Prompts</a>
