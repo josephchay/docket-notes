@@ -361,6 +361,21 @@
   transition: background-color 0.4s ease-in-out;
 }
 
+/* The "steps ahead" portion of the rail — from the playhead out to the
+   newest redoable step — laid dashed and orange on top of the solid rail
+   above, so a scrub back into history reads as a distinct, provisional
+   stretch rather than identical to committed history. */
+.history-track-rail-ahead {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  height: 3px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background-image: repeating-linear-gradient(90deg, var(--orange-color) 0 5px, transparent 5px 10px);
+  opacity: .55;
+}
+
 /* A fluid backdrop behind the flat rail/ticks — see magnitudeOf in
    HistoryPanel.jsx for what "how much changed" means at each step. */
 .history-wave {
@@ -388,6 +403,7 @@
 .history-tick {
   position: absolute;
   top: 50%;
+  box-sizing: border-box;
   width: 8px;
   height: 8px;
   padding: 0;
@@ -397,7 +413,16 @@
   background-color: var(--tick-color, var(--page-line-color));
   opacity: .55;
   transform: translate(-50%, -50%);
-  transition: transform 0.15s ease-out, opacity 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  transition: transform 0.15s ease-out, opacity 0.2s ease-in-out, box-shadow 0.2s ease-in-out, background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+}
+
+/* Redoable steps — past the playhead, still queued in redoStack — render as
+   a hollow dashed ring rather than a solid filled dot, so they read as
+   provisional at a glance (paired with .history-track-rail-ahead above). */
+.history-tick.redoable {
+  background-color: transparent;
+  border: 1.5px dashed var(--tick-color, var(--page-line-color));
+  opacity: .5;
 }
 
 .history-tick.is-now {
@@ -434,6 +459,72 @@
   cursor: grabbing;
 }
 
+/* A miniature snapshot of that moment's desk, floated above whichever tick
+   is hovered — the same information the right pane's own note-grid shows,
+   just close enough to the rail that a quick scrub doesn't need an eye trip
+   all the way over to the preview pane to see roughly what changed. */
+.history-rail-thumb {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  transform: translateX(-50%);
+  z-index: 2;
+  width: 96px;
+  padding: 8px 9px 7px;
+  border-radius: 12px;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 14px 30px -14px rgba(25, 25, 25, 0.4);
+  pointer-events: none;
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+}
+
+.history-rail-thumb::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  margin-left: -5px;
+  margin-top: -5px;
+  background-color: var(--page-bg-color);
+  border-right: 1px solid var(--page-line-color);
+  border-bottom: 1px solid var(--page-line-color);
+  transform: rotate(45deg);
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+}
+
+.history-rail-thumb-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  max-height: 38px;
+  overflow: hidden;
+}
+
+.history-rail-thumb-chip {
+  width: 12px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.history-rail-thumb-empty {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--page-ink-color);
+  opacity: .4;
+}
+
+.history-rail-thumb-count {
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  opacity: .5;
+  text-align: center;
+  transition: color 0.4s ease-in-out;
+}
+
 .history-track-labels {
   display: flex;
   align-items: center;
@@ -463,6 +554,87 @@
   border-radius: 999px;
   color: var(--page-bg-color);
   background-color: var(--orange-color);
+}
+
+/* Branches a fresh edit has forked away from, kept instead of thrown out —
+   see Home.jsx's branchStash. Only rendered once there's actually one to
+   show. */
+.history-branches {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--page-line-color);
+  transition: border-color 0.4s ease-in-out;
+}
+
+.history-branches-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--page-ink-color);
+  opacity: .5;
+  transition: color 0.4s ease-in-out;
+}
+
+.history-branches-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.history-branch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.history-branch-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.history-branch-row-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.4s ease-in-out;
+}
+
+.history-branch-row-time {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--page-ink-color);
+  opacity: .5;
+  transition: color 0.4s ease-in-out;
+}
+
+.history-branch-restore {
+  flex-shrink: 0;
+  padding: 5px 11px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
 }
 
 /* --- The activity list: search, category chips, and the rows below --- */
@@ -694,10 +866,27 @@
    left rail currently has hovered (or the live cursor, when nothing is) --- */
 
 .history-right-pane {
+  position: relative;
+  isolation: isolate;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: 28px 32px;
+}
+
+/* A raw-Three.js dust wash tinted by the currently previewed action's own
+   color (see HistoryAmbient.jsx) — z-index: -1 (rather than 0) is what
+   actually keeps it behind the pane's plain static content: a positioned
+   z-index:auto/0 layer paints *above* non-positioned in-flow siblings by
+   default, only a negative index sinks below them within the isolated
+   stacking context .history-right-pane establishes above. */
+.history-ambient {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .history-preview-header {

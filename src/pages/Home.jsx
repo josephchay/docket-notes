@@ -621,9 +621,54 @@ const Home = () => {
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
 
+  // Every redo branch a fresh edit has ever forked away from, kept instead
+  // of thrown out — pushUndo below used to just setRedoStack([]) and let
+  // whatever was queued up ahead vanish for good the moment anything new
+  // was done. Each entry freezes exactly what's needed to jump straight
+  // back to that fork and pick the abandoned branch back up: the desk as it
+  // stood right at the fork (forkNotes/forkDeletedNotes), and the stacks on
+  // either side of it as they stood then. Capped the same way undoStack is.
+  const [branchStash, setBranchStash] = useState([]);
+
+  // Shared by pushUndo and restoreBranch below — whichever redoStack is
+  // about to be overwritten gets saved first, if there was anything in it.
+  const stashCurrentBranch = (prevStash) => {
+    if (redoStack.length === 0) return prevStash;
+    return [...prevStash, {
+      id: id(),
+      label: redoStack[redoStack.length - 1].label,
+      at: Date.now(),
+      forkNotes: notes,
+      forkDeletedNotes: deletedNotes,
+      undoStack: [...undoStack],
+      redoStack: [...redoStack],
+    }].slice(-10);
+  }
+
   const pushUndo = (label) => {
+    setBranchStash(stashCurrentBranch);
     setUndoStack((prev) => [...prev, { notes, deletedNotes, label, at: Date.now() }].slice(-20));
     setRedoStack([]);   // a fresh edit forks away from any undone branch
+  }
+
+  // Jumps back to exactly where a stashed branch forked off, with its
+  // abandoned future reattached as the live redoStack again — a real undo/
+  // redo swap, not a separate data model, so everything downstream (the
+  // History panel's rail, playback, pin/compare) keeps working unchanged.
+  // Whatever branch was live before this swap is itself stashed first, the
+  // same way pushUndo stashes one, so restoring one branch never silently
+  // drops another.
+  const restoreBranch = (stashId) => {
+    const stash = branchStash.find((b) => b.id === stashId);
+    if (!stash) return;
+
+    setBranchStash((prev) => stashCurrentBranch(prev.filter((b) => b.id !== stashId)));
+    setUndoStack([...stash.undoStack, { notes, deletedNotes, label: "restored a branch", at: Date.now() }]);
+    setRedoStack(stash.redoStack);
+    setNotes(stash.forkNotes);
+    setDeletedNotes(stash.forkDeletedNotes);
+
+    showStamp(`Restored branch: ${ stash.label }`);
   }
 
   // redoStack stores nearest-future last (performRedo below pops off its
@@ -1180,6 +1225,8 @@ const Home = () => {
         timeline={ timeline }
         cursor={ cursor }
         onJump={ jumpTo }
+        branchStash={ branchStash }
+        onRestoreBranch={ restoreBranch }
       />
       <BulkActionBar
         count={ selectedIds.size }

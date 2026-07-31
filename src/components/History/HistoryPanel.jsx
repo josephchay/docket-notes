@@ -8,6 +8,7 @@ import {
   FaLock, FaTag, FaShuffle, FaPlay, FaPause, FaChevronLeft, FaChevronRight,
   FaBackwardStep, FaGaugeHigh, FaMagnifyingGlass, FaFileArrowDown,
   FaUpRightAndDownLeftFromCenter, FaDownLeftAndUpRightToCenter, FaThumbtack,
+  FaCodeBranch,
 } from "react-icons/fa6";
 
 import { timeAgo } from "../../utils/date";
@@ -15,6 +16,7 @@ import { smoothPath } from "../../utils/svgPath";
 import { NOTE_COLORS } from "../../constants/colors";
 import { playbackMachine, PLAYBACK_SPEEDS } from "./HistoryPlaybackState";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
+import HistoryAmbient from "./HistoryAmbient";
 
 import "./HistoryPanel.css";
 
@@ -93,7 +95,7 @@ const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 // a transform of its own onto the rail, so the playhead's rendered
 // position stays a single, ordinary React value (cursor) the whole time;
 // nothing here fights over who owns it.
-const HistoryPanel = ({ timeline, cursor, onJump }) => {
+const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBranch }) => {
   const [open, setOpen] = useState(false);
   // User-controlled sizing rather than another fixed bump to the panel's
   // own dimensions — deliberately persists across closing/reopening within
@@ -628,6 +630,11 @@ const HistoryPanel = ({ timeline, cursor, onJump }) => {
                         onClick={ handleTrackClick }
                       >
                         <div className="history-track-rail" />
+                        {
+                          stepsAhead > 0 && (
+                            <div className="history-track-rail-ahead" style={{ left: `${ pct }%` }} />
+                          )
+                        }
                         <svg
                           className="history-wave"
                           viewBox={ `0 0 ${ WAVE_W } ${ WAVE_H }` }
@@ -650,7 +657,7 @@ const HistoryPanel = ({ timeline, cursor, onJump }) => {
                               <button
                                 key={ index }
                                 type="button"
-                                className={ `history-tick ${ index === cursor ? "active" : "" } ${ entry.label === "now" ? "is-now" : "" }` }
+                                className={ `history-tick ${ index === cursor ? "active" : "" } ${ entry.label === "now" ? "is-now" : "" } ${ index > cursor ? "redoable" : "" }` }
                                 style={{ left: `${ timeline.length > 1 ? (index / (timeline.length - 1)) * 100 : 0 }%`, "--tick-color": style.color }}
                                 title={ entry.label === "now" ? "Right now" : entry.label }
                                 onClick={ (e) => { e.stopPropagation(); stopPlayback(); onJump(index); } }
@@ -669,6 +676,38 @@ const HistoryPanel = ({ timeline, cursor, onJump }) => {
                           onPanStart={ stopPlayback }
                           onPan={ handlePan }
                         />
+                        <AnimatePresence>
+                          {
+                            hovered !== null && timeline[hovered] && (
+                              <motion.div
+                                className="history-rail-thumb"
+                                style={{ left: `${ timeline.length > 1 ? (hovered / (timeline.length - 1)) * 100 : 0 }%` }}
+                                initial={{ opacity: 0, y: 6, scale: .85 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 6, scale: .85 }}
+                                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                              >
+                                <div className="history-rail-thumb-grid">
+                                  {
+                                    timeline[hovered].notes.length > 0 ? (
+                                      timeline[hovered].notes.map((note) => (
+                                        <span
+                                          key={ note.id }
+                                          className={ `history-rail-thumb-chip ${ note.color }-bg` }
+                                        />
+                                      ))
+                                    ) : (
+                                      <span className="history-rail-thumb-empty">Empty</span>
+                                    )
+                                  }
+                                </div>
+                                <div className="history-rail-thumb-count">
+                                  { timeline[hovered].notes.length } { timeline[hovered].notes.length === 1 ? "note" : "notes" }
+                                </div>
+                              </motion.div>
+                            )
+                          }
+                        </AnimatePresence>
                       </div>
 
                       <div className="history-track-labels">
@@ -700,6 +739,41 @@ const HistoryPanel = ({ timeline, cursor, onJump }) => {
                           }
                         </AnimatePresence>
                       </div>
+
+                      {
+                        branchStash.length > 0 && (
+                          <div className="history-branches">
+                            <div className="history-branches-label">
+                              <FaCodeBranch />
+                              { branchStash.length } stashed { branchStash.length === 1 ? "branch" : "branches" }
+                            </div>
+                            <div className="history-branches-list">
+                              {
+                                [...branchStash].reverse().map((stash) => (
+                                  <div key={ stash.id } className="history-branch-row">
+                                    <span className="history-branch-row-text">
+                                      <span className="history-branch-row-label">{ capitalize(stash.label) }</span>
+                                      <span className="history-branch-row-time">
+                                        { timeAgo(stash.at) } · { stash.redoStack.length } step{ stash.redoStack.length === 1 ? "" : "s" }
+                                      </span>
+                                    </span>
+                                    <motion.button
+                                      type="button"
+                                      className="history-branch-restore"
+                                      whileHover={{ scale: 1.06 }}
+                                      whileTap={{ scale: .94 }}
+                                      transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                                      onClick={ () => { stopPlayback(); onRestoreBranch(stash.id); } }
+                                    >
+                                      Restore
+                                    </motion.button>
+                                  </div>
+                                ))
+                              }
+                            </div>
+                          </div>
+                        )
+                      }
                     </div>
 
                     <div className="history-list-region">
@@ -834,6 +908,7 @@ const HistoryPanel = ({ timeline, cursor, onJump }) => {
                       {
                         previewEntry ? (
                           <>
+                            <HistoryAmbient color={ previewStyle.color } />
                             <div className="history-preview-header">
                               <span className="history-preview-icon" style={{ "--action-color": previewStyle.color }}>
                                 <PreviewIcon />

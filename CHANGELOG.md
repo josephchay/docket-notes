@@ -18,6 +18,21 @@
     - Liquid SVG text (src/components/Svg/LiquidTextFilter.jsx) — applied to empty-state headings and the intro wordmark.
     - To verify: npm install (already done), then npm start and check: clear localStorage + reload for the intro; hover header/dock icons for the magnetic pull; scroll the desk for the inertia/skew/QuoteCard drift; delete a note → open Trash → shred + "Empty trash" for the physics tumble; toggle themes/focus mode to make sure nothing fights the existing .receded/grid-collapse states.
 
+
+## Changed
+
+- History Panel
+    1. Rail hover thumbnails — hovering a tick now floats a mini note-grid popup above the rail.
+    2. WebGL ambient wash — new HistoryAmbient.jsx, a scoped Three.js dust cloud in the right pane that smoothly re-tints to whichever action's color is being previewed.
+    3. Redo-segment styling — the rail past the playhead renders dashed/orange, and those ticks become hollow dashed rings instead of solid dots.
+    4. Branch stash — pushUndo no longer silently discards a forked-away redo branch; it's saved (up to 10) and restorable from a new list in the rail controls, landing you back exactly at the fork with that branch reattached as live redo. (I scoped this down from a literal branch-tree UI to this — reasoning is in the plan file's Context section.)
+
+    All four files balance their braces cleanly (HistoryPanel.jsx, HistoryAmbient.jsx, Home.jsx, HistoryPanel.css). Per your standing preference I haven't run npm start/npm run build — worth checking in-browser:
+    - Hover rail ticks → thumbnail popup appears/positions correctly.
+    - Scrub between different action types → right-pane wash re-tints smoothly.
+    - Undo a few steps → dashed rail segment + hollow ticks past the playhead.
+    - Undo then make a new edit → "1 stashed branch" appears; Restore jumps back with the old redo branch intact, and that restore itself undoes with Ctrl+Z.
+
 ## Fixed
 
 - One real bug I caught and fixed mid-build: the history banner's "current state" label would have always read the same generic text regardless of where you'd scrubbed to, since edit labels describe transitions between states, not the states themselves — fixed to show the label of whatever transition led to the current position.
