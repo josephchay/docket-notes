@@ -5,6 +5,7 @@ import { FaXmark, FaArrowRotateLeft, FaTrash, FaBoxArchive } from "react-icons/f
 import { timeAgo } from "../../utils/date";
 import TrashPhysics from "./TrashPhysics";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
+import useFocusTrap from "../../hooks/useFocusTrap";
 
 import "./TrashPanel.css";
 
@@ -64,6 +65,10 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
       window.removeEventListener(TRASH_EVENT, handleSummon);
     };
   }, []);
+
+  // Traps Tab/Shift+Tab within the panel while open and returns focus to
+  // whatever triggered it once closed — see useFocusTrap.js.
+  useFocusTrap(panelRef, open);
 
   const handleRestore = (noteId) => {
     setPendingExit((prev) => ({ ...prev, [noteId]: "restore" }));
@@ -150,6 +155,7 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
             />
             <motion.div
               ref={ panelRef }
+              tabIndex={ -1 }
               className="trash-panel"
               initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
               onUpdate={ onBlobUpdate }

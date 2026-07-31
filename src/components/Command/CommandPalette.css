@@ -29,6 +29,11 @@
   box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
   will-change: transform;
   transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+  /* tabIndex={-1} in the JSX makes this a focus-trap boundary fallback
+     (see useFocusTrap.js) even though focus actually lands on the search
+     input on open, not the panel root itself — a visible outline around
+     the entire panel wouldn't be useful either way. */
+  outline: none;
 }
 
 .command-input {

@@ -5,6 +5,7 @@ import { FaXmark } from "react-icons/fa6";
 import { NOTE_COLORS } from "../../constants/colors";
 import { smoothPath, smoothAreaPath } from "../../utils/svgPath";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
+import useFocusTrap from "../../hooks/useFocusTrap";
 
 import "./InsightsPanel.css";
 
@@ -57,6 +58,10 @@ const InsightsPanel = ({
     };
   }, []);
 
+  // Traps Tab/Shift+Tab within the panel while open and returns focus to
+  // whatever triggered it once closed — see useFocusTrap.js.
+  useFocusTrap(panelRef, open);
+
   const paletteNames = Object.keys(NOTE_COLORS);
   const maxColorCount = Math.max(1, ...paletteNames.map((name) => colorCounts?.[name] ?? 0));
   const maxDayCount = Math.max(1, ...(days || []).map((day) => day.count));
@@ -94,6 +99,7 @@ const InsightsPanel = ({
             />
             <motion.div
               ref={ panelRef }
+              tabIndex={ -1 }
               className="insights-panel"
               initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
               onUpdate={ onBlobUpdate }

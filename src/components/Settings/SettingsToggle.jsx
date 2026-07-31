@@ -16,12 +16,17 @@ const SettingsToggle = ({ checked, onChange, label, disabled = false }) => {
   useEffect(() => {
     if (!thumbRef.current) return;
 
-    anime({
+    const animation = anime({
       targets: thumbRef.current,
       translateX: checked ? THUMB_TRAVEL : 0,
       duration: 500,
       easing: "easeOutElastic(1, .6)",
     });
+
+    // Matches useOdometer.js's own discipline for the same library — a
+    // toggle flipped right as the panel closes would otherwise leave this
+    // running loose against a detached node for the rest of its ~500ms.
+    return () => animation.pause();
   }, [checked]);
 
   return (

@@ -7,6 +7,7 @@ import { FaPlay, FaPause, FaRotateLeft, FaForward, FaXmark, FaMugHot, FaFeatherP
 import { sprintMachine, SPRINT_PRESETS } from "./SprintState";
 import useInkPulse from "../../hooks/useInkPulse";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
+import useFocusTrap from "../../hooks/useFocusTrap";
 
 import "./SprintPanel.css";
 
@@ -89,6 +90,15 @@ const SprintPanel = () => {
       window.removeEventListener(SPRINT_EVENT, handleSummon);
     };
   }, []);
+
+  // Traps Tab/Shift+Tab within the panel while open and returns focus to
+  // whatever triggered it once closed — see useFocusTrap.js. Keyed off
+  // this same plain boolean `open`, independent of the sprint machine's
+  // own phase/context (which tracks the countdown itself, not panel
+  // visibility) — closing the panel doesn't stop a running sprint, it just
+  // folds into the small capsule below, so the trap only ever cares about
+  // whether the full sheet is on screen.
+  useFocusTrap(panelRef, open);
 
   const totalForPhase = context.phase === "break" ? context.breakSeconds : context.sprintSeconds;
   const remainingRatio = totalForPhase > 0 ? context.secondsLeft / totalForPhase : 0;
@@ -188,6 +198,7 @@ const SprintPanel = () => {
               />
               <motion.div
                 ref={ panelRef }
+                tabIndex={ -1 }
                 className={ `sprint-panel ${ onBreak ? "on-break" : "" }` }
                 initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
                 onUpdate={ onBlobUpdate }

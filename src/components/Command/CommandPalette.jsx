@@ -5,6 +5,7 @@ import { interpret } from "xstate";
 import { commandMachine } from "./CommandState";
 import useInkPulse from "../../hooks/useInkPulse";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
+import useFocusTrap from "../../hooks/useFocusTrap";
 
 import "./CommandPalette.css";
 
@@ -120,6 +121,14 @@ const CommandPalette = ({ actions }) => {
   const panelRef = useRef(null);
   const onBlobUpdate = useBlobClipMorph(panelRef, open, 18);
 
+  // Traps Tab/Shift+Tab within the panel while open and returns focus to
+  // whatever triggered it once closed — see useFocusTrap.js. focusOnOpen
+  // is off here specifically: the search input already has its own
+  // autoFocus below (so typing works the instant the palette opens,
+  // core to a command palette's whole point), and the hook's usual
+  // focus-the-panel-root step would just steal that back a frame later.
+  useFocusTrap(panelRef, open, { focusOnOpen: false });
+
   return (
     <AnimatePresence>
       {
@@ -134,6 +143,7 @@ const CommandPalette = ({ actions }) => {
             />
             <motion.div
               ref={ panelRef }
+              tabIndex={ -1 }
               className="command-panel"
               initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
               onUpdate={ onBlobUpdate }

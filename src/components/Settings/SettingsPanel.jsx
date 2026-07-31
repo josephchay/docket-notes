@@ -4,6 +4,7 @@ import { FaXmark, FaMoon, FaSun, FaLock, FaLockOpen, FaFeather, FaArrowPointer }
 
 import { loadSettings, saveSettings } from "../../utils/storage";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
+import useFocusTrap from "../../hooks/useFocusTrap";
 import HistoryAmbient from "../History/HistoryAmbient";
 import SettingsToggle from "./SettingsToggle";
 
@@ -56,6 +57,10 @@ const SettingsPanel = ({
     };
   }, []);
 
+  // Traps Tab/Shift+Tab within the panel while open and returns focus to
+  // whatever triggered it once closed — see useFocusTrap.js.
+  useFocusTrap(panelRef, open);
+
   // The ink wash washes out from the toggle itself, same reasoning as
   // Header's own handleThemeToggle — it should look the same whether it
   // was toggled here, from the Header, or from the command palette.
@@ -92,6 +97,7 @@ const SettingsPanel = ({
             />
             <motion.div
               ref={ panelRef }
+              tabIndex={ -1 }
               className="settings-panel"
               initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
               onUpdate={ onBlobUpdate }

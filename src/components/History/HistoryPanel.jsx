@@ -17,6 +17,7 @@ import { smoothPath } from "../../utils/svgPath";
 import { NOTE_COLORS } from "../../constants/colors";
 import { playbackMachine, PLAYBACK_SPEEDS } from "./HistoryPlaybackState";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
+import useFocusTrap from "../../hooks/useFocusTrap";
 import HistoryAmbient from "./HistoryAmbient";
 import HistoryConstellation from "./HistoryConstellation";
 import useOdometer from "./useOdometer";
@@ -30,16 +31,6 @@ export const HISTORY_EVENT = "docket:history";
 // The waveform's own coordinate space — see smoothPath (utils/svgPath.js).
 const WAVE_W = 400;
 const WAVE_H = 40;
-
-// What the focus trap below treats as "reachable by Tab" — standard set,
-// explicitly excluding anything already opted out via tabindex="-1" (the
-// panel root itself, once the trap lands focus there on open, is exactly
-// such a case — it shouldn't then also count as one of its own boundaries).
-const FOCUSABLE_SELECTOR = [
-  "a[href]", "button:not([disabled])", "input:not([disabled])",
-  "textarea:not([disabled])", "select:not([disabled])",
-  '[tabindex]:not([tabindex="-1"])',
-].join(", ");
 
 // Past this many tracked edits, ticks packed into a fixed-width rail sit
 // only a few px apart — the rail becomes horizontally scrollable instead
@@ -222,71 +213,11 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
     if (!open) setConstellation(false);
   }, [open]);
 
-  // Returns focus to whatever had it before the panel opened (typically
-  // Header's own wand button, or the command palette) once it closes —
-  // otherwise a keyboard user tabbing through the app loses their place
-  // entirely the moment this panel's content unmounts. Nothing else in
-  // this app currently does this for any of its own panels either; scoped
-  // to History alone here, matching every other round's own scope.
-  const previouslyFocusedRef = useRef(null);
-  useEffect(() => {
-    if (open) {
-      previouslyFocusedRef.current = document.activeElement;
-      // Deferred a frame: the panel's own content hasn't necessarily
-      // painted yet in this same tick, and focusing before that lands
-      // unreliably. The panel itself (tabIndex=-1 in the JSX below, so
-      // it's programmatically focusable without joining the normal tab
-      // order) is the landing spot rather than guessing at a specific
-      // button, since which header buttons even exist varies (export and
-      // the constellation toggle are both conditional).
-      requestAnimationFrame(() => panelRef.current?.focus());
-    } else if (previouslyFocusedRef.current instanceof HTMLElement) {
-      previouslyFocusedRef.current.focus({ preventScroll: true });
-      previouslyFocusedRef.current = null;
-    }
-  }, [open]);
-
-  // A real focus trap — Tab/Shift+Tab now cycle only among the panel's own
-  // focusable elements while it's open, rather than escaping to whatever
-  // sits behind the backdrop. Only intervenes right at the two boundaries
-  // (wrapping first→last and last→first); everything in between is left
-  // to the browser's own native Tab handling. The focusable set is
-  // queried live on every Tab press rather than cached, since it changes
-  // with which view is showing (constellation vs. the two-pane timeline)
-  // and which header buttons happen to be conditionally rendered.
-  useEffect(() => {
-    if (!open) return;
-
-    const handleKeyDown = (e) => {
-      if (e.key !== "Tab") return;
-
-      const panel = panelRef.current;
-      if (!panel) return;
-
-      const focusable = Array.from(panel.querySelectorAll(FOCUSABLE_SELECTOR))
-        .filter((el) => el.offsetParent !== null);
-      if (focusable.length === 0) return;
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-
-      // document.activeElement === panel covers the moment right after
-      // opening (see the effect above) — focus starts on the panel root
-      // itself, not yet on `first`, so a Shift+Tab pressed before ever
-      // tabbing forward would otherwise slip past this guard and escape
-      // the trap backward immediately.
-      if (e.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open]);
+  // Traps Tab/Shift+Tab within the panel and returns focus to whatever
+  // triggered it once closed — shared with every other dot-to-sheet panel
+  // in this app now (see useFocusTrap.js), rather than each carrying its
+  // own copy of the same logic the way this one originally did.
+  useFocusTrap(panelRef, open);
 
   const stopPlayback = () => playbackService.send("STOP");
 

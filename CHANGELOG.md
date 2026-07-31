@@ -18,6 +18,10 @@
     - Liquid SVG text (src/components/Svg/LiquidTextFilter.jsx) — applied to empty-state headings and the intro wordmark.
     - To verify: npm install (already done), then npm start and check: clear localStorage + reload for the intro; hover header/dock icons for the magnetic pull; scroll the desk for the inertia/skew/QuoteCard drift; delete a note → open Trash → shred + "Empty trash" for the physics tumble; toggle themes/focus mode to make sure nothing fights the existing .receded/grid-collapse states.
 
+- Focus trap propagation — extracted History's proven pattern into a shared src/hooks/useFocusTrap.js (and refactored History itself to use it, so there's now exactly one implementation instead of a copy that could drift), then applied it to all five remaining dot-to-sheet panels:
+    - Insights, Trash, Sprint, Settings — a one-line useFocusTrap(panelRef, open) each, plus tabIndex={-1} and outline: none on their panel roots.
+    - Command Palette — adapted with { focusOnOpen: false }, since its search input already has autoFocus (core to a command palette's "start typing immediately" UX), which the hook's usual focus-the-panel-root step would otherwise fight a frame later.
+
 ### Changed
 
 - History Panel
@@ -31,6 +35,8 @@
     - Scrub between different action types → right-pane wash re-tints smoothly.
     - Undo a few steps → dashed rail segment + hollow ticks past the playhead.
     - Undo then make a new edit → "1 stashed branch" appears; Restore jumps back with the old redo branch intact, and that restore itself undoes with Ctrl+Z.
+
+- Audit (Reviewed) on Settings, LiquidMeter, ScrollProgress, ErrorBoundary/ErrorSpill, and the CursorAura wiring for the same classes of gaps found in History (theme-reactivity, cleanup, mobile). Found and fixed one real, concrete issue: SettingsToggle.jsx's anime.js tween had no cleanup on unmount, unlike useOdometer.js's identical anime.js pattern which correctly pauses. Verified LiquidMeter's GSAP pulse timeline was already correctly cleaned up, and didn't find further issues worth flagging as genuine gaps rather than pre-existing, out-of-scope behavior.
 
 ### Fixed
 

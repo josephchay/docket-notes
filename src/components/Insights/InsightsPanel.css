@@ -31,6 +31,10 @@
   box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
   will-change: transform;
   transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+  /* tabIndex={-1} in the JSX makes this the focus trap's landing spot on
+     open (see useFocusTrap.js) — a visible outline around the entire
+     panel isn't useful the way one around an actual control is. */
+  outline: none;
 }
 
 .insights-header {
