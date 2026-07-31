@@ -18,8 +18,7 @@
     - Liquid SVG text (src/components/Svg/LiquidTextFilter.jsx) — applied to empty-state headings and the intro wordmark.
     - To verify: npm install (already done), then npm start and check: clear localStorage + reload for the intro; hover header/dock icons for the magnetic pull; scroll the desk for the inertia/skew/QuoteCard drift; delete a note → open Trash → shred + "Empty trash" for the physics tumble; toggle themes/focus mode to make sure nothing fights the existing .receded/grid-collapse states.
 
-
-## Changed
+### Changed
 
 - History Panel
     1. Rail hover thumbnails — hovering a tick now floats a mini note-grid popup above the rail.
@@ -33,6 +32,6 @@
     - Undo a few steps → dashed rail segment + hollow ticks past the playhead.
     - Undo then make a new edit → "1 stashed branch" appears; Restore jumps back with the old redo branch intact, and that restore itself undoes with Ctrl+Z.
 
-## Fixed
+### Fixed
 
 - One real bug I caught and fixed mid-build: the history banner's "current state" label would have always read the same generic text regardless of where you'd scrubbed to, since edit labels describe transitions between states, not the states themselves — fixed to show the label of whatever transition led to the current position.

@@ -639,6 +639,64 @@
 
 /* --- The activity list: search, category chips, and the rows below --- */
 
+/* The single-note history filter's own banner, above the search/chip row —
+   same visual language as .history-pin-banner in the right pane, just
+   scoped to the activity list it's actually filtering. */
+.history-focus-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  overflow: hidden;
+  padding: 7px 7px 7px 12px;
+  border-radius: 999px;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.history-focus-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.4s ease-in-out;
+}
+
+.history-focus-swatch {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.history-focus-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  font-size: 9px;
+  color: var(--page-ink-color);
+  background-color: var(--page-bg-color);
+  opacity: .6;
+  transition: opacity 0.2s ease-in-out, background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.history-focus-clear:hover {
+  opacity: 1;
+}
+
 .history-filter-row {
   display: flex;
   align-items: center;
@@ -1057,6 +1115,41 @@
   height: 26px;
   border-radius: 7px;
   box-shadow: 0 2px 6px -2px rgba(25, 25, 25, 0.3);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease-in-out, transform 0.15s ease-out, opacity 0.2s ease-in-out;
+}
+
+.history-note-chip:hover,
+.history-note-chip:focus-visible {
+  transform: scale(1.12);
+}
+
+/* Per-note diff — see diffNotes in HistoryPanel.jsx. Rings rather than
+   borders so a highlighted chip's footprint never shifts the grid around
+   it. */
+.history-note-chip.diff-added {
+  box-shadow: 0 0 0 2px var(--green-color), 0 2px 6px -2px rgba(25, 25, 25, 0.3);
+}
+
+.history-note-chip.diff-changed {
+  box-shadow: 0 0 0 2px var(--purple-color), 0 2px 6px -2px rgba(25, 25, 25, 0.3);
+}
+
+/* A ghost of a note that existed in the "before" moment but not the
+   current one — appended after the live notes, not a real chip from
+   previewEntry.notes. */
+.history-note-chip.diff-removed {
+  opacity: .4;
+  box-shadow: none;
+  border: 1.5px dashed var(--red-color);
+  background-image: repeating-linear-gradient(45deg, rgba(25, 25, 25, 0.18) 0 2px, transparent 2px 6px);
+}
+
+/* The single-note history filter's own marker — independent of (and can
+   combine with) the diff ring above. */
+.history-note-chip.focused {
+  box-shadow: 0 0 0 2.5px var(--page-ink-color), 0 2px 6px -2px rgba(25, 25, 25, 0.3);
+  transform: scale(1.12);
 }
 
 .history-preview-empty {

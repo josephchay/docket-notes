@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { interpret } from "xstate";
 import gsap from "gsap";
 import {
@@ -17,6 +17,7 @@ import { NOTE_COLORS } from "../../constants/colors";
 import { playbackMachine, PLAYBACK_SPEEDS } from "./HistoryPlaybackState";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 import HistoryAmbient from "./HistoryAmbient";
+import useOdometer from "./useOdometer";
 
 import "./HistoryPanel.css";
 
@@ -82,6 +83,29 @@ const composeColors = (notes) => {
 };
 
 const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
+// Which individual notes changed between two moments — not just the
+// aggregate +/- counts previewDiff/compareDiff already give. Also what the
+// single-note history filter below tests a step against.
+const diffNotes = (beforeNotes, afterNotes) => {
+  const beforeMap = new Map(beforeNotes.map((n) => [n.id, n]));
+  const afterMap = new Map(afterNotes.map((n) => [n.id, n]));
+  const added = new Set();
+  const removed = new Set();
+  const changed = new Set();
+
+  afterMap.forEach((note, noteId) => {
+    const prev = beforeMap.get(noteId);
+    if (!prev) added.add(noteId);
+    else if (
+      prev.color !== note.color || prev.title !== note.title || prev.text !== note.text ||
+      prev.favorite !== note.favorite || prev.lock !== note.lock
+    ) changed.add(noteId);
+  });
+  beforeMap.forEach((_note, noteId) => { if (!afterMap.has(noteId)) removed.add(noteId); });
+
+  return { added, removed, changed };
+};
 
 // The undo/redo stack Home.jsx keeps, made visible — and, since every
 // desk-changing action (pouring, editing, deleting, restoring, shredding,
@@ -160,7 +184,22 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
     return Math.round(ratio * (timeline.length - 1));
   };
 
-  const handlePan = (_e, info) => { stopPlayback(); onJump(indexFromPoint(info.point.x)); };
+  // Elastic rail stretch — the playhead visibly elongates (and squashes
+  // vertically, the standard squash-and-stretch pairing) in the drag
+  // direction while it's dragged fast, snapping back round the instant the
+  // drag ends. info.velocity.x is already reported by framer's own pan
+  // gesture; the spring is what turns that raw, jumpy per-event number
+  // into something smooth to actually render from.
+  const stretchMV = useMotionValue(0);
+  const stretchSpring = useSpring(stretchMV, { stiffness: 300, damping: 20 });
+  const playheadScaleX = useTransform(stretchSpring, (v) => 1 + Math.min(Math.abs(v), 1) * .6);
+  const playheadScaleY = useTransform(stretchSpring, (v) => 1 - Math.min(Math.abs(v), 1) * .25);
+
+  const handlePan = (_e, info) => {
+    stopPlayback();
+    onJump(indexFromPoint(info.point.x));
+    stretchMV.set(Math.max(-1, Math.min(1, info.velocity.x / 900)));
+  };
   const handleTrackClick = (e) => { stopPlayback(); onJump(indexFromPoint(e.clientX)); };
 
   // Every OTHER entry's label describes the edit that turned it into the
@@ -236,6 +275,56 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
     };
   }, [pinnedEntry, previewEntry]);
 
+  // Rolled via anime.js rather than snapped straight to the new figure —
+  // see useOdometer. Called unconditionally (hooks can't be conditional);
+  // the ?? 0 fallback is harmless since the chips it feeds stay gated
+  // behind `previewDiff &&`/`compareDiff &&` below regardless.
+  const displayedEditCount = useOdometer(timeline.length - 1);
+  const displayedPreviewCountDelta = useOdometer(previewDiff?.countDelta ?? 0);
+  const displayedCompareCountDelta = useOdometer(compareDiff?.countDelta ?? 0);
+
+  // Which individual notes actually changed, not just the aggregate counts
+  // above — vs the step right before, or vs the pin when one's set. The
+  // live grid below reads whichever of these is active to ring added/
+  // changed chips and surface ghost chips for anything removed.
+  const previewNoteDiff = useMemo(() => {
+    if (!previewEntry) return null;
+    const before = previewIndex > 0 && timeline[previewIndex - 1] ? timeline[previewIndex - 1].notes : [];
+    return diffNotes(before, previewEntry.notes);
+  }, [timeline, previewIndex, previewEntry]);
+
+  const compareNoteDiff = useMemo(() => {
+    if (!pinnedEntry || !previewEntry) return null;
+    return diffNotes(pinnedEntry.notes, previewEntry.notes);
+  }, [pinnedEntry, previewEntry]);
+
+  const activeNoteDiff = pinnedEntry ? compareNoteDiff : previewNoteDiff;
+  const activeBeforeNotes = pinnedEntry
+    ? pinnedEntry.notes
+    : (previewIndex > 0 && timeline[previewIndex - 1] ? timeline[previewIndex - 1].notes : []);
+  const removedNotes = activeNoteDiff
+    ? activeBeforeNotes.filter((note) => activeNoteDiff.removed.has(note.id))
+    : [];
+
+  // Isolating one note's own story: clicking any chip (in either grid)
+  // filters the activity list below to only the steps that actually
+  // touched it. Reset alongside query/activeFilter/pinned on open (see the
+  // effect further down).
+  const [focusNoteId, setFocusNoteId] = useState(null);
+  const toggleFocusNote = (noteId) => setFocusNoteId((prev) => (prev === noteId ? null : noteId));
+
+  // The focused note can drop out of whatever moment is currently
+  // previewed while scrubbing elsewhere — scan the whole timeline, newest
+  // first, for the last place it's still known.
+  const focusNoteLabel = useMemo(() => {
+    if (!focusNoteId) return null;
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const note = timeline[i].notes.find((n) => n.id === focusNoteId);
+      if (note) return { color: note.color, text: note.title?.trim() || note.text?.trim()?.slice(0, 40) || "Untitled note" };
+    }
+    return null;
+  }, [focusNoteId, timeline]);
+
   const wavePath = useMemo(() => {
     if (timeline.length < 2) return "";
 
@@ -268,6 +357,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
       setQuery("");
       setActiveFilter(null);
       setPinned(null);
+      setFocusNoteId(null);
     }
   }, [open]);
 
@@ -304,9 +394,18 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
     return rows.filter((row) => {
       if (activeFilter && row.categoryKey !== activeFilter) return false;
       if (q && !row.label.toLowerCase().includes(q)) return false;
+
+      if (focusNoteId) {
+        const before = row.index > 0 ? timeline[row.index - 1].notes : [];
+        const stepDiff = diffNotes(before, row.entry.notes);
+        if (!stepDiff.added.has(focusNoteId) && !stepDiff.removed.has(focusNoteId) && !stepDiff.changed.has(focusNoteId)) {
+          return false;
+        }
+      }
+
       return true;
     });
-  }, [rows, activeFilter, query]);
+  }, [rows, activeFilter, query, focusNoteId, timeline]);
 
   // Time-lapse: one tracked step forward per tick of the current speed
   // while playing, stopping itself the instant it reaches "now" — the
@@ -442,7 +541,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                   {
                     timeline.length > 1 && (
                       <span className="history-header-count">
-                        { timeline.length - 1 } edit{ timeline.length - 1 === 1 ? "" : "s" }
+                        { displayedEditCount } edit{ displayedEditCount === 1 ? "" : "s" }
                       </span>
                     )
                   }
@@ -672,9 +771,11 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                         <motion.div
                           className="history-playhead"
                           animate={{ left: `${ pct }%` }}
+                          style={{ scaleX: playheadScaleX, scaleY: playheadScaleY }}
                           transition={{ type: "spring", stiffness: 500, damping: 32 }}
                           onPanStart={ stopPlayback }
                           onPan={ handlePan }
+                          onPanEnd={ () => stretchMV.set(0) }
                         />
                         <AnimatePresence>
                           {
@@ -777,6 +878,35 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                     </div>
 
                     <div className="history-list-region">
+                      <AnimatePresence>
+                        {
+                          focusNoteId && focusNoteLabel && (
+                            <motion.div
+                              className="history-focus-banner"
+                              initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                              animate={{ opacity: 1, height: "auto", marginBottom: 10 }}
+                              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                              transition={{ type: "spring", stiffness: 420, damping: 32 }}
+                            >
+                              <span className="history-focus-chip">
+                                <span className={ `history-focus-swatch ${ focusNoteLabel.color }-bg` } />
+                                Showing history for "{ focusNoteLabel.text }"
+                              </span>
+                              <motion.button
+                                type="button"
+                                className="history-focus-clear"
+                                aria-label="Clear this note's history filter"
+                                whileHover={{ scale: 1.15 }}
+                                whileTap={{ scale: .9 }}
+                                transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                                onClick={ () => setFocusNoteId(null) }
+                              >
+                                <FaXmark />
+                              </motion.button>
+                            </motion.div>
+                          )
+                        }
+                      </AnimatePresence>
                       <div className="history-filter-row">
                         <div className="history-search">
                           <FaMagnifyingGlass className="history-search-icon" />
@@ -929,7 +1059,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                   <span
                                     className={ `history-preview-diff-chip ${ previewDiff.countDelta > 0 ? "positive" : previewDiff.countDelta < 0 ? "negative" : "" }` }
                                   >
-                                    { previewDiff.countDelta > 0 ? `+${ previewDiff.countDelta }` : previewDiff.countDelta } note{ Math.abs(previewDiff.countDelta) === 1 ? "" : "s" }
+                                    { displayedPreviewCountDelta > 0 ? `+${ displayedPreviewCountDelta }` : displayedPreviewCountDelta } note{ Math.abs(displayedPreviewCountDelta) === 1 ? "" : "s" }
                                   </span>
                                   <span className="history-preview-diff-chip">
                                     text { previewDiff.textDelta > 0 ? `+${ previewDiff.textDelta }` : previewDiff.textDelta } chars
@@ -967,7 +1097,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                         <span
                                           className={ `history-preview-diff-chip ${ compareDiff.countDelta > 0 ? "positive" : compareDiff.countDelta < 0 ? "negative" : "" }` }
                                         >
-                                          { compareDiff.countDelta > 0 ? `+${ compareDiff.countDelta }` : compareDiff.countDelta } note{ Math.abs(compareDiff.countDelta) === 1 ? "" : "s" } vs pinned
+                                          { displayedCompareCountDelta > 0 ? `+${ displayedCompareCountDelta }` : displayedCompareCountDelta } note{ Math.abs(displayedCompareCountDelta) === 1 ? "" : "s" } vs pinned
                                         </span>
                                         <span className="history-preview-diff-chip">
                                           text { compareDiff.textDelta > 0 ? `+${ compareDiff.textDelta }` : compareDiff.textDelta } chars vs pinned
@@ -986,8 +1116,12 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                         pinnedEntry.notes.map((note) => (
                                           <span
                                             key={ note.id }
-                                            className={ `history-note-chip ${ note.color }-bg` }
+                                            role="button"
+                                            tabIndex={ 0 }
+                                            className={ `history-note-chip ${ note.color }-bg ${ note.id === focusNoteId ? "focused" : "" }` }
                                             title={ note.title?.trim() || note.text?.trim()?.slice(0, 40) || "Untitled note" }
+                                            onClick={ () => toggleFocusNote(note.id) }
+                                            onKeyDown={ (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFocusNote(note.id); } } }
                                           />
                                         ))
                                       ) : (
@@ -1010,18 +1144,49 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                             <div className="history-note-grid">
                               <AnimatePresence initial={ false }>
                                 {
-                                  previewEntry.notes.length > 0 ? (
-                                    previewEntry.notes.map((note, i) => (
-                                      <motion.span
-                                        key={ note.id }
-                                        className={ `history-note-chip ${ note.color }-bg` }
-                                        title={ note.title?.trim() || note.text?.trim()?.slice(0, 40) || "Untitled note" }
-                                        initial={{ opacity: 0, scale: .4 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        exit={{ opacity: 0, scale: .4 }}
-                                        transition={{ type: "spring", stiffness: 460, damping: 20, delay: Math.min(i * .012, .3) }}
-                                      />
-                                    ))
+                                  previewEntry.notes.length > 0 || removedNotes.length > 0 ? (
+                                    <>
+                                      {
+                                        previewEntry.notes.map((note, i) => {
+                                          const diffClass = activeNoteDiff?.added.has(note.id)
+                                            ? "diff-added"
+                                            : activeNoteDiff?.changed.has(note.id) ? "diff-changed" : "";
+
+                                          return (
+                                            <motion.span
+                                              key={ note.id }
+                                              role="button"
+                                              tabIndex={ 0 }
+                                              className={ `history-note-chip ${ note.color }-bg ${ diffClass } ${ note.id === focusNoteId ? "focused" : "" }` }
+                                              title={ note.title?.trim() || note.text?.trim()?.slice(0, 40) || "Untitled note" }
+                                              initial={{ opacity: 0, scale: .4 }}
+                                              animate={{ opacity: 1, scale: 1 }}
+                                              exit={{ opacity: 0, scale: .4 }}
+                                              transition={{ type: "spring", stiffness: 460, damping: 20, delay: Math.min(i * .012, .3) }}
+                                              onClick={ () => toggleFocusNote(note.id) }
+                                              onKeyDown={ (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFocusNote(note.id); } } }
+                                            />
+                                          );
+                                        })
+                                      }
+                                      {
+                                        removedNotes.map((note) => (
+                                          <motion.span
+                                            key={ `removed-${ note.id }` }
+                                            role="button"
+                                            tabIndex={ 0 }
+                                            className={ `history-note-chip diff-removed ${ note.color }-bg ${ note.id === focusNoteId ? "focused" : "" }` }
+                                            title={ `Removed — ${ note.title?.trim() || note.text?.trim()?.slice(0, 40) || "Untitled note" }` }
+                                            initial={{ opacity: 0, scale: .4 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            exit={{ opacity: 0, scale: .4 }}
+                                            transition={{ type: "spring", stiffness: 460, damping: 20 }}
+                                            onClick={ () => toggleFocusNote(note.id) }
+                                            onKeyDown={ (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleFocusNote(note.id); } } }
+                                          />
+                                        ))
+                                      }
+                                    </>
                                   ) : (
                                     <span className="history-row-empty">Nothing on the desk yet</span>
                                   )
