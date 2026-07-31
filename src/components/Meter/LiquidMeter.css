@@ -4,27 +4,28 @@
   gap: 10px;
 }
 
-.liquid-meter-svg {
+/* Clips the WebGL canvas to the vial's rounded-rect shape via plain CSS
+   (border-radius + overflow: hidden) rather than a shader-side mask —
+   same approach HistoryAmbient.jsx's canvas already relies on inside its
+   own parent. The surface_color backdrop shows through wherever the
+   shader's own body alpha is 0 (above the current fill line). */
+.liquid-meter-frame {
+  position: relative;
   width: 44px;
   height: 56px;
   flex-shrink: 0;
-  overflow: visible;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1.5px solid var(--page-line-color);
+  background-color: var(--page-surface-color);
+  transition: border-color 0.4s ease-in-out, background-color 0.4s ease-in-out;
 }
 
-.liquid-meter-vial {
-  fill: var(--page-surface-color);
-  transition: fill 0.4s ease-in-out;
-}
-
-.liquid-meter-wave {
-  transition: fill 0.4s ease-in-out;
-}
-
-.liquid-meter-rim {
-  fill: none;
-  stroke: var(--page-line-color);
-  stroke-width: 1.5;
-  transition: stroke 0.4s ease-in-out;
+.liquid-meter-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .liquid-meter-label {

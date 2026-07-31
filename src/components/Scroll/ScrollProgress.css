@@ -1,12 +1,64 @@
-.scroll-progress {
+/* Taller than the visible bar itself so the tick markers and droplet have
+   room to render without changing how the bar looks at rest. */
+.scroll-progress-track {
   position: fixed;
   top: 0;
   left: 128px;
   right: 0;
-  height: 3px;
+  height: 14px;
   z-index: 500;
+  pointer-events: none;
+}
+
+.scroll-progress {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 3px;
   transform-origin: 0 0;
+  border-radius: 999px 0 0 999px;
+  margin-top: -1.5px;
   background-color: var(--page-ink-color);
   pointer-events: none;
   transition: background-color 0.4s ease-in-out;
+}
+
+/* A bead of ink at the bar's own leading edge — plain shape/color rather
+   than the app's shared gooey SVG filter (see GooeyEffectSvg.jsx): that
+   filter's blur radius is tuned for shapes much larger than this 3px-tall
+   bar, and would blur it into mush rather than a clean droplet merge. */
+.scroll-progress-drip {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background-color: var(--page-ink-color);
+  pointer-events: none;
+  transition: background-color 0.4s ease-in-out;
+}
+
+.scroll-progress-marker {
+  position: absolute;
+  top: 2px;
+  width: 3px;
+  height: 10px;
+  margin-left: -1.5px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background-color: var(--yellow-color);
+  opacity: .8;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: opacity 0.15s ease-in-out, transform 0.15s ease-out;
+}
+
+.scroll-progress-marker:hover {
+  opacity: 1;
+  transform: scaleY(1.15);
 }

@@ -482,6 +482,18 @@ const Home = () => {
     return filtered;
   }, [notes, notesSortText, notesSortByFavorite, notesSortColor, notesSortTag, sortMode]);
 
+  // Starred notes' rough position within the currently-filtered list, fed
+  // to ScrollProgress as quick-jump tick marks — index/total is an honest
+  // approximation (notes wrap in a flex grid, so there's no simple
+  // function from list position to real scroll offset), not a claim of
+  // pixel accuracy.
+  const scrollMarkers = useMemo(() => {
+    if (filteredNotes.length <= 1) return [];
+    return filteredNotes
+      .map((note, index) => (note.favorite ? index / (filteredNotes.length - 1) : null))
+      .filter((ratio) => ratio !== null);
+  }, [filteredNotes]);
+
   // The dot a fresh note should morph out of: the ink pot that was tapped,
   // or the nav activator for keyboard-born notes. Cleared once the morph
   // has played.
@@ -1301,7 +1313,7 @@ const Home = () => {
       <ThemeWipe wipe={ wipe } />
       <InkCelebration celebration={ celebration } />
       <ActionStamp stamp={ stamp } />
-      <ScrollProgress containerRef={ homeRef } />
+      <ScrollProgress containerRef={ homeRef } markers={ scrollMarkers } />
       <DropZoneOverlay active={ isDraggingFile } />
       <div className="undo-toast-layer">
         <AnimatePresence>
