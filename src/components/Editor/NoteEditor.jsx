@@ -6,6 +6,7 @@ import { FaEye } from "react-icons/fa";
 import { NOTE_COLORS } from "../../constants/colors";
 import useJellyTap from "../../hooks/useJellyTap";
 import useInkPulse from "../../hooks/useInkPulse";
+import useFocusTrap from "../../hooks/useFocusTrap";
 
 import "./NoteEditor.css";
 
@@ -109,9 +110,23 @@ const NoteEditor = ({
 
   const titleRef = useRef(null);
   const textRef = useRef(null);
+  const editorRef = useRef(null);
   const titleTimerRef = useRef(null);
   const textTimerRef = useRef(null);
   const copiedTimerRef = useRef(null);
+
+  // Traps Tab/Shift+Tab within the editor and returns focus to whatever
+  // triggered it once closed — see useFocusTrap.js. `open` is a constant
+  // `true` here (unlike every other panel using this hook) since this
+  // component only ever exists while actively editing — Home.jsx mounts
+  // and unmounts it entirely rather than toggling an internal open flag,
+  // and the hook's restore-on-close step lives in its effect's own
+  // cleanup specifically so that still fires correctly on unmount.
+  // focusOnOpen is off: the effect below already puts the caret in the
+  // text field itself (or, for a locked note, on the editor shell) — a
+  // more specific target than the hook's own generic "focus the panel
+  // root" fallback.
+  useFocusTrap(editorRef, true, { focusOnOpen: false });
 
   // Adopt outside changes to the note unless that field is being typed in
   // right now — a self-made edit round-trips as the same value anyway.
@@ -137,10 +152,18 @@ const NoteEditor = ({
     };
   }, [onClose]);
 
-  // Drop the caret at the end of the body so writing continues immediately.
+  // Drop the caret at the end of the body so writing continues immediately
+  // — or, for a locked note (nothing to type into), land on the editor
+  // shell itself instead, so a keyboard user still has *something*
+  // focused to Tab from rather than nothing at all.
   useEffect(() => {
+    if (note.lock) {
+      editorRef.current?.focus({ preventScroll: true });
+      return;
+    }
+
     const field = textRef.current;
-    if (!field || note.lock) return;
+    if (!field) return;
 
     field.focus({ preventScroll: true });
     field.setSelectionRange(field.value.length, field.value.length);
@@ -189,6 +212,8 @@ const NoteEditor = ({
         onClick={ onClose }
       />
       <motion.div
+        ref={ editorRef }
+        tabIndex={ -1 }
         className="note-editor-shell"
         initial={{ opacity: 0, scale: .8, y: 90, rotate: -1.5 }}
         animate={{ opacity: 1, scale: 1, y: 0, rotate: 0 }}

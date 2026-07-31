@@ -32,6 +32,14 @@
   justify-content: center;
 }
 
+/* tabIndex={-1} in the JSX makes this the focus trap's fallback landing
+   spot (see useFocusTrap.js) for a locked note, which has no text field to
+   put the caret in instead — a visible outline around the whole shell
+   isn't useful the way one around an actual control is. */
+.note-editor-shell {
+  outline: none;
+}
+
 /* The paper itself. Width and height are driven by the size spring in JS;
    the jelly wrapper above it carries the squash-and-stretch. */
 .note-editor {

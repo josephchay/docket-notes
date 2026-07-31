@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { FaXmark } from "react-icons/fa6";
 
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
+import useFocusTrap from "../../hooks/useFocusTrap";
 
 import "./ShortcutsSheet.css";
 
@@ -60,6 +61,12 @@ const ShortcutsSheet = () => {
     };
   }, []);
 
+  // Traps Tab/Shift+Tab within the sheet while open and returns focus to
+  // whatever triggered it once closed — see useFocusTrap.js. Missed in the
+  // previous round's sweep across the other five dot-to-sheet panels;
+  // same convention, same fix.
+  useFocusTrap(panelRef, open);
+
   return (
     <AnimatePresence>
       {
@@ -74,6 +81,7 @@ const ShortcutsSheet = () => {
             />
             <motion.div
               ref={ panelRef }
+              tabIndex={ -1 }
               className="shortcuts-panel"
               initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
               onUpdate={ onBlobUpdate }

@@ -14,26 +14,38 @@ const FOCUSABLE_SELECTOR = [
 // focus into the panel the moment it opens, and restores focus to whatever
 // had it before opening once it closes — proven out first for
 // HistoryPanel.jsx, generalized here so every dot-to-sheet panel in this
-// app (Insights, Trash, Sprint, Settings, History, the Command Palette)
-// can share one implementation instead of each carrying its own copy of
-// the same logic.
+// app (Insights, Trash, Sprint, Settings, History, Shortcuts, the Command
+// Palette) can share one implementation instead of each carrying its own
+// copy of the same logic.
 //
 // `panelRef` must point at a `tabIndex={-1}` element — the panel's own
 // root is the usual choice, so it's programmatically focusable without
 // joining the normal tab order. Pass `focusOnOpen: false` for a panel that
 // already has its own entry-focus target (the Command Palette's search
 // input has `autoFocus`, which this would otherwise fight a frame later).
+//
+// The restore-on-close step lives in this effect's own cleanup rather than
+// an `else` branch keyed on `open` flipping to false, specifically so this
+// also works correctly for a component that's mounted/unmounted by its
+// *parent* instead of toggling its own internal `open` state (NoteEditor,
+// unlike the other panels here, is only ever rendered while actively
+// editing — passed a constant `true` — so it never sees an open→false
+// transition of its own; a plain unmount runs this same cleanup instead).
 const useFocusTrap = (panelRef, open, { focusOnOpen = true } = {}) => {
   const previouslyFocusedRef = useRef(null);
 
   useEffect(() => {
-    if (open) {
-      previouslyFocusedRef.current = document.activeElement;
-      if (focusOnOpen) requestAnimationFrame(() => panelRef.current?.focus());
-    } else if (previouslyFocusedRef.current instanceof HTMLElement) {
-      previouslyFocusedRef.current.focus({ preventScroll: true });
-      previouslyFocusedRef.current = null;
-    }
+    if (!open) return;
+
+    previouslyFocusedRef.current = document.activeElement;
+    if (focusOnOpen) requestAnimationFrame(() => panelRef.current?.focus());
+
+    return () => {
+      if (previouslyFocusedRef.current instanceof HTMLElement) {
+        previouslyFocusedRef.current.focus({ preventScroll: true });
+        previouslyFocusedRef.current = null;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
