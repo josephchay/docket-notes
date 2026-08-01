@@ -8,6 +8,19 @@
   padding-top: 12vh;
 }
 
+/* Maximizing (see the header's maximize button in HistoryPanel.jsx) grows
+   the panel from the center of the screen rather than staying pinned to
+   its normal near-top resting spot and just extending further down as it
+   gets taller. justify-content already centers it horizontally either
+   way; this brings the vertical axis in line too, but only while
+   maximized, so every other dot-to-sheet panel's shared near-top layout
+   (see SettingsPanel.css, InsightsPanel.css, etc. — History is the only
+   one of them with a resize feature at all) stays exactly as it is. */
+.history-layer:has(.history-panel.maximized) {
+  align-items: center;
+  padding-top: 0;
+}
+
 .history-backdrop {
   position: absolute;
   inset: 0;
