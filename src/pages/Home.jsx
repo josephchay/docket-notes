@@ -1234,6 +1234,7 @@ const Home = () => {
           importNotes={ importNotes }
           hasNotes={ notes.length > 0 }
           focusMode={ focusMode }
+          reduceMotion={ reduceMotion }
         />
         <GooeyEffectSvg
           id="colorSelectors"

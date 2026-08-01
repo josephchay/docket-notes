@@ -27,6 +27,7 @@ const Navigation = ({
   exportNotes,
   importNotes,
   focusMode,
+  reduceMotion,
 }) => {
   const navActivator = useRef(null);
   const fileInput = useRef(null);
@@ -47,8 +48,15 @@ const Navigation = ({
 
   // The rail tools are gently magnetic: their icons lean toward the pointer
   // while it hovers, then snap home with an elastic wobble. Only the inner
-  // icon span moves, so framer keeps the button's own scale to itself.
+  // icon span moves, so framer keeps the button's own scale to itself. Off
+  // entirely under reduced motion — a pointer-tracking icon is exactly the
+  // kind of large, continuous motion that convention already gates
+  // elsewhere (see the constellation's own gravity well in
+  // HistoryConstellation.jsx), and this one fires on every hover rather
+  // than just once.
   const magnetMove = (e) => {
+    if (reduceMotion) return;
+
     const icon = e.currentTarget.querySelector(".magnet");
     if (!icon) return;
 
@@ -61,6 +69,8 @@ const Navigation = ({
   }
 
   const magnetLeave = (e) => {
+    if (reduceMotion) return;
+
     const icon = e.currentTarget.querySelector(".magnet");
     if (!icon) return;
 
