@@ -64,6 +64,17 @@
   cursor: grabbing;
 }
 
+/* A lift while actively being dragged (see the Matter startdrag/enddrag
+   handlers in NotePile.jsx) — box-shadow and z-index only, never transform,
+   since that's written imperatively every physics tick and a CSS rule
+   fighting it here would just judder. */
+.pile-piece.dragging {
+  z-index: 5;
+  box-shadow:
+    0 2px 2px rgba(25, 25, 25, 0.08),
+    0 26px 46px -14px rgba(25, 25, 25, 0.5);
+}
+
 .pile-piece-title {
   font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;

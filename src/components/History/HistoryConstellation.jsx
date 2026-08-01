@@ -21,6 +21,19 @@ const TOUR_ZOOM = 0.55;
 const GRAVITY_RADIUS = 0.42;
 const GRAVITY_STRENGTH = 0.14;
 const IDLE_MS = 8000;
+// A real perspective camera and a helix winding through Z now, rather than
+// an orthographic camera looking at a flat spiral — oldest entry furthest
+// away, "now" nearest the viewer. CAMERA_REST_Z/HELIX_DEPTH_RANGE are sized
+// so a long session's typical XY spread (radius up to ~1.2) sits
+// comfortably inside the frustum at rest; TOUR_DOLLY_OFFSET is how far
+// back along Z the camera parks from whichever node the tour is visiting,
+// so it ends up beside the node looking at it rather than inside it.
+const CAMERA_FOV = 50;
+const CAMERA_NEAR = 0.1;
+const CAMERA_FAR = 20;
+const CAMERA_REST_Z = 3.2;
+const HELIX_DEPTH_RANGE = 2.4;
+const TOUR_DOLLY_OFFSET = 1.2;
 // The reveal shader's own runway constant (see VERT's `* 4.0` below) needs
 // a node's delay to sit at least 1/4.0 short of uReveal's own max (1) for
 // that node to ever reach full size — keep this in sync with that literal.
@@ -35,7 +48,10 @@ const VERT = `
   attribute float aRevealDelay;
 
   uniform float uTime;
-  uniform vec2 uMouse;
+  uniform vec2 uMouseNDC;
+  uniform float uTanHalfFov;
+  uniform float uAspect;
+  uniform float uAttenRef;
   uniform float uReveal;
 
   varying vec3 vColor;
@@ -49,8 +65,16 @@ const VERT = `
     // A gentle gravity well around the pointer — computed in view space
     // (post-modelView, pre-projection) so it's naturally already relative
     // to the group's current rotation and the camera's current pan/zoom,
-    // without needing to separately track either here.
-    vec2 toMouse = mvPosition.xy - uMouse;
+    // without needing to separately track either here. Under a perspective
+    // camera the frustum's width varies with depth, so the pointer's NDC
+    // position is unprojected to view space at THIS vertex's own depth
+    // (the standard screen-to-view-space formula for a perspective
+    // camera) rather than a single fixed-depth view-space point — that's
+    // what keeps the well feeling consistent at any point along the helix
+    // instead of only near the camera.
+    float depthMag = -mvPosition.z;
+    vec2 mouseView = uMouseNDC * vec2(uAspect, 1.0) * uTanHalfFov * depthMag;
+    vec2 toMouse = mvPosition.xy - mouseView;
     float dist = length(toMouse);
     float force = smoothstep(${ GRAVITY_RADIUS.toFixed(3) }, 0.0, dist) * ${ GRAVITY_STRENGTH.toFixed(3) };
     if (dist > 0.0001) mvPosition.xy += normalize(toMouse) * force;
@@ -63,7 +87,16 @@ const VERT = `
     // sweeps 0→1 on mount (see the reveal effect below) — a size of 0
     // before their own delay has been reached, full size after.
     float revealT = clamp((uReveal - aRevealDelay) * 4.0, 0.0, 1.0);
-    gl_PointSize = aSize * pulse * focusBoost * revealT;
+    // Perspective doesn't shrink gl_PointSize with distance on its own —
+    // gl_Position gets perspective-divided, gl_PointSize is a raw
+    // device-pixel value. Without this every node would render the same
+    // pixel size regardless of depth, which would defeat the whole point
+    // of a real helix. Same attenuation math THREE.PointsMaterial's own
+    // sizeAttenuation uses internally: a node right at uAttenRef's
+    // distance renders at its natural size, nearer ones bigger, farther
+    // ones smaller.
+    float atten = uAttenRef / max(0.1, depthMag);
+    gl_PointSize = aSize * pulse * focusBoost * revealT * atten;
 
     vColor = aColor;
     vActive = aActive;
@@ -164,34 +197,45 @@ const HistoryConstellation = ({
     const group = new THREE.Group();
     scene.add(group);
 
-    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
-    camera.position.z = 5;
+    const camera = new THREE.PerspectiveCamera(CAMERA_FOV, 1, CAMERA_NEAR, CAMERA_FAR);
+    camera.position.set(0, 0, CAMERA_REST_Z);
+    camera.lookAt(0, 0, 0);
 
     const uniforms = {
       uTime: { value: 0 },
-      uMouse: { value: new THREE.Vector2(9999, 9999) },
+      uMouseNDC: { value: new THREE.Vector2(9999, 9999) },
+      uTanHalfFov: { value: Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV) / 2) },
+      uAspect: { value: 1 },
+      uAttenRef: { value: CAMERA_REST_Z },
       uReveal: { value: 0 },
     };
 
-    // `touring`/`aspect`/`zoom` are read by the render loop and by
-    // resize() below — kept on the shared ref (rather than closed-over
+    // `touring`/`aspect`/`zoom`/`camState` are read by the render loop and
+    // by resize() below — kept on the shared ref (rather than closed-over
     // props/state) since both this effect and the tour effect further
     // down need to read/write them without re-running this mount effect.
+    // camState carries the camera's own live position and look-at target
+    // together, so a tour's flight tweens both in lockstep (see the tour
+    // effect further down) rather than lookAt only snapping at the end.
     const state = {
       renderer, scene, camera, group, uniforms,
       nodes: [], points: null, lines: null,
       touring: false, aspect: 1, zoom: { value: 1 },
+      camState: { x: 0, y: 0, z: CAMERA_REST_Z, lx: 0, ly: 0, lz: 0 },
     };
     sceneRef.current = state;
 
+    // An orthographic "zoom" scaled the frustum bounds; a perspective
+    // camera has none, so this scales FOV instead — same zoom.value
+    // semantics as before (smaller = more zoomed in). uTanHalfFov/uAspect
+    // stay in lockstep here too, since the gravity well's per-vertex mouse
+    // unproject in the shader depends on both being current.
     const applyZoom = () => {
-      const a = state.aspect;
-      const z = state.zoom.value;
-      camera.left = -a * z;
-      camera.right = a * z;
-      camera.top = 1 * z;
-      camera.bottom = -1 * z;
+      camera.aspect = state.aspect;
+      camera.fov = CAMERA_FOV * state.zoom.value;
       camera.updateProjectionMatrix();
+      uniforms.uAspect.value = state.aspect;
+      uniforms.uTanHalfFov.value = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
     };
 
     const resize = () => {
@@ -225,7 +269,7 @@ const HistoryConstellation = ({
       let closestDist = HIT_RADIUS_PX;
 
       nodes.forEach((node) => {
-        v.set(node.x, node.y, 0).applyMatrix4(group.matrixWorld).project(camera);
+        v.set(node.x, node.y, node.z || 0).applyMatrix4(group.matrixWorld).project(camera);
         const sx = (v.x * 0.5 + 0.5) * rect.width;
         const sy = (-v.y * 0.5 + 0.5) * rect.height;
         const dist = Math.hypot(sx - px, sy - py);
@@ -260,14 +304,17 @@ const HistoryConstellation = ({
     let lastX = 0;
     let lastY = 0;
 
+    // Just the raw pointer NDC now — the shader itself unprojects this to
+    // each vertex's own depth (see uMouseNDC/uTanHalfFov/uAspect in the
+    // vertex shader above), since a perspective frustum's width varies
+    // with depth and a single fixed-depth view-space point can't correctly
+    // compare against nodes scattered along the whole helix.
     const mouseTarget = new THREE.Vector2(9999, 9999);
     const updateMouseTarget = (clientX, clientY) => {
       const rect = canvas.getBoundingClientRect();
       const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
       const ndcY = -(((clientY - rect.top) / rect.height) * 2 - 1);
-      const halfW = (camera.right - camera.left) / 2;
-      const halfH = (camera.top - camera.bottom) / 2;
-      mouseTarget.set(ndcX * halfW, ndcY * halfH);
+      mouseTarget.set(ndcX, ndcY);
     };
 
     const handleDown = (e) => {
@@ -384,8 +431,8 @@ const HistoryConstellation = ({
       const dt = clock.getDelta();
       uniforms.uTime.value += dt;
 
-      uniforms.uMouse.value.x += (mouseTarget.x - uniforms.uMouse.value.x) * 0.08;
-      uniforms.uMouse.value.y += (mouseTarget.y - uniforms.uMouse.value.y) * 0.08;
+      uniforms.uMouseNDC.value.x += (mouseTarget.x - uniforms.uMouseNDC.value.x) * 0.08;
+      uniforms.uMouseNDC.value.y += (mouseTarget.y - uniforms.uMouseNDC.value.y) * 0.08;
 
       // The ambient drift stands down both while a tour is actively flying
       // the camera and while the pointer is actively dragging — either
@@ -434,7 +481,7 @@ const HistoryConstellation = ({
       canvas.removeEventListener("click", handleClick);
       canvas.removeEventListener("keydown", handleKeyDown);
       canvas.removeEventListener("wheel", markActivity);
-      gsap.killTweensOf(camera.position);
+      gsap.killTweensOf(state.camState);
       gsap.killTweensOf(state.zoom);
       sceneRef.current?.points?.geometry.dispose();
       sceneRef.current?.points?.material.dispose();
@@ -492,6 +539,11 @@ const HistoryConstellation = ({
       const arrival = index > 0 ? timeline[index - 1] : null;
       const style = arrival ? styleFor(arrival.label) : DEFAULT_STYLE;
       const magnitude = index === 0 ? 0 : magnitudeOf(timeline[index - 1], entry);
+      // Chronological depth — oldest at the far/negative end, "now" nearest
+      // the camera — centered on the origin so the existing "camera looks
+      // at (0,0,0)" convention (rest position, tour reset) needs no other
+      // adjustment.
+      const depthT = timeline.length > 1 ? index / (timeline.length - 1) : 0.5;
 
       return {
         index,
@@ -499,6 +551,7 @@ const HistoryConstellation = ({
         kind: "step",
         x: radius * Math.cos(angle),
         y: radius * Math.sin(angle),
+        z: (depthT - 0.5) * HELIX_DEPTH_RANGE,
         magnitude,
         color: resolveCssColor(style.color),
         colorVar: style.color,
@@ -522,6 +575,9 @@ const HistoryConstellation = ({
         kind: "branch",
         x: forkNode.x + Math.cos(offsetAngle) * offsetRadius,
         y: forkNode.y + Math.sin(offsetAngle) * offsetRadius,
+        // Sits beside the moment it forked from, not before or after it —
+        // same depth as the fork node itself.
+        z: forkNode.z,
         magnitude: 26,
         color: resolveCssColor("var(--orange-color)"),
         colorVar: "var(--orange-color)",
@@ -529,6 +585,7 @@ const HistoryConstellation = ({
         at: stash.at,
         forkX: forkNode.x,
         forkY: forkNode.y,
+        forkZ: forkNode.z,
       };
     }).filter(Boolean);
 
@@ -552,7 +609,7 @@ const HistoryConstellation = ({
     allNodes.forEach((node, i) => {
       positions[i * 3] = node.x;
       positions[i * 3 + 1] = node.y;
-      positions[i * 3 + 2] = 0;
+      positions[i * 3 + 2] = node.z || 0;
 
       const c = new THREE.Color(node.color);
       colors[i * 3] = c.r;
@@ -599,10 +656,13 @@ const HistoryConstellation = ({
     const lineColor = new THREE.Color(resolveCssColor("var(--page-line-color)"));
     const linePositions = [];
     for (let i = 1; i < mainNodes.length; i++) {
-      linePositions.push(mainNodes[i - 1].x, mainNodes[i - 1].y, 0, mainNodes[i].x, mainNodes[i].y, 0);
+      linePositions.push(
+        mainNodes[i - 1].x, mainNodes[i - 1].y, mainNodes[i - 1].z,
+        mainNodes[i].x, mainNodes[i].y, mainNodes[i].z,
+      );
     }
     branchNodes.forEach((node) => {
-      linePositions.push(node.forkX, node.forkY, 0, node.x, node.y, 0);
+      linePositions.push(node.forkX, node.forkY, node.forkZ, node.x, node.y, node.z);
     });
     const lineGeometry = new THREE.BufferGeometry();
     lineGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(linePositions), 3));
@@ -675,13 +735,11 @@ const HistoryConstellation = ({
     s.touring = touring;
 
     const applyZoom = () => {
-      const a = s.aspect;
-      const z = s.zoom.value;
-      s.camera.left = -a * z;
-      s.camera.right = a * z;
-      s.camera.top = 1 * z;
-      s.camera.bottom = -1 * z;
+      s.camera.aspect = s.aspect;
+      s.camera.fov = CAMERA_FOV * s.zoom.value;
       s.camera.updateProjectionMatrix();
+      s.uniforms.uAspect.value = s.aspect;
+      s.uniforms.uTanHalfFov.value = Math.tan(THREE.MathUtils.degToRad(s.camera.fov) / 2);
     };
 
     // Under reduced motion the tour still works (play/pause, the cursor's
@@ -690,18 +748,36 @@ const HistoryConstellation = ({
     // vestibular concern, not the tour itself.
     const tweenFn = reduceMotion ? gsap.set : gsap.to;
 
+    // camState carries the camera's own position and its look-at target
+    // together, tweened in lockstep via one shared onUpdate — with real
+    // Z-depth now, the camera has to actually dolly toward a node and look
+    // at it, not just pan across a flat plane while staring down -Z.
+    const applyCamState = () => {
+      s.camera.position.set(s.camState.x, s.camState.y, s.camState.z);
+      s.camera.lookAt(s.camState.lx, s.camState.ly, s.camState.lz);
+    };
+
     if (touring) {
       const node = s.nodes.find((n) => n.index === cursor);
       if (node) {
         s.group.updateMatrixWorld(true);
-        const v = new THREE.Vector3(node.x, node.y, 0).applyMatrix4(s.group.matrixWorld);
-        tweenFn(s.camera.position, { x: v.x, y: v.y, duration: 1.1, ease: "power3.inOut", overwrite: "auto" });
+        const v = new THREE.Vector3(node.x, node.y, node.z).applyMatrix4(s.group.matrixWorld);
+        tweenFn(s.camState, {
+          x: v.x, y: v.y, z: v.z + TOUR_DOLLY_OFFSET,
+          lx: v.x, ly: v.y, lz: v.z,
+          duration: 1.1, ease: "power3.inOut", overwrite: "auto", onUpdate: applyCamState,
+        });
         tweenFn(s.zoom, { value: TOUR_ZOOM, duration: 1.1, ease: "power3.inOut", overwrite: "auto", onUpdate: applyZoom });
+        applyCamState();
         applyZoom();
       }
     } else {
-      tweenFn(s.camera.position, { x: 0, y: 0, duration: .9, ease: "power2.inOut", overwrite: "auto" });
+      tweenFn(s.camState, {
+        x: 0, y: 0, z: CAMERA_REST_Z, lx: 0, ly: 0, lz: 0,
+        duration: .9, ease: "power2.inOut", overwrite: "auto", onUpdate: applyCamState,
+      });
       tweenFn(s.zoom, { value: 1, duration: .9, ease: "power2.inOut", overwrite: "auto", onUpdate: applyZoom });
+      applyCamState();
       applyZoom();
     }
   }, [cursor, touring, reduceMotion]);

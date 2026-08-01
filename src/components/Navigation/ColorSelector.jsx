@@ -5,17 +5,22 @@ import anime from "animejs";
 // elastically and melts into its neighbours; pressing squashes it before it
 // springs back. The bulge stands down while the open/close timeline is
 // running (the activator is disabled for exactly that window), so the two
-// never fight over the element.
+// never fight over the element — and under reduced motion entirely, the
+// same call Navigation.jsx's own magnetic icons already make, since this is
+// the same class of continuous, hover-repeated elastic motion.
 const ColorSelector = ({
   className,
   color,
   dataFrom,
   dataTo,
   addNote,
+  reduceMotion,
 }) => {
   const ref = useRef(null);
 
   const bulge = (scale) => {
+    if (reduceMotion) return;
+
     const el = ref.current;
     if (!el) return;
     if (document.getElementById("navActivator")?.hasAttribute("disabled")) return;

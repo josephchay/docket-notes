@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import Matter from "matter-js";
 import { FaArrowRotateLeft } from "react-icons/fa6";
 
+import { playImpact } from "../../utils/sound";
+
 import "./NotePile.css";
 
 const GRAVITY = 1;
@@ -10,6 +12,19 @@ const PIECE_W = 132;
 const PIECE_H = 100;
 const CLICK_THRESHOLD = 6;     // px of movement under which a press counts as "open", not "toss"
 const DROP_STAGGER_MS = 26;
+
+// Jelly squash-and-stretch: one scalar per piece, spring-driven toward 0
+// (its resting, undeformed pose) every tick. Positive means "just got hit,
+// squashed flat and bulging wide"; negative means "elongating, thin" — a
+// fresh toss seeds it there, as if still falling, so the piece visibly
+// stretches back to its resting paper shape as physics lands it, the same
+// squash-and-stretch language Note.jsx's own spawn morph and delete blob
+// already use elsewhere, just driven by this pile's real collision physics
+// instead of a scripted keyframe sequence.
+const SQUASH_STIFFNESS = 220;
+const SQUASH_DAMPING = 12;
+const MIN_IMPACT_SPEED = 2.2;        // px/tick below which a touch isn't a real "landing"
+const IMPACT_SOUND_COOLDOWN_MS = 45; // keeps an avalanche of pieces from becoming a wall of noise
 
 // Toss the whole (filtered) desk into a real, physically-simulated pile —
 // matter-js applied to live notes instead of Trash/TrashPhysics's falling
@@ -23,9 +38,10 @@ const DROP_STAGGER_MS = 26;
 const NotePile = ({ notes, onOpenNote, onExit }) => {
   const containerRef = useRef(null);
   const engineRef = useRef(null);
-  const bodiesRef = useRef({});     // id -> { body, el }
+  const bodiesRef = useRef({});     // id -> { body, el, squash, squashVel }
   const wallsRef = useRef(null);
   const elRefs = useRef({});
+  const lastImpactSoundRef = useRef(0);
 
   // Whichever a press turns out to be — the click's own onClick fires right
   // after pointerup regardless of how far the piece was dragged, so this is
@@ -71,15 +87,69 @@ const NotePile = ({ notes, onOpenNote, onExit }) => {
     });
     Matter.World.add(engine.world, mouseConstraint);
 
+    // A piece lifts slightly (a bigger, closer shadow) for as long as it's
+    // actively being dragged — real Matter drag events, independent of the
+    // separate pointerdown/up pair further below (that one only ever
+    // measures click-vs-toss distance and never touches any visuals).
+    const handleStartDrag = (e) => {
+      const piece = bodiesRef.current[e.body?.__pieceKey];
+      if (piece) piece.el.classList.add("dragging");
+    };
+    const handleEndDrag = (e) => {
+      const piece = bodiesRef.current[e.body?.__pieceKey];
+      if (piece) piece.el.classList.remove("dragging");
+    };
+    Matter.Events.on(mouseConstraint, "startdrag", handleStartDrag);
+    Matter.Events.on(mouseConstraint, "enddrag", handleEndDrag);
+
+    // Every real landing — the floor, a wall, another piece — kicks that
+    // piece's own squash spring, scaled by how fast it was actually
+    // moving; the impact sound rides the same trigger, rate-limited so a
+    // big avalanche of pieces settling at once doesn't turn into noise.
+    const handleCollisionStart = (e) => {
+      for (const pair of e.pairs) {
+        for (const body of [pair.bodyA, pair.bodyB]) {
+          const piece = bodiesRef.current[body.__pieceKey];
+          if (!piece) continue;
+
+          const speed = Math.hypot(body.velocity.x, body.velocity.y);
+          if (speed < MIN_IMPACT_SPEED) continue;
+
+          const strength = Math.min(1, speed / 14);
+          piece.squashVel += strength * 1.6;
+
+          const now = performance.now();
+          if (now - lastImpactSoundRef.current > IMPACT_SOUND_COOLDOWN_MS) {
+            lastImpactSoundRef.current = now;
+            playImpact(strength);
+          }
+        }
+      }
+    };
+    Matter.Events.on(engine, "collisionStart", handleCollisionStart);
+
     let raf = requestAnimationFrame(tick);
 
     function tick() {
       raf = requestAnimationFrame(tick);
       Matter.Engine.update(engine, 1000 / 60);
 
-      for (const { body, el } of Object.values(bodiesRef.current)) {
+      const dt = 1 / 60;
+      for (const piece of Object.values(bodiesRef.current)) {
+        const { body, el } = piece;
+
+        // A critically-underdamped spring pulling squash back toward 0 —
+        // the brief overshoot past zero is what actually reads as jelly
+        // rather than just a snap back to shape.
+        piece.squashVel += (-SQUASH_STIFFNESS * piece.squash - SQUASH_DAMPING * piece.squashVel) * dt;
+        piece.squash += piece.squashVel * dt;
+
+        const squash = Math.max(-.9, Math.min(1.1, piece.squash));
+        const scaleY = 1 - squash * .55;
+        const scaleX = 1 + squash * .4;
+
         el.style.transform =
-          `translate(${ body.position.x }px, ${ body.position.y }px) translate(-50%, -50%) rotate(${ body.angle }rad)`;
+          `translate(${ body.position.x }px, ${ body.position.y }px) translate(-50%, -50%) rotate(${ body.angle }rad) scale(${ scaleX }, ${ scaleY })`;
       }
     }
 
@@ -100,11 +170,16 @@ const NotePile = ({ notes, onOpenNote, onExit }) => {
         frictionAir: .01,
         angle: (Math.random() - .5) * .5,
       });
+      body.__pieceKey = note.id;
       Matter.Body.setAngularVelocity(body, (Math.random() - .5) * .25);
       Matter.Body.setVelocity(body, { x: (Math.random() - .5) * 3, y: 2 + Math.random() * 2 });
 
       Matter.World.add(engine.world, body);
-      bodiesRef.current[note.id] = { body, el };
+      // Seeded already stretched thin, as if mid-fall — the squash spring
+      // above pulls it toward its resting shape the same way a real
+      // landing does, so a fresh toss reads as one continuous piece of
+      // physics rather than "drop, then separately animate in."
+      bodiesRef.current[note.id] = { body, el, squash: -.55, squashVel: 0 };
       el.style.opacity = "1";
     }, index * DROP_STAGGER_MS));
 
@@ -112,6 +187,9 @@ const NotePile = ({ notes, onOpenNote, onExit }) => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", handleResize);
       staggerTimers.forEach((timer) => window.clearTimeout(timer));
+      Matter.Events.off(mouseConstraint, "startdrag", handleStartDrag);
+      Matter.Events.off(mouseConstraint, "enddrag", handleEndDrag);
+      Matter.Events.off(engine, "collisionStart", handleCollisionStart);
       Matter.World.clear(engine.world, false);
       Matter.Engine.clear(engine);
       engineRef.current = null;

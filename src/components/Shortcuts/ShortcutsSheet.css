@@ -81,6 +81,37 @@
   justify-content: space-between;
   padding: 10px 12px;
   border-radius: 10px;
+  transition: background-color 0.2s ease-in-out;
+}
+
+.shortcuts-row:hover {
+  background-color: var(--page-surface-color);
+}
+
+.shortcuts-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.shortcuts-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 11px;
+  color: var(--page-ink-color);
+  background-color: var(--page-surface-color);
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+.shortcuts-row:hover .shortcuts-row-icon {
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
 }
 
 .shortcuts-row-label {
@@ -96,14 +127,29 @@
   gap: 4px;
 }
 
+/* A thicker bottom edge gives each key a raised, physical keycap look at
+   rest; hovering its row presses it — the border flattens and the key
+   itself nudges down, the same "pressed into place" language the desk's
+   own tactile buttons already lean on elsewhere. */
 .shortcuts-key {
   padding: 3px 8px;
   border: 1.5px solid var(--page-line-color);
+  border-bottom-width: 3px;
   border-radius: 6px;
   font-family: inherit;
   font-size: 12px;
   font-weight: 700;
   color: var(--page-ink-color);
   background-color: var(--page-surface-color);
-  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+  transition:
+    background-color 0.4s ease-in-out,
+    color 0.4s ease-in-out,
+    border-color 0.4s ease-in-out,
+    transform 0.15s ease-out,
+    border-bottom-width 0.15s ease-out;
+}
+
+.shortcuts-row:hover .shortcuts-key {
+  transform: translateY(1px);
+  border-bottom-width: 1.5px;
 }

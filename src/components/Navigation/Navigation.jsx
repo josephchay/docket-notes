@@ -299,6 +299,7 @@ const Navigation = ({
                 dataFrom={ selector.dataFrom }
                 dataTo={ selector.dataTo }
                 addNote={ addNote }
+                reduceMotion={ reduceMotion }
               />
             ))
           }

@@ -135,6 +135,17 @@ export const playStamp = () => play((context) => {
   noise(context, { duration: .05, freqFrom: 3000, freqTo: 2000, peak: .12, filterType: "highpass" });
 });
 
+// A soft paper-on-paper thud, its pitch and weight scaled by `strength`
+// (0–1) — a real note landing in the physics pile (Pile/NotePile.jsx),
+// louder and lower the harder it actually hit. Deliberately quieter than
+// every other cue here at strength 0, since a session can drop dozens of
+// these within a couple of seconds during the initial toss-in.
+export const playImpact = (strength = .5) => play((context) => {
+  const s = Math.min(1, Math.max(0, strength));
+  tone(context, { freq: 70 + (1 - s) * 55, duration: .08 + s * .06, type: "sine", peak: .09 + s * .16 });
+  noise(context, { duration: .025 + s * .03, freqFrom: 2600, freqTo: 1500, peak: .04 + s * .09, filterType: "highpass" });
+});
+
 // A soft three-note ascending chime — celebratory, not a game jingle.
 export const playMilestone = () => play((context) => {
   tone(context, { freq: 523.25, duration: .22, peak: .22 });

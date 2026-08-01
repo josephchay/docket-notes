@@ -1,9 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FaXmark } from "react-icons/fa6";
+import {
+  FaXmark, FaPlus, FaExpand, FaHourglassHalf, FaMagnifyingGlass,
+  FaWandMagicSparkles, FaRotateLeft, FaArrowRotateRight, FaArrowsUpDown,
+  FaCheck, FaQuestion,
+} from "react-icons/fa6";
 
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 import useFocusTrap from "../../hooks/useFocusTrap";
+import useJellyTap from "../../hooks/useJellyTap";
 
 import "./ShortcutsSheet.css";
 
@@ -12,18 +17,58 @@ import "./ShortcutsSheet.css";
 export const SHORTCUTS_EVENT = "docket:shortcuts";
 
 const SHORTCUTS = [
-  { keys: ["N"], label: "Pour a new note" },
-  { keys: ["F"], label: "Toggle focus mode" },
-  { keys: ["S"], label: "Toggle the focus sprint" },
-  { keys: ["/"], label: "Jump to search" },
-  { keys: ["Ctrl", "K"], label: "Open the command palette" },
-  { keys: ["Ctrl", "Z"], label: "Undo the last edit" },
-  { keys: ["Ctrl", "Shift", "Z"], label: "Redo the last undo" },
-  { keys: ["↑", "↓"], label: "Move through a list" },
-  { keys: ["Enter"], label: "Confirm the highlighted row" },
-  { keys: ["Esc"], label: "Close whatever's open" },
-  { keys: ["?"], label: "Show this sheet" },
+  { keys: ["N"], label: "Pour a new note", icon: FaPlus },
+  { keys: ["F"], label: "Toggle focus mode", icon: FaExpand },
+  { keys: ["S"], label: "Toggle the focus sprint", icon: FaHourglassHalf },
+  { keys: ["/"], label: "Jump to search", icon: FaMagnifyingGlass },
+  { keys: ["Ctrl", "K"], label: "Open the command palette", icon: FaWandMagicSparkles },
+  { keys: ["Ctrl", "Z"], label: "Undo the last edit", icon: FaRotateLeft },
+  { keys: ["Ctrl", "Shift", "Z"], label: "Redo the last undo", icon: FaArrowRotateRight },
+  { keys: ["↑", "↓"], label: "Move through a list", icon: FaArrowsUpDown },
+  { keys: ["Enter"], label: "Confirm the highlighted row", icon: FaCheck },
+  { keys: ["Esc"], label: "Close whatever's open", icon: FaXmark },
+  { keys: ["?"], label: "Show this sheet", icon: FaQuestion },
 ];
+
+// One row: an icon (jelly-squashed on hover, via the same useJellyTap
+// recipe every toolbar icon elsewhere already uses), the action it names,
+// and its keys — which visually depress like a real keycap being pressed
+// (see .shortcuts-row:hover .shortcuts-key) for as long as the row is
+// hovered. Its own component (rather than inlined in the map below) since
+// useJellyTap needs one controller per row, and hooks can't run in a loop.
+const ShortcutRow = ({ row, index }) => {
+  const iconJelly = useJellyTap();
+  const Icon = row.icon;
+
+  return (
+    <motion.div
+      className="shortcuts-row"
+      initial={{ opacity: 0, translateX: -16 }}
+      animate={{ opacity: 1, translateX: 0 }}
+      transition={{
+        type: "spring",
+        stiffness: 340,
+        damping: 20,
+        delay: .05 + index * .04,
+      }}
+      onHoverStart={ iconJelly.squash }
+    >
+      <span className="shortcuts-row-main">
+        <motion.span className="shortcuts-row-icon" animate={ iconJelly.jelly }>
+          <Icon />
+        </motion.span>
+        <span className="shortcuts-row-label">{ row.label }</span>
+      </span>
+      <span className="shortcuts-row-keys">
+        {
+          row.keys.map((key) => (
+            <kbd key={ key } className="shortcuts-key">{ key }</kbd>
+          ))
+        }
+      </span>
+    </motion.div>
+  );
+};
 
 // A quick reference for the desk's keyboard shortcuts. "?" summons it
 // (guarded the same way as N and / in Home.jsx — it stands down while any
@@ -112,27 +157,7 @@ const ShortcutsSheet = () => {
               <div className="shortcuts-list">
                 {
                   SHORTCUTS.map((row, index) => (
-                    <motion.div
-                      key={ row.label }
-                      className="shortcuts-row"
-                      initial={{ opacity: 0, translateX: -16 }}
-                      animate={{ opacity: 1, translateX: 0 }}
-                      transition={{
-                        type: "spring",
-                        stiffness: 340,
-                        damping: 20,
-                        delay: .05 + index * .04,
-                      }}
-                    >
-                      <span className="shortcuts-row-label">{ row.label }</span>
-                      <span className="shortcuts-row-keys">
-                        {
-                          row.keys.map((key) => (
-                            <kbd key={ key } className="shortcuts-key">{ key }</kbd>
-                          ))
-                        }
-                      </span>
-                    </motion.div>
+                    <ShortcutRow key={ row.label } row={ row } index={ index } />
                   ))
                 }
               </div>
