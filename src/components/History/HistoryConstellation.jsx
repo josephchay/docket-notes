@@ -4,7 +4,7 @@ import gsap from "gsap";
 
 import { timeAgo } from "../../utils/date";
 import { resolveCssColor } from "./HistoryAmbient";
-import { styleFor, DEFAULT_STYLE, magnitudeOf, capitalize } from "./HistoryPanel";
+import { styleFor, DEFAULT_STYLE, magnitudeOf, capitalize, arrivalLabel } from "./HistoryPanel";
 
 THREE.ColorManagement.enabled = false;
 
@@ -21,6 +21,10 @@ const TOUR_ZOOM = 0.55;
 const GRAVITY_RADIUS = 0.42;
 const GRAVITY_STRENGTH = 0.14;
 const IDLE_MS = 8000;
+// The reveal shader's own runway constant (see VERT's `* 4.0` below) needs
+// a node's delay to sit at least 1/4.0 short of uReveal's own max (1) for
+// that node to ever reach full size — keep this in sync with that literal.
+const REVEAL_DELAY_MAX = 1 - 1 / 4.0;
 
 const VERT = `
   attribute vec3 aColor;
@@ -450,6 +454,17 @@ const HistoryConstellation = ({
   useEffect(() => {
     const s = sceneRef.current;
     if (!s) return;
+
+    // Gated on reduced motion the same way the ambient spin, gravity well,
+    // tour flight, and rail stretch already are elsewhere in this panel —
+    // a 1s staggered sweep across the whole graph is exactly the kind of
+    // large, continuous motion that convention exists for; a reduced-motion
+    // visitor gets every node at full size immediately instead.
+    if (reduceMotionRef.current) {
+      s.uniforms.uReveal.value = 1;
+      return;
+    }
+
     const tween = gsap.fromTo(s.uniforms.uReveal, { value: 0 }, { value: 1, duration: 1, ease: "power2.out" });
     // Unlike every other GSAP tween in this file, this one previously had
     // no cleanup — closing the panel mid-bloom (well within the realistic
@@ -487,7 +502,7 @@ const HistoryConstellation = ({
         magnitude,
         color: resolveCssColor(style.color),
         colorVar: style.color,
-        label: arrival ? capitalize(arrival.label) : "The very start",
+        label: arrivalLabel(arrival),
         at: arrival ? arrival.at : null,
       };
     });
@@ -549,7 +564,16 @@ const HistoryConstellation = ({
       actives[i] = node.index === cursor ? 1 : 0;
       focuseds[i] = i === focusedIndex ? 1 : 0;
       dims[i] = (visibleIndices && node.kind === "step" && !visibleIndices.has(node.index)) ? 1 : 0;
-      revealDelays[i] = i / Math.max(1, allNodes.length - 1);
+      // Spread over [0, REVEAL_DELAY_MAX] rather than the full [0, 1] — the
+      // vertex shader's revealT needs a full 0.25 of uReveal's own runway
+      // past a node's delay to reach size 1 (`(uReveal - aRevealDelay) *
+      // 4.0`), and uReveal itself never exceeds 1. A node whose delay sat
+      // at the naive i/(N-1), i.e. up to 1.0, could never fully bloom —
+      // the very last node (every session's most recent step, plus every
+      // branch-stash node, appended after it) stayed permanently
+      // size-zero once uReveal settled. Capping the max delay at exactly
+      // 1 - 1/4 leaves that last node precisely the runway it needs.
+      revealDelays[i] = (i / Math.max(1, allNodes.length - 1)) * REVEAL_DELAY_MAX;
     });
 
     const geometry = new THREE.BufferGeometry();

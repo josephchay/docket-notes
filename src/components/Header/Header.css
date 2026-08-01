@@ -294,6 +294,14 @@ header.header {
   position: relative;
 }
 
+.header .wand.active {
+  background-color: var(--page-ink-color);
+}
+
+.header .wand.active .wand-icon {
+  color: var(--page-bg-color);
+}
+
 .trash-badge {
   position: absolute;
   top: -4px;

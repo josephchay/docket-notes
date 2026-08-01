@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
-import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan, FaClockRotateLeft, FaGear } from "react-icons/fa6";
+import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan, FaClockRotateLeft, FaGear, FaLayerGroup } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { MILESTONES } from "../../constants/milestones";
@@ -13,6 +13,7 @@ import searchIcon from '../../assets/icons/search.svg';
 import useJellyTap from "../../hooks/useJellyTap";
 import useInkPulse from "../../hooks/useInkPulse";
 import useMagnetic from "../../hooks/useMagnetic";
+import { playStar } from "../../utils/sound";
 import LiquidMeter from "../Meter/LiquidMeter";
 
 import './Header.css';
@@ -71,6 +72,9 @@ const Header = ({
   persistNotes,
   togglePersistNotes,
   trashCount,
+  pileView,
+  togglePileView,
+  reduceMotion,
 }) => {
   const filtersActive = searchText !== "" || notesSortByFavorite || sortColor !== null;
 
@@ -86,6 +90,7 @@ const Header = ({
   const focusJelly = useJellyTap();
   const trashJelly = useJellyTap();
   const settingsJelly = useJellyTap();
+  const pileJelly = useJellyTap();
 
   // The color-filter ring borrows the free cursor's own press pulse and
   // idle pool (see useInkPulse) so it carries the same elastic personality
@@ -124,6 +129,7 @@ const Header = ({
   const handleStarFilter = () => {
     if (!notesSortByFavorite) {
       setStarBurst(true);
+      playStar();
       clearTimeout(burstTimerRef.current);
       burstTimerRef.current = setTimeout(() => setStarBurst(false), 700);
     }
@@ -611,6 +617,31 @@ const Header = ({
           </motion.span>
         </span>
       </motion.div>
+      {/* Tosses the desk into a real physics pile (see NotePile.jsx) — a
+          decorative, opt-in view with no reduced-motion variant, so the
+          button itself only ever appears when motion is on. */}
+      {
+        !reduceMotion && (
+          <motion.div
+            role="button"
+            aria-pressed={ !!pileView }
+            aria-label={ pileView ? "Restore the grid" : "Toss notes into a pile" }
+            title={ pileView ? "Restore the grid" : "Toss notes into a pile" }
+            whileHover={{ scale: 1.14, rotate: -10 }}
+            whileTap={{ scale: .9 }}
+            transition={ springy }
+            onTapStart={ pileJelly.squash }
+            onClick={ togglePileView }
+            className={ `wand ${ pileView ? "active" : "" }` }
+          >
+            <span ref={ toolbarMagnetic.registerItem(7) } style={{ display: "inline-flex" }}>
+              <motion.span animate={ pileJelly.jelly } style={{ display: "inline-flex" }}>
+                <FaLayerGroup className="wand-icon" />
+              </motion.span>
+            </span>
+          </motion.div>
+        )
+      }
       <motion.div
         ref={ themeRef }
         role="button"
@@ -628,7 +659,7 @@ const Header = ({
       >
         {/* The old icon spins out, the new one springs in — a tiny
             celestial changeover. */}
-        <span ref={ toolbarMagnetic.registerItem(7) } style={{ display: "inline-flex" }}>
+        <span ref={ toolbarMagnetic.registerItem(8) } style={{ display: "inline-flex" }}>
           <AnimatePresence mode="wait" initial={ false }>
             <motion.span
               key={ theme }
@@ -670,7 +701,7 @@ const Header = ({
       >
         {/* The same spring-in/spin-out changeover as the theme toggle beside
             it — the lock clicks shut or springs back open. */}
-        <span ref={ toolbarMagnetic.registerItem(8) } style={{ display: "inline-flex" }}>
+        <span ref={ toolbarMagnetic.registerItem(9) } style={{ display: "inline-flex" }}>
           <AnimatePresence mode="wait" initial={ false }>
             <motion.span
               key={ persistNotes ? "locked" : "unlocked" }
@@ -711,7 +742,7 @@ const Header = ({
         onClick={ () => window.dispatchEvent(new CustomEvent(SETTINGS_EVENT)) }
         className="wand"
       >
-        <span ref={ toolbarMagnetic.registerItem(9) } style={{ display: "inline-flex" }}>
+        <span ref={ toolbarMagnetic.registerItem(10) } style={{ display: "inline-flex" }}>
           <motion.span animate={ settingsJelly.jelly } style={{ display: "inline-flex" }}>
             <FaGear className="wand-icon" />
           </motion.span>

@@ -31,12 +31,38 @@ const LoadIntro = ({ onDone }) => {
 
   // Read once, synchronously, rather than as state — Home.jsx hasn't
   // mounted yet to set data-theme, so this is the only source of truth for
-  // which ink the intro should pour in.
+  // which ink the intro should pour in. The reduced-motion preference is
+  // read the same way for the same reason: this plays before Settings is
+  // even reachable, so a visitor who prefers less motion has no way to opt
+  // out ahead of time the way they can for every other big motion in this
+  // app (Cursor, History, Note's own spawn morph) — it has to already know.
   const themeRef = useRef(loadSettings().theme === "dark" ? "dark" : "light");
   const theme = themeRef.current;
+  const reduceMotionRef = useRef(
+    typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+  );
 
   useEffect(() => {
     if (!inkRef.current) return;
+
+    if (reduceMotionRef.current) {
+      // No bloom scale, no letter stagger, no overshoot — just the
+      // wordmark fading in and back out, brief enough to still read as a
+      // real brand moment without asking for any sustained motion.
+      const tl = gsap.timeline({
+        onComplete: () => {
+          markIntroSeen();
+          onDone?.();
+        },
+      });
+
+      tl.set(inkRef.current, { scale: 0, opacity: 1 })
+        .set(letterRefs.current, { y: 0, opacity: 0 })
+        .to(letterRefs.current, { opacity: 1, duration: .4 })
+        .to(letterRefs.current, { opacity: 0, duration: .35, delay: .55 });
+
+      return () => tl.kill();
+    }
 
     const reach = Math.hypot(window.innerWidth, window.innerHeight) / 2;
     const scale = (reach * 2.3) / REST_DIAMETER;

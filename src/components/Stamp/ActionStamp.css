@@ -6,7 +6,21 @@
   pointer-events: none;
 }
 
+.action-stamp-wrap {
+  position: relative;
+}
+
+.action-stamp-goo {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  width: 0;
+  height: 0;
+  filter: url(#gooey-effect);
+}
+
 .action-stamp {
+  position: relative;
   padding: 8px 16px;
   border-radius: 999px;
   font-size: 12.5px;
@@ -16,4 +30,25 @@
   background-color: var(--page-ink-color);
   box-shadow: 0 14px 32px -14px rgba(25, 25, 25, 0.5);
   transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.action-stamp-drop {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  background-color: var(--page-ink-color);
+}
+
+.action-stamp-ring {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  width: 26px;
+  height: 26px;
+  margin-left: -13px;
+  margin-bottom: -13px;
+  border-radius: 50%;
+  border: 2px solid var(--page-ink-color);
+  pointer-events: none;
 }

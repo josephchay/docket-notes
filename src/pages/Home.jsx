@@ -23,12 +23,21 @@ import {
   FaTrashCan,
   FaTimeline,
   FaGear,
+  FaLayerGroup,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
 import { formattedDateNow } from "../utils/date";
 import { randomQuote } from "../utils/data";
 import { loadNotes, saveNotes, loadSettings, saveSettings, getPersistPref, setPersistPref } from "../utils/storage";
+import {
+  setSoundEnabled as setSoundEngineEnabled,
+  playSpawn,
+  playThemeToggle,
+  playStamp,
+  playMilestone,
+  playHistoryAction,
+} from "../utils/sound";
 import { NOTE_COLORS } from "../constants/colors";
 import { MILESTONES } from "../constants/milestones";
 import Navigation from "../components/Navigation/Navigation";
@@ -134,6 +143,7 @@ const Home = () => {
   const THEME_BG = { light: "#fffeff", dark: "#161616" };
 
   const toggleTheme = (origin) => {
+    playThemeToggle();
     setTheme((prev) => {
       const next = prev === "dark" ? "light" : "dark";
       saveSettings({ theme: next });
@@ -172,6 +182,23 @@ const Home = () => {
     });
   };
 
+  // Soft ink/paper cues on a handful of key actions (see utils/sound.js) —
+  // silent by default, since a visitor has never heard sound from this app
+  // before and defaulting it on would just surprise people mid-session.
+  const [soundEnabled, setSoundEnabled] = useState(false);
+
+  const toggleSound = () => {
+    setSoundEnabled((prev) => {
+      const next = !prev;
+      saveSettings({ soundEnabled: next });
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    setSoundEngineEnabled(soundEnabled);
+  }, [soundEnabled]);
+
   // Milestone note counts already celebrated this session — seeded from
   // whatever the desk already held on load, so restoring a big session
   // never replays a shower for ground already covered.
@@ -202,6 +229,9 @@ const Home = () => {
     if (typeof settings.reduceMotion === "boolean") {
       setManualReduceMotion(settings.reduceMotion);
     }
+    if (typeof settings.soundEnabled === "boolean") {
+      setSoundEnabled(settings.soundEnabled);
+    }
 
     setHydrated(true);
   }, []);
@@ -216,6 +246,7 @@ const Home = () => {
     if (!hit) return;
 
     celebratedRef.current.add(hit);
+    playMilestone();
 
     const celebrationId = id();
     setCelebration({ key: celebrationId, count: hit });
@@ -261,6 +292,12 @@ const Home = () => {
   // reachable regardless of what's currently slid off-screen.
   const [focusMode, setFocusMode] = useState(false);
   const toggleFocusMode = () => setFocusMode((prev) => !prev);
+
+  // Tosses the visible desk into a real, physically-simulated pile (see
+  // NotePile.jsx) — a decorative, opt-in view with no reduced-motion
+  // variant, so the toggle itself only ever surfaces when motion is on.
+  const [pileView, setPileView] = useState(false);
+  const togglePileView = () => setPileView((prev) => !prev);
 
   // Every note deleted this session, oldest first, and where each sat —
   // this desk's whole trash, not capped and never auto-expired on its own.
@@ -437,6 +474,7 @@ const Home = () => {
   // random order into a bouncy mid-air reshuffle.
   const shuffleNotes = () => {
     pushUndo("shuffled the desk");
+    playHistoryAction("shuffled");
     setSortMode("fresh");
     setNotes((prev) => {
       const next = [...prev];
@@ -518,6 +556,7 @@ const Home = () => {
 
     pushUndo("poured a new note");
     setNotes(newNotes);
+    playSpawn();
 
     let spawnOrigin = origin;
     if (!spawnOrigin) {
@@ -556,6 +595,7 @@ const Home = () => {
     if (!entry) return;
 
     pushUndo("restored a note");
+    playHistoryAction("restored");
     setNotes((prev) => {
       if (prev.some((note) => note.id === entry.note.id)) return prev;
 
@@ -581,12 +621,14 @@ const Home = () => {
   // Gone for good, skipping the desk entirely — the Trash panel's shred.
   const shredNote = (noteId) => {
     pushUndo("shredded a note");
+    playHistoryAction("shredded");
     setDeletedNotes((prev) => prev.filter((entry) => entry.note.id !== noteId));
   };
 
   const emptyTrash = () => {
     if (deletedNotes.length === 0) return;
     pushUndo("emptied the trash");
+    playHistoryAction("emptied");
     setDeletedNotes([]);
   };
 
@@ -605,6 +647,7 @@ const Home = () => {
     const copyId = id();
 
     pushUndo("duplicated a note");
+    playHistoryAction("duplicated");
     setNotes((prev) => {
       const index = prev.findIndex((note) => note.id === noteId);
       if (index === -1) return prev;
@@ -715,12 +758,38 @@ const Home = () => {
   );
   const cursor = undoStack.length;
 
+  // The synthetic "now" marker above (timeline[cursor], fresh every render)
+  // always carries a placeholder label:"now"/at:null — "now" isn't a real
+  // pushUndo'd entry, so it never earned a real one. Jumping away from it
+  // freezes it into a genuine stack entry (redoStack going backward,
+  // undoStack going forward); left untouched, that placeholder leaked
+  // straight into history — every tick/row that read the frozen entry as
+  // its own arrival showed "Now" as its label and, since `at: null`
+  // coerces to epoch 0 in timeAgo's subtraction, something like "20666d
+  // ago" as its time. Patched here, the one moment real data to describe
+  // it is still around: going backward, the edit that turned the live
+  // state into what's being frozen is exactly the label the last real undo
+  // entry already carries; going forward, it's exactly the label the
+  // nearest real redo entry already carries — both already describe that
+  // same transition, by the same "entry i's label describes i→i+1" rule
+  // every other real entry here already follows. Once patched, that entry
+  // is real, correctly-labeled, and never touched again by a later jump.
   const jumpTo = (targetIndex) => {
     const clamped = Math.max(0, Math.min(targetIndex, timeline.length - 1));
     if (clamped === cursor) return;
 
-    setUndoStack(timeline.slice(0, clamped));
-    setRedoStack([...timeline.slice(clamped + 1)].reverse());
+    const frozenNow = {
+      notes,
+      deletedNotes,
+      label: clamped < cursor
+        ? undoStack[undoStack.length - 1].label
+        : redoStack[redoStack.length - 1].label,
+      at: Date.now(),
+    };
+    const withFrozenNow = [...timeline.slice(0, cursor), frozenNow, ...timeline.slice(cursor + 1)];
+
+    setUndoStack(withFrozenNow.slice(0, clamped));
+    setRedoStack([...withFrozenNow.slice(clamped + 1)].reverse());
     setNotes(timeline[clamped].notes);
     setDeletedNotes(timeline[clamped].deletedNotes);
   }
@@ -772,6 +841,7 @@ const Home = () => {
 
   const updateColor = (id) => {
     pushUndo("recolored a note");
+    playHistoryAction("recolored");
     const palette = Object.keys(NOTE_COLORS);
 
     const newNotes = notes.map((note) => {
@@ -788,6 +858,7 @@ const Home = () => {
   // directly instead of cycling.
   const setNoteColor = (color, noteId) => {
     pushUndo("recolored a note");
+    playHistoryAction("recolored");
     const newNotes = notes.map((note) =>
       note.id === noteId ? { ...note, color } : note
     );
@@ -798,6 +869,7 @@ const Home = () => {
     if (sourceId === targetId) return;
 
     pushUndo("moved a note");
+    playHistoryAction("moved");
     setNotes((prev) => {
       const next = [...prev];
       const from = next.findIndex((note) => note.id === sourceId);
@@ -820,6 +892,7 @@ const Home = () => {
 
   const updateLock = (id) => {
     pushUndo("locked a note");
+    playHistoryAction("locked");
     const newNotes = notes.map((note) =>
       note.id === id ? { ...note, lock: !note.lock } : note
     );
@@ -828,6 +901,7 @@ const Home = () => {
 
   const updateTags = (tags, id) => {
     pushUndo("edited a tag");
+    playHistoryAction("tagged");
     const newNotes = notes.map((note) =>
       note.id === id ? { ...note, tags } : note
     );
@@ -841,6 +915,7 @@ const Home = () => {
   const [stamp, setStamp] = useState(null);
 
   const showStamp = (text) => {
+    playStamp();
     const stampId = id();
     setStamp({ key: stampId, text });
     setTimeout(() => {
@@ -1067,6 +1142,12 @@ const Home = () => {
       icon: <FaCompress />,
       perform: toggleFocusMode,
     },
+    ...(!reduceMotion ? [{
+      key: "pile",
+      label: pileView ? "Restore the grid" : "Toss notes into a pile",
+      icon: <FaLayerGroup />,
+      perform: togglePileView,
+    }] : []),
     { key: "undo", label: "Undo the last edit", hint: "⌘Z", icon: <FaClockRotateLeft />, perform: performUndo },
     { key: "redo", label: "Redo the last undo", hint: "⌘⇧Z", icon: <FaArrowRotateRight />, perform: performRedo },
     {
@@ -1177,6 +1258,9 @@ const Home = () => {
           persistNotes={ persistNotes }
           togglePersistNotes={ togglePersistNotes }
           trashCount={ deletedNotes.length }
+          pileView={ pileView }
+          togglePileView={ togglePileView }
+          reduceMotion={ reduceMotion }
         />
         <NoteList
           notes={ filteredNotes }
@@ -1209,6 +1293,9 @@ const Home = () => {
           reorderNotes={ reorderNotes }
           duplicateNote={ duplicateNote }
           openEditor={ setEditingNoteId }
+          reduceMotion={ reduceMotion }
+          pileView={ pileView }
+          togglePileView={ togglePileView }
         />
       </div>
       <AnimatePresence>
@@ -1279,6 +1366,8 @@ const Home = () => {
         reduceMotion={ reduceMotion }
         toggleReduceMotion={ toggleReduceMotion }
         systemReducedMotion={ systemReducedMotion }
+        soundEnabled={ soundEnabled }
+        toggleSound={ toggleSound }
       />
       <BulkActionBar
         count={ selectedIds.size }

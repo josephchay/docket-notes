@@ -1,7 +1,5 @@
 # Let there be (Docket) ~ Designed, Prompted, and Coded with Claude AI
 
-## 
-
 ![image](https://github.com/user-attachments/assets/152f9046-dd56-4665-baf2-efdefbc465b7)
 ![image](https://github.com/user-attachments/assets/967049da-61de-4733-b9c8-d84c23895de9)
 ![image](https://github.com/user-attachments/assets/92df0668-f7c0-448a-ac05-906fd61f3022)
@@ -20,19 +18,23 @@
 
 ---
 
-# Tech Stack
+## Tech Stack
+
 1. React
 2. xState
 3. Framer motion
 4. Anime.js
 
-# Storage
+## Storage
+
 Session Storage and local storage is being used temporarily.
 
-# TODO
+## TODO
+
 1. Some or all notes during delete animation the note became shrinked-square like the note shape itself since <a href="https://github.com/josephchay/docket-notes/tree/71dbccb3d8b35017268a152894c92bc2065bcac1" target="_blank">71dbccb3d8b35017268a152894c92bc2065bcac1</a>, instead of circle instead like in commit: <a href="https://github.com/josephchay/docket-notes/tree/6d44f9e460ce52f49906022e3bc3965baf9c896c" target="_blank">6d44f9e460ce52f49906022e3bc3965baf9c896c</a>
 
-# Acknowledgements
+## Acknowledgements
+
 1. Design inspired from <a href="https://dribbble.com/shots/14037848-Docket-note-Side-menu" target="_blank">Docket Note</a>
 2. Side menu animation inspiration and code from <a href="https://www.youtube.com/watch?v=lSzfYAQYKU0" target="_blank">Micro Interactions using Anime.js | HTML, CSS & Javascript</a>
 3. Designs and codes helped and made with <a href="https://claude.ai/" target="_blank">Claude AI</a> (Paid - invoice can be shared upon request), after commit <a href="https://github.com/josephchay/docket-notes/tree/5fcc14fe8b9dcf6bce6d23789cacaa6043f80d08" target="_blank">5fcc14fe8b9dcf6bce6d23789cacaa6043f80d08</a>

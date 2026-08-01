@@ -21,6 +21,7 @@ import useFocusTrap from "../../hooks/useFocusTrap";
 import HistoryAmbient from "./HistoryAmbient";
 import HistoryConstellation from "./HistoryConstellation";
 import useOdometer from "./useOdometer";
+import { playHistoryAction, playTick } from "../../utils/sound";
 
 import "./HistoryPanel.css";
 
@@ -103,6 +104,21 @@ const composeColors = (notes) => {
 };
 
 export const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
+// The label shown wherever an "arrival" is described (a row, a tick's
+// hover preview, a pinned chip, a constellation node). The synthetic "now"
+// marker — timeline[cursor], freshly injected on every render in Home.jsx's
+// own timeline useMemo — never carries a real edit label, since "now" isn't
+// a pushUndo'd entry; the tick immediately after the live cursor always
+// reads it as its own arrival whenever there's any redo history at all.
+// Bare capitalize("now") read as "Now", easy to misread as marking the
+// live position (which is a different tick entirely, one step back) —
+// naming it "Redo point" instead says what it actually is: exactly where
+// you were live before you started undoing.
+export const arrivalLabel = (arrival) => {
+  if (!arrival) return "The very start";
+  return arrival.label === "now" ? "Redo point" : capitalize(arrival.label);
+};
 
 // Which individual notes changed between two moments — not just the
 // aggregate +/- counts previewDiff/compareDiff already give. Also what the
@@ -250,9 +266,28 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   const playheadScaleX = useTransform(stretchSpring, (v) => 1 + Math.min(Math.abs(v), 1) * .6);
   const playheadScaleY = useTransform(stretchSpring, (v) => 1 - Math.min(Math.abs(v), 1) * .25);
 
-  const handlePan = (_e, info) => {
+  // Time-lapse playback narrates every step (see playHistoryAction above);
+  // a manual scrub had no sound at all despite crossing the exact same
+  // tracked steps. One playTick per step actually crossed — not per pan
+  // event, which fires many times a second during a fast drag — reusing
+  // the same small, flat acknowledgment pin/unpin already uses rather than
+  // narrating with a full category cue, since a fast scrub can blow past
+  // several steps in one drag and firing a distinct cue per one would just
+  // be noise.
+  const lastScrubIndexRef = useRef(cursor);
+
+  const handlePanStart = () => {
     stopPlayback();
-    onJump(indexFromPoint(info.point.x));
+    lastScrubIndexRef.current = cursor;
+  };
+
+  const handlePan = (_e, info) => {
+    const nextIndex = indexFromPoint(info.point.x);
+    if (nextIndex !== lastScrubIndexRef.current) {
+      lastScrubIndexRef.current = nextIndex;
+      playTick();
+    }
+    onJump(nextIndex);
     if (!reduceMotion) stretchMV.set(Math.max(-1, Math.min(1, info.velocity.x / 900)));
   };
   const handleTrackClick = (e) => { stopPlayback(); onJump(indexFromPoint(e.clientX)); };
@@ -356,7 +391,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   const pinnedArrival = pinnedEntry ? describedArrival(pinned) : null;
   const pinnedStyle = pinnedArrival ? styleFor(pinnedArrival.label) : DEFAULT_STYLE;
   const PinnedIcon = pinnedStyle.icon;
-  const pinnedLabel = pinnedArrival ? capitalize(pinnedArrival.label) : "The very start";
+  const pinnedLabel = arrivalLabel(pinnedArrival);
 
   // A second, independent pin — `pinned` above stays "the anchor" of the
   // comparison (it's left alone once set), this is whichever moment got
@@ -369,7 +404,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   const secondPinnedArrival = secondPinnedEntry ? describedArrival(secondPinned) : null;
   const secondPinnedStyle = secondPinnedArrival ? styleFor(secondPinnedArrival.label) : DEFAULT_STYLE;
   const SecondPinnedIcon = secondPinnedStyle.icon;
-  const secondPinnedLabel = secondPinnedArrival ? capitalize(secondPinnedArrival.label) : "The very start";
+  const secondPinnedLabel = arrivalLabel(secondPinnedArrival);
 
   const secondCompareDiff = useMemo(() => {
     if (!secondPinnedEntry || !previewEntry) return null;
@@ -385,6 +420,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   // `secondPinned`, then replaces `secondPinned` (the more recently added
   // of the two) once both are full.
   const togglePin = (index) => {
+    playTick();
     if (pinned === index) { setPinned(null); return; }
     if (secondPinned === index) { setSecondPinned(null); return; }
     if (pinned === null) { setPinned(index); return; }
@@ -407,6 +443,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   const displayedEditCount = useOdometer(timeline.length - 1);
   const displayedPreviewCountDelta = useOdometer(previewDiff?.countDelta ?? 0);
   const displayedCompareCountDelta = useOdometer(compareDiff?.countDelta ?? 0);
+  const displayedSecondCompareCountDelta = useOdometer(secondCompareDiff?.countDelta ?? 0);
 
   // Which individual notes actually changed, not just the aggregate counts
   // above — vs the step right before, or vs the pin when one's set. The
@@ -476,7 +513,14 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   const tapChipPreview = (note, e) => {
     showChipPreview(note, e);
     if (chipPreviewTimeoutRef.current) clearTimeout(chipPreviewTimeoutRef.current);
-    chipPreviewTimeoutRef.current = setTimeout(() => setHoveredChip(null), 3200);
+    // Only clears the popover if it's still showing the same chip that was
+    // tapped — on a hybrid touch+mouse device, a mouse hover over a
+    // *different* chip landing inside this 3.2s window would otherwise get
+    // wiped out by a stale timeout left over from the earlier tap.
+    const tappedId = note.id;
+    chipPreviewTimeoutRef.current = setTimeout(() => {
+      setHoveredChip((current) => (current?.note?.id === tappedId ? null : current));
+    }, 3200);
   };
 
   useEffect(() => () => {
@@ -544,7 +588,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
           entry,
           style,
           categoryKey: category?.key ?? null,
-          label: arrival ? capitalize(arrival.label) : "The very start",
+          label: arrivalLabel(arrival),
           time: arrival ? timeAgo(arrival.at) : "session start",
         };
       })
@@ -601,6 +645,19 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   // while playing, stopping itself the instant it reaches "now" — the
   // advance is just another onJump, so it rides the exact same spring,
   // waveform, and preview reactions a manual scrub already gets for free.
+  // Narrated by sound (see utils/sound.js's playHistoryAction): whichever
+  // action's own cue matches the step being landed on, right as it lands —
+  // this single effect is what actually drives `cursor` forward whether the
+  // constellation or the linear rail is the one currently on screen, so one
+  // call here narrates a time-lapse in either view without a second, only
+  // half-distinct cue layered on top from the constellation's own tour
+  // effect. Reads timeline[cursor+1] — the destination itself — not
+  // timeline[cursor]: that position is always the synthetic "now" marker
+  // (see the timeline useMemo above; it sits at exactly index `cursor` on
+  // every render, unconditionally), which never matches any ACTION_STYLES
+  // category, so a step's real label lives on the entry actually being
+  // advanced onto, the same place performRedo's own stamp message
+  // ("Redid: …") already reads it from.
   useEffect(() => {
     if (playPhase !== "playing") return;
 
@@ -610,8 +667,18 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
     }
 
     const ms = PLAYBACK_SPEEDS[speedIndex].ms;
-    const timer = setTimeout(() => onJump(cursor + 1), ms);
+    const timer = setTimeout(() => {
+      const arrival = timeline[cursor + 1];
+      const category = arrival ? ACTION_STYLES.find((s) => s.test(arrival.label)) : null;
+      playHistoryAction(category?.key);
+      onJump(cursor + 1);
+    }, ms);
     return () => clearTimeout(timer);
+    // timeline's own reference is deliberately left out — only .length is
+    // watched, same as before this effect read timeline[cursor] too; the
+    // undo stack this reads from only ever grows, so .length alone is
+    // already a reliable proxy for "the array actually changed."
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playPhase, cursor, timeline.length, speedIndex, onJump, playbackService]);
 
   const togglePlay = () => {
@@ -878,7 +945,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                         </span>
                         <span className="history-now-text">
                           <span className="history-now-label">
-                            { previewArrival ? capitalize(previewArrival.label) : "The very start" }
+                            { arrivalLabel(previewArrival) }
                           </span>
                           <span className="history-now-time">
                             { previewArrival ? timeAgo(previewArrival.at) : "session start" }
@@ -1031,7 +1098,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                             animate={{ left: `${ pct }%` }}
                             style={{ scaleX: playheadScaleX, scaleY: playheadScaleY }}
                             transition={{ type: "spring", stiffness: 500, damping: 32 }}
-                            onPanStart={ stopPlayback }
+                            onPanStart={ handlePanStart }
                             onPan={ handlePan }
                             onPanEnd={ () => stretchMV.set(0) }
                           />
@@ -1300,7 +1367,22 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                     transition={{ type: "spring", stiffness: 420, damping: 16 }}
                                     onClick={ (e) => { e.stopPropagation(); togglePin(row.index); } }
                                   >
-                                    <FaThumbtack />
+                                    {/* A real push-pin gesture rather than a plain bounce: pinning
+                                        springs the thumbtack down from a lifted, tilted angle with a
+                                        bouncy overshoot, like it's actually being pushed in; unpinning
+                                        flicks it back up and out the same way it'd be plucked free. */}
+                                    <AnimatePresence mode="wait" initial={ false }>
+                                      <motion.span
+                                        key={ pinned === row.index || secondPinned === row.index ? "pinned" : "unpinned" }
+                                        initial={{ rotate: -55, y: -6, scale: .4, opacity: 0 }}
+                                        animate={{ rotate: 0, y: 0, scale: 1, opacity: 1 }}
+                                        exit={{ rotate: 45, y: -5, scale: .5, opacity: 0, transition: { duration: .12, ease: "easeIn" } }}
+                                        transition={{ type: "spring", stiffness: 480, damping: 13 }}
+                                        style={{ display: "flex" }}
+                                      >
+                                        <FaThumbtack />
+                                      </motion.span>
+                                    </AnimatePresence>
                                   </motion.button>
                                 </motion.div>
                               ))
@@ -1324,7 +1406,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                               </span>
                               <span className="history-preview-text">
                                 <span className="history-preview-label">
-                                  { previewArrival ? capitalize(previewArrival.label) : "The very start" }
+                                  { arrivalLabel(previewArrival) }
                                 </span>
                                 <span className="history-preview-time">
                                   { previewArrival ? timeAgo(previewArrival.at) : "session start" }
@@ -1444,7 +1526,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                         <span
                                           className={ `history-preview-diff-chip ${ secondCompareDiff.countDelta > 0 ? "positive" : secondCompareDiff.countDelta < 0 ? "negative" : "" }` }
                                         >
-                                          { secondCompareDiff.countDelta > 0 ? `+${ secondCompareDiff.countDelta }` : secondCompareDiff.countDelta } note{ Math.abs(secondCompareDiff.countDelta) === 1 ? "" : "s" } vs pinned
+                                          { displayedSecondCompareCountDelta > 0 ? `+${ displayedSecondCompareCountDelta }` : displayedSecondCompareCountDelta } note{ Math.abs(displayedSecondCompareCountDelta) === 1 ? "" : "s" } vs pinned
                                         </span>
                                         <span className="history-preview-diff-chip">
                                           text { secondCompareDiff.textDelta > 0 ? `+${ secondCompareDiff.textDelta }` : secondCompareDiff.textDelta } chars vs pinned

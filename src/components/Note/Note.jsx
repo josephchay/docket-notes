@@ -7,6 +7,7 @@ import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRig
 import { FaEye, FaTrash } from "react-icons/fa";
 
 import useLongPress from "../../hooks/useLongPress";
+import { playDelete, playStar } from "../../utils/sound";
 import PullString from "./PullString";
 import MoveString from "./MoveString";
 
@@ -38,6 +39,8 @@ const Note = ({
   reorderNotes,
   duplicateNote,
   openEditor,
+  onHoverStart,
+  onHoverEnd,
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteConfirmed, setDeleteConfirmed] = useState(false);
@@ -91,6 +94,7 @@ const Note = ({
 
     const timeoutId = setTimeout(() => {
       setDeleteConfirmed(true);
+      playDelete();
 
       setTimeout(() => {
         deleteNote(note.id);
@@ -162,6 +166,7 @@ const Note = ({
   const handleFavorite = () => {
     if (!note.favorite) {
       setStarBurst(true);
+      playStar();
       setTimeout(() => setStarBurst(false), 700);
     }
     updateFavorite(note.id);
@@ -494,6 +499,8 @@ const Note = ({
         }}
         onPointerMove={ handleTiltMove }
         onPointerLeave={ handleTiltLeave }
+        onMouseEnter={ () => onHoverStart?.(note.id) }
+        onMouseLeave={ () => onHoverEnd?.(note.id) }
         onClick={ handleCardClick }
         onContextMenu={ openRadialMenu }
         className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" } ${ isTyping ? "editing" : "" } ${ selectMode && selected ? "selected" : "" }` }

@@ -8,6 +8,8 @@ import { FaShuffle, FaSquareCheck, FaCheckDouble } from "react-icons/fa6";
 
 import Note from "../Note/Note";
 import QuoteCard from "../Quote/QuoteCard";
+import TagThreads from "./TagThreads";
+import NotePile from "../Pile/NotePile";
 import { NOTE_COLORS } from "../../constants/colors";
 
 import "./NoteList.css";
@@ -142,8 +144,15 @@ const NoteList = ({
   reorderNotes,
   duplicateNote,
   openEditor,
+  reduceMotion,
+  pileView,
+  togglePileView,
 }) => {
   const ref = useRef(null);
+
+  // Which note (if any) is currently hovered, for TagThreads below — the
+  // ink-capillary connections to every other visible note sharing a tag.
+  const [hoveredNoteId, setHoveredNoteId] = useState(null);
 
   const allSelected = notes.length > 0 && notes.every((note) => selectedIds?.has(note.id));
 
@@ -587,12 +596,21 @@ const NoteList = ({
       </div>
       <div
         ref={ ref }
-        className="notes"
+        className={ `notes ${ pileView ? "pile-active" : "" }` }
         onContextMenu={ openGridRadialMenu }
         onPointerDown={ handleLassoDown }
       >
         {
-          renderFirstRow && (
+          pileView && (
+            <NotePile
+              notes={ notes }
+              onOpenNote={ openEditor }
+              onExit={ togglePileView }
+            />
+          )
+        }
+        {
+          renderFirstRow && !pileView && (
             notes?.length > 0 ? (
               <AnimatePresence>
                 {
@@ -615,6 +633,8 @@ const NoteList = ({
                       reorderNotes={ reorderNotes }
                       duplicateNote={ duplicateNote }
                       openEditor={ openEditor }
+                      onHoverStart={ setHoveredNoteId }
+                      onHoverEnd={ (id) => setHoveredNoteId((current) => (current === id ? null : current)) }
                     />
                   ))
                 }
@@ -775,6 +795,12 @@ const NoteList = ({
             )
           )
         }
+        <TagThreads
+          notes={ notes }
+          hoveredId={ hoveredNoteId }
+          containerRef={ ref }
+          reduceMotion={ reduceMotion }
+        />
       </div>
       {
         createPortal(

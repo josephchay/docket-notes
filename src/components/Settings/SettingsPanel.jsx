@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FaXmark, FaMoon, FaSun, FaLock, FaLockOpen, FaFeather, FaArrowPointer } from "react-icons/fa6";
+import { FaXmark, FaMoon, FaSun, FaLock, FaLockOpen, FaFeather, FaArrowPointer, FaVolumeHigh, FaVolumeXmark } from "react-icons/fa6";
 
 import { loadSettings, saveSettings } from "../../utils/storage";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
@@ -37,6 +37,8 @@ const SettingsPanel = ({
   reduceMotion,
   toggleReduceMotion,
   systemReducedMotion,
+  soundEnabled,
+  toggleSound,
 }) => {
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
@@ -215,6 +217,34 @@ const SettingsPanel = ({
                     onChange={ toggleReduceMotion }
                     disabled={ systemReducedMotion }
                     label={ reduceMotion ? "Turn animations back on" : "Reduce motion" }
+                  />
+                </div>
+
+                <div className="settings-row">
+                  <span className="settings-row-icon">
+                    <AnimatePresence mode="wait" initial={ false }>
+                      <motion.span
+                        key={ soundEnabled ? "on" : "off" }
+                        initial={{ rotate: -140, scale: 0, opacity: 0 }}
+                        animate={{ rotate: 0, scale: 1, opacity: 1 }}
+                        exit={{ rotate: 140, scale: 0, opacity: 0, transition: { duration: .15, ease: "easeIn" } }}
+                        transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                        style={{ display: "flex" }}
+                      >
+                        { soundEnabled ? <FaVolumeHigh /> : <FaVolumeXmark /> }
+                      </motion.span>
+                    </AnimatePresence>
+                  </span>
+                  <span className="settings-row-text">
+                    <span className="settings-row-label">Sound cues</span>
+                    <span className="settings-row-description">
+                      { soundEnabled ? "Soft ink cues play on key actions" : "Silent" }
+                    </span>
+                  </span>
+                  <SettingsToggle
+                    checked={ soundEnabled }
+                    onChange={ toggleSound }
+                    label={ soundEnabled ? "Turn sound cues off" : "Turn sound cues on" }
                   />
                 </div>
 
