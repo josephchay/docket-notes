@@ -17,6 +17,43 @@
   z-index: 960;
 }
 
+/* The ink guide's own body (InkGoo.jsx) — a full-viewport WebGL canvas
+   sitting one step below .tour-layer so the card and ring it hangs off of
+   always stack above it. Mounted for the whole walk, not just individual
+   stops, so it stays invisible (alpha 0) rather than unmounted between
+   them — see the dismiss()/moveTo() wiring in TourGuide.jsx. */
+.tour-goo {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 959;
+  pointer-events: none;
+}
+
+/* The hand-drawn spotlight ring (SketchRing.jsx) circling whichever
+   control the current stop targets — sits inside .tour-layer, below the
+   card shell's own z-index: 2. */
+.tour-ring {
+  position: fixed;
+  z-index: 1;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tour-ring-line,
+.tour-ring-shadow {
+  fill: none;
+  stroke-width: 2.4px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tour-ring-shadow {
+  stroke: var(--page-ink-color);
+  opacity: .16;
+}
+
 /* The springs, travel tilt, arrival wiggle and landing jelly all live on
    this shell, so the card inside can keep its own dot-to-sheet bloom
    without the two sets of transforms fighting. */
@@ -29,40 +66,14 @@
   will-change: transform;
 }
 
-/* The control under discussion does its own talking: a looping jelly
-   wobble — squash, stretch, a little shake of the head, then a beat of
-   rest before it asks again. It animates the standalone scale/rotate
-   properties (not transform), so the browser composes it on top of
-   whatever transforms the control already wears — the + activator's
-   open rotation, framer's hover scales — and removing the class leaves
-   no trace behind. */
-.tour-poke {
-  animation: tour-poke 2.6s ease-in-out infinite;
-  will-change: scale, rotate;
-}
-
-/* Typing in the control mid-walk earns it a still hand. */
-.tour-poke:focus-within {
-  animation: none;
-  scale: 1.04;
-}
-
-@keyframes tour-poke {
-  0% { scale: 1 1; rotate: 0deg; }
-  6% { scale: 1.14 0.86; rotate: -3.5deg; }
-  13% { scale: 0.92 1.1; rotate: 3deg; }
-  20% { scale: 1.07 0.95; rotate: -2deg; }
-  27% { scale: 0.97 1.03; rotate: 1.2deg; }
-  34% { scale: 1.02 0.99; rotate: -0.5deg; }
-  42%, 100% { scale: 1 1; rotate: 0deg; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tour-poke {
-    animation: none;
-    scale: 1.05;
-  }
-}
+/* The control under discussion is no longer marked by a CSS class, or by
+   any animation applied to the control's own DOM node at all — see
+   mark()/unmark() in InkGoo.jsx, which pool a ring of liquid ink around it
+   as a second metaball field on the tour's existing WebGL canvas. Two
+   earlier versions animated the control's own `scale`/`filter`/`transform`
+   directly and each eventually fought something else on that same element
+   (first aimCamera's own zoom, later framer's whileHover/whileTap); a mark
+   that never touches the control at all has nothing left to fight. */
 
 /* The one paper card, same cloth as every panel on the desk. border-radius
    is animated by framer during the dot-to-sheet bloom, so it is
@@ -75,12 +86,37 @@
   transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
 }
 
+/* Draggable stops only (see `swipeable` in TourGuide.jsx) — the bookend
+   scenes hold centre stage on their own timers/buttons, not a direction
+   to flick toward, so they keep the plain cursor. */
+.tour-card.swipeable {
+  touch-action: pan-y;
+  cursor: grab;
+}
+
 :root[data-theme="dark"] .tour-card {
   box-shadow: 0 26px 60px -18px rgba(0, 0, 0, 0.72);
 }
 
 .tour-card-inner.centered {
   text-align: center;
+}
+
+/* A small badge echoing the real control's own icon — tinted in the
+   stop's own accent, same custom property the dots and sketch ring
+   already tint against, so it fades between stops on its own existing
+   transition instead of snapping. */
+.tour-card-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 10px;
+  border-radius: 50%;
+  background-color: var(--tour-accent);
+  color: var(--page-bg-color);
+  font-size: 15px;
+  transition: background-color .45s cubic-bezier(.3, 2.1, .45, 1);
 }
 
 .tour-card-topline {
@@ -111,18 +147,45 @@
   gap: 6px;
 }
 
+/* Now a real button — the dots double as a stepper, jumping straight to
+   any stop. Kept at the same 8x8 box as the old decorative version (the
+   sliding .tour-dot-ring below is positioned relative to this box, so
+   resizing it would throw that ring's proportions off) — a modest target,
+   but a supplementary one alongside the Back/Next buttons and the card's
+   own swipe gesture, not the only way to move. */
 .tour-dot {
+  --dot-scale: .85;
+  --dot-press: 1;
   position: relative;
   width: 8px;
   height: 8px;
+  padding: 0;
+  border: none;
+  outline: none;
   border-radius: 50%;
   background-color: transparent;
   box-shadow: inset 0 0 0 1.5px var(--tour-accent);
-  transform: scale(.85);
+  cursor: pointer;
+  transform: scale(calc(var(--dot-scale) * var(--dot-press)));
   transition:
     background-color .45s cubic-bezier(.3, 2.1, .45, 1),
     box-shadow .45s cubic-bezier(.3, 2.1, .45, 1),
-    transform .45s cubic-bezier(.3, 2.1, .45, 1);
+    transform .3s cubic-bezier(.3, 2.1, .45, 1);
+}
+
+/* A little bounce on press, riding the same --dot-press multiplier the
+   breathing/past/live states already scale against, so it composes with
+   whichever of those the pointer happens to land the click on rather than
+   overriding it. */
+.tour-dot:active {
+  --dot-press: .72;
+  transition-duration: .12s;
+}
+
+@media (hover: hover) {
+  .tour-dot:hover {
+    --dot-press: 1.3;
+  }
 }
 
 /* A ring slides between whichever dot is live — framer's layoutId doing
@@ -137,21 +200,21 @@
 }
 
 .tour-dot.past {
+  --dot-scale: .95;
   background-color: var(--tour-accent);
   box-shadow: inset 0 0 0 1.5px var(--tour-accent);
-  transform: scale(.95);
 }
 
 .tour-dot.live {
+  --dot-scale: 1;
   background-color: var(--page-ink-color);
   box-shadow: inset 0 0 0 1.5px var(--page-ink-color);
-  transform: scale(1);
   animation: tour-dot-breathe 1.15s ease-in-out infinite;
 }
 
 @keyframes tour-dot-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.3); }
+  0%, 100% { transform: scale(calc(var(--dot-scale) * var(--dot-press))); }
+  50% { transform: scale(calc(var(--dot-scale) * var(--dot-press) * 1.3)); }
 }
 
 .tour-card-title {
@@ -244,6 +307,11 @@
 .tour-next:focus-visible {
   outline: 2px solid var(--page-ink-color);
   outline-offset: 2px;
+}
+
+.tour-dot:focus-visible {
+  outline: 2px solid var(--page-ink-color);
+  outline-offset: 3px;
 }
 
 .tour-farewell-star {

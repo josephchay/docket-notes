@@ -24,6 +24,7 @@ import {
   FaTimeline,
   FaGear,
   FaLayerGroup,
+  FaCompass,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -51,7 +52,7 @@ import CommandPalette from "../components/Command/CommandPalette";
 import ThemeWipe from "../components/Theme/ThemeWipe";
 import InkCelebration from "../components/Celebration/InkCelebration";
 import ShortcutsSheet, { SHORTCUTS_EVENT } from "../components/Shortcuts/ShortcutsSheet";
-import TourGuide from "../components/Tour/TourGuide";
+import TourGuide, { TOUR_EVENT } from "../components/Tour/TourGuide";
 import ShotReplay, { REPLAY_EVENT } from "../components/Replay/ShotReplay";
 import BulkActionBar from "../components/Bulk/BulkActionBar";
 import InsightsPanel, { INSIGHTS_EVENT } from "../components/Insights/InsightsPanel";
@@ -1214,6 +1215,12 @@ const Home = () => {
       icon: <FaClapperboard />,
       perform: () => window.dispatchEvent(new CustomEvent(REPLAY_EVENT)),
     },
+    {
+      key: "tour",
+      label: "Show me around again",
+      icon: <FaCompass />,
+      perform: () => window.dispatchEvent(new CustomEvent(TOUR_EVENT)),
+    },
   ];
 
   return (
@@ -1318,9 +1325,9 @@ const Home = () => {
       </AnimatePresence>
       <CommandPalette actions={ paletteActions } />
       <ShortcutsSheet />
-      <TourGuide theme={ theme } />
+      <TourGuide theme={ theme } persistNotes={ persistNotes } />
       <ShotReplay />
-      <SprintPanel />
+      <SprintPanel reduceMotion={ reduceMotion } />
       <AnimatePresence>
         {
           !focusMode && (
@@ -1331,6 +1338,7 @@ const Home = () => {
               toggleFocusMode={ toggleFocusMode }
               theme={ theme }
               toggleTheme={ toggleTheme }
+              reduceMotion={ reduceMotion }
             />
           )
         }
@@ -1349,6 +1357,7 @@ const Home = () => {
         onRestore={ restoreNote }
         onShred={ shredNote }
         onEmpty={ emptyTrash }
+        reduceMotion={ reduceMotion }
       />
       <HistoryPanel
         timeline={ timeline }

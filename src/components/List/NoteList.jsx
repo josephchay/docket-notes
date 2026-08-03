@@ -635,6 +635,7 @@ const NoteList = ({
                       openEditor={ openEditor }
                       onHoverStart={ setHoveredNoteId }
                       onHoverEnd={ (id) => setHoveredNoteId((current) => (current === id ? null : current)) }
+                      reduceMotion={ reduceMotion }
                     />
                   ))
                 }

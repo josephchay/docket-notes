@@ -65,7 +65,7 @@ const FRAG = `
 // the vial's rounded-rect shape via the frame div's own CSS
 // (border-radius + overflow: hidden), the same way HistoryAmbient.jsx's
 // canvas is clipped by its parent rather than a shader-side mask.
-const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label }) => {
+const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduceMotion = false }) => {
   const canvasRef = useRef(null);
   const currentRef = useRef(0);
   const targetRef = useRef(ratio);
@@ -75,6 +75,8 @@ const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label }) => {
   const prevRatioRef = useRef(ratio);
   const colorRef = useRef(color);
   colorRef.current = color;
+  const reduceMotionRef = useRef(reduceMotion);
+  reduceMotionRef.current = reduceMotion;
 
   useEffect(() => {
     targetRef.current = Math.max(0, Math.min(1, ratio));
@@ -141,7 +143,11 @@ const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label }) => {
       const pulse = pulseRef.current.value;
       for (let i = 0; i < SURFACE_COUNT; i++) {
         const x = (i / (SURFACE_COUNT - 1)) * VIAL_W;
-        const y = baseY + Math.sin(t * (1.1 + i * .23) + i * 1.7) * 2.4;
+        // The idle wobble is purely decorative continuous motion, unlike
+        // the fill level itself (which tracks a real value) or the
+        // milestone pulse (a bounded, occasional flourish) — the only
+        // piece reduced motion actually needs to stop here.
+        const y = reduceMotionRef.current ? baseY : baseY + Math.sin(t * (1.1 + i * .23) + i * 1.7) * 2.4;
         uniforms.uBalls.value[i].set(x, y, SURFACE_RADIUS * pulse);
       }
 

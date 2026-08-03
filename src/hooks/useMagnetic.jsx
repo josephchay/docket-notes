@@ -7,8 +7,12 @@ import gsap from "gsap";
 // GSAP quickTo tweens on each item's own inner wrapper — kept separate from
 // whatever outer button drives its own tap bounce so the two never fight over
 // the same transform. Leaving the row springs every item back at once with a
-// shared elastic release.
-const useMagnetic = ({ range = 96, maxLift = 16, maxScale = 1.55, axis = "x" } = {}) => {
+// shared elastic release. `reduceMotion` is opt-in per caller (default off)
+// rather than read internally via matchMedia, since every current consumer
+// (Header.jsx's toolbar, QuickDock.jsx) already threads the app's own
+// reduceMotion prop down anyway — one shared source of truth instead of a
+// second, independent check.
+const useMagnetic = ({ range = 96, maxLift = 16, maxScale = 1.55, axis = "x", reduceMotion = false } = {}) => {
   const itemRefs = useRef([]);
   const quickTweens = useRef([]);
 
@@ -28,6 +32,8 @@ const useMagnetic = ({ range = 96, maxLift = 16, maxScale = 1.55, axis = "x" } =
   };
 
   const handleMove = (e) => {
+    if (reduceMotion) return;
+
     itemRefs.current.forEach((el, index) => {
       if (!el) return;
 

@@ -8,6 +8,16 @@ const GRAVITY = 1.15;
 const SETTLE_HOLD_MS = 1200;  // how long a piece lingers, settled, before it starts fading
 const FADE_MS = 420;
 const MAX_BODIES = 70;        // trims the oldest once a big "empty trash" burst piles up
+const REDUCED_FADE_MS = 550;  // reduced-motion fallback: no fall, just a fade in place
+
+// Jelly squash-and-stretch on impact — the same spring-driven scalar
+// NotePile.jsx's pile physics uses, reused here at a lighter touch since
+// these chips are much smaller and can spawn many at once during "empty
+// trash." Kicked by real collisions (the floor, a wall, another chip),
+// scaled by how fast the chip was actually moving.
+const SQUASH_STIFFNESS = 240;
+const SQUASH_DAMPING = 13;
+const MIN_IMPACT_SPEED = 2;
 
 // A single shared Matter.js world, portaled to document.body so it always
 // draws above the Trash panel regardless of any transform the panel or its
@@ -20,15 +30,32 @@ const MAX_BODIES = 70;        // trims the oldest once a big "empty trash" burst
 // transform is written directly to style each tick (no React re-render per
 // physics step) — the same imperative-driver pattern QuickDock's magnetic
 // quickTo tweens and InkGoo's per-frame uniforms already use elsewhere.
-const TrashPhysics = forwardRef((_props, ref) => {
+const TrashPhysics = forwardRef(({ reduceMotion }, ref) => {
   const layerRef = useRef(null);
   const engineRef = useRef(null);
-  const bodiesRef = useRef([]);   // { body, el, bornAt }
+  const bodiesRef = useRef([]);   // { body, el, bornAt, squash, squashVel }
   const wallsRef = useRef(null);  // { floor, left, right }
 
   useEffect(() => {
     const engine = Matter.Engine.create({ gravity: { x: 0, y: GRAVITY } });
     engineRef.current = engine;
+
+    // Every real landing — the floor, a wall, another chip — kicks that
+    // chip's own squash spring, scaled by how fast it was actually moving.
+    const handleCollisionStart = (e) => {
+      for (const pair of e.pairs) {
+        for (const candidate of [pair.bodyA, pair.bodyB]) {
+          const piece = bodiesRef.current.find((p) => p.body === candidate);
+          if (!piece) continue;
+
+          const speed = Math.hypot(candidate.velocity.x, candidate.velocity.y);
+          if (speed < MIN_IMPACT_SPEED) continue;
+
+          piece.squashVel += Math.min(1, speed / 12) * 1.5;
+        }
+      }
+    };
+    Matter.Events.on(engine, "collisionStart", handleCollisionStart);
 
     let raf = requestAnimationFrame(tick);
 
@@ -38,6 +65,7 @@ const TrashPhysics = forwardRef((_props, ref) => {
 
       const now = performance.now();
       const survivors = [];
+      const dt = 1 / 60;
 
       for (const piece of bodiesRef.current) {
         const { body, el, bornAt } = piece;
@@ -49,8 +77,17 @@ const TrashPhysics = forwardRef((_props, ref) => {
           continue;
         }
 
+        // A critically-underdamped spring pulling squash back toward 0 —
+        // the brief overshoot past zero is what reads as jelly rather than
+        // a flat snap back to shape.
+        piece.squashVel += (-SQUASH_STIFFNESS * piece.squash - SQUASH_DAMPING * piece.squashVel) * dt;
+        piece.squash += piece.squashVel * dt;
+        const squash = Math.max(-.7, Math.min(1, piece.squash));
+        const scaleY = 1 - squash * .5;
+        const scaleX = 1 + squash * .35;
+
         el.style.transform =
-          `translate(${ body.position.x }px, ${ body.position.y }px) translate(-50%, -50%) rotate(${ body.angle }rad)`;
+          `translate(${ body.position.x }px, ${ body.position.y }px) translate(-50%, -50%) rotate(${ body.angle }rad) scale(${ scaleX }, ${ scaleY })`;
 
         if (age > SETTLE_HOLD_MS) {
           el.style.opacity = String(Math.max(0, 1 - (age - SETTLE_HOLD_MS) / FADE_MS));
@@ -64,6 +101,7 @@ const TrashPhysics = forwardRef((_props, ref) => {
 
     return () => {
       cancelAnimationFrame(raf);
+      Matter.Events.off(engine, "collisionStart", handleCollisionStart);
       Matter.World.clear(engine.world, false);
       Matter.Engine.clear(engine);
       bodiesRef.current.forEach(({ el }) => el.remove());
@@ -118,10 +156,28 @@ const TrashPhysics = forwardRef((_props, ref) => {
       const layer = layerRef.current;
       if (!engine || !layer) return;
 
-      if (panelRect) ensureWalls(panelRect);
-
       const w = Math.max(14, Math.min(width, 40));
       const h = Math.max(14, Math.min(height, 40));
+
+      const el = document.createElement("span");
+      el.className = `trash-physics-chip ${ color }-bg`;
+      el.style.width = `${ w }px`;
+      el.style.height = `${ h }px`;
+      layer.appendChild(el);
+
+      if (reduceMotion) {
+        // No gravity/pile simulation — just a soft fade right where it was
+        // shredded from, still confirming the action without the
+        // sustained falling/tumbling motion that's the whole point of
+        // this layer otherwise.
+        el.style.transform = `translate(${ x }px, ${ y }px) translate(-50%, -50%)`;
+        el.style.transition = `opacity ${ REDUCED_FADE_MS }ms ease-in`;
+        requestAnimationFrame(() => { el.style.opacity = "0"; });
+        setTimeout(() => el.remove(), REDUCED_FADE_MS + 50);
+        return;
+      }
+
+      if (panelRect) ensureWalls(panelRect);
 
       const body = Matter.Bodies.rectangle(x, y, w, h, {
         restitution: .5,
@@ -133,13 +189,7 @@ const TrashPhysics = forwardRef((_props, ref) => {
       Matter.Body.setVelocity(body, { x: (Math.random() - .5) * 2.4, y: 0 });
       Matter.World.add(engine.world, body);
 
-      const el = document.createElement("span");
-      el.className = `trash-physics-chip ${ color }-bg`;
-      el.style.width = `${ w }px`;
-      el.style.height = `${ h }px`;
-      layer.appendChild(el);
-
-      bodiesRef.current.push({ body, el, bornAt: performance.now() });
+      bodiesRef.current.push({ body, el, bornAt: performance.now(), squash: 0, squashVel: 0 });
 
       if (bodiesRef.current.length > MAX_BODIES) {
         const oldest = bodiesRef.current.shift();
@@ -147,7 +197,7 @@ const TrashPhysics = forwardRef((_props, ref) => {
         oldest.el.remove();
       }
     },
-  }), []);
+  }), [reduceMotion]);
 
   return createPortal(
     <div ref={ layerRef } className="trash-physics-layer" aria-hidden="true" />,

@@ -11,19 +11,50 @@ import {
 import { interpret } from "xstate";
 import anime from "animejs";
 import gsap from "gsap";
-import { FaArrowLeft, FaArrowRight } from "react-icons/fa6";
+import {
+  FaArrowLeft,
+  FaArrowRight,
+  FaArrowUpWideShort,
+  FaChartLine,
+  FaChartSimple,
+  FaClockRotateLeft,
+  FaDroplet,
+  FaExpand,
+  FaGear,
+  FaGrip,
+  FaLayerGroup,
+  FaLock,
+  FaLockOpen,
+  FaMagnifyingGlass,
+  FaMoon,
+  FaSquareCheck,
+  FaStar,
+  FaSun,
+  FaWandMagicSparkles,
+} from "react-icons/fa6";
 
 import { tourMachine } from "./TourState";
 import { hasSeenTour, markTourSeen } from "../../utils/storage";
+import { REPLAY_DONE_EVENT } from "../Replay/ShotReplay";
+import { resolveCssColor } from "../History/HistoryAmbient";
+import { playMilestone, playSpawn, playTick } from "../../utils/sound";
+import InkGoo from "./InkGoo";
+import SketchRing from "./SketchRing";
 
 import "./TourGuide.css";
+
+// Fired to walk the desk again on demand, regardless of hasSeenTour() —
+// the command palette's own "Show me around again" entry uses this
+// directly; "Replay the original shot" reaches the same place indirectly,
+// via REPLAY_DONE_EVENT below, once the cinematic actually finishes.
+export const TOUR_EVENT = "docket:tour";
 
 // The walk's script: what each stop points at, what the card says there,
 // and which of the desk's own inks tints that stop's halo and details.
 const SCRIPT = {
   greeting: {
     title: "Welcome to the desk",
-    body: "This desk has a few tricks folded into it. Give it a minute and it'll walk you past the three worth knowing.",
+    body: "This desk has a few tricks folded into it. Give it a minute and it'll walk you past the ones worth knowing.",
     accent: "var(--yellow-color)",
     width: 340,
   },
@@ -32,6 +63,15 @@ const SCRIPT = {
     title: "Pour a note",
     body: "Tap any ink pot here — or just press N — to drop a fresh note onto the desk.",
     accent: "var(--orange-color)",
+    icon: FaDroplet,
+    width: 312,
+  },
+  ink: {
+    selector: ".ink-levels .ink-button",
+    title: "How much ink you've used",
+    body: "A little vial and a bar for every color — tap here to see the whole desk's ink levels at a glance.",
+    accent: "var(--purple-color)",
+    icon: FaChartSimple,
     width: 312,
   },
   search: {
@@ -39,6 +79,71 @@ const SCRIPT = {
     title: "Find anything",
     body: "Search titles and text as you type, or press / to jump straight here.",
     accent: "var(--blue-color)",
+    icon: FaMagnifyingGlass,
+    width: 312,
+  },
+  star: {
+    selector: ".header .search .star",
+    title: "Star the ones that matter",
+    body: "Tap the star on any note to keep it close, then tap this one to see only your starred notes.",
+    accent: "var(--yellow-color)",
+    icon: FaStar,
+    width: 312,
+  },
+  pile: {
+    selector: ".header .pile-toggle",
+    title: "Toss it all in a pile",
+    body: "Tired of the grid? This tosses every note into a real physics pile you can drag your hand through — tap it again to pour the grid back.",
+    accent: "var(--red-color)",
+    icon: FaLayerGroup,
+    width: 320,
+  },
+  sort: {
+    selector: ".sort-modes",
+    title: "Sort it your way",
+    body: "Freshest first, grouped by ink, or starred to the front — three ways to read the same desk.",
+    accent: "var(--green-color)",
+    icon: FaArrowUpWideShort,
+    width: 312,
+  },
+  select: {
+    selector: ".select-toggle",
+    title: "Grab a handful",
+    body: "Check off a few notes to star, recolor, export, or delete the whole batch in one go.",
+    accent: "var(--purple-color)",
+    icon: FaSquareCheck,
+    width: 312,
+  },
+  dock: {
+    selector: ".quick-dock",
+    title: "The quick dock",
+    body: "A floating tray for whatever you reach for most — a fresh note, a shuffle, focus mode, a sprint — parked wherever your hand already is.",
+    accent: "var(--gray-color)",
+    icon: FaGrip,
+    width: 320,
+  },
+  focus: {
+    selector: ".header .focus-trigger",
+    title: "Zero in",
+    body: "Focus mode clears away everything but the grid itself — press F, or tap here, whenever the chrome gets in the way.",
+    accent: "var(--green-color)",
+    icon: FaExpand,
+    width: 312,
+  },
+  insights: {
+    selector: ".header .insights-trigger",
+    title: "See the shape of it",
+    body: "A quick read on the whole desk — how many notes, which colors you reach for most, how long you've been at it.",
+    accent: "var(--pink-color)",
+    icon: FaChartLine,
+    width: 312,
+  },
+  history: {
+    selector: ".header .history-trigger",
+    title: "Every edit, kept",
+    body: "Scrub back through everything you've done — undo, redo, or jump straight to any moment on the timeline.",
+    accent: "var(--orange-color)",
+    icon: FaClockRotateLeft,
     width: 312,
   },
   theme: {
@@ -46,7 +151,47 @@ const SCRIPT = {
     title: "Flip the page",
     body: "Switch between fresh paper and the Ink theme whenever the light changes.",
     accent: "var(--purple-color)",
+    // No static icon — this one flips between sun/moon with the theme
+    // itself, resolved in CardContent the same way Header.jsx's own
+    // toolbar icon is.
     width: 312,
+  },
+  persist: {
+    selector: ".header .persist",
+    title: "Remember, or forget",
+    body: "Notes clear when you close this tab by default — lock this to keep them waiting for you next time.",
+    accent: "var(--gray-color)",
+    // Also flips its own icon live — locked or open — same pattern as theme.
+    width: 312,
+  },
+  settings: {
+    selector: ".header .settings-trigger",
+    title: "Tune the desk",
+    body: "Sound, motion, and the notebook's other quiet preferences all live behind this gear.",
+    accent: "var(--red-color)",
+    icon: FaGear,
+    width: 312,
+  },
+  // The one stop that stands in for everything else this walk doesn't have
+  // room for — trash, sprints, replay, all of it lives behind this single
+  // wand rather than needing its own separate stop apiece.
+  command: {
+    selector: ".header .command-trigger",
+    title: "Find anything else",
+    body: "Ctrl+K (or this wand) opens a command palette for everything the desk can do — trash, focus sprints, replaying the intro, all of it.",
+    accent: "var(--green-color)",
+    icon: FaWandMagicSparkles,
+    width: 320,
+  },
+  // No selector — like the bookends, this one holds centre stage. Unlike
+  // them it's still a numbered stop in the walk (it belongs in WALK, just
+  // without a control to point at), since it's teaching something real
+  // rather than framing the walk itself.
+  shortcuts: {
+    title: "Or just press ?",
+    body: "A full cheat sheet of every shortcut this desk answers to, one keystroke away whenever you forget.",
+    accent: "var(--blue-color)",
+    width: 300,
   },
   farewell: {
     title: "The desk is yours",
@@ -56,7 +201,7 @@ const SCRIPT = {
   },
 };
 
-const WALK = ["activator", "search", "theme"];
+const WALK = ["activator", "ink", "search", "star", "pile", "sort", "select", "dock", "focus", "insights", "history", "theme", "persist", "settings", "command", "shortcuts"];
 
 const clamp = (value, lo, hi) => Math.min(Math.max(value, lo), hi);
 
@@ -79,7 +224,7 @@ const Chars = ({ text }) => (
 // One stop's worth of card. Its own component so AnimatePresence mounts a
 // fresh instance per stop and the character stagger runs exactly when the
 // new content lands, not while the old is still leaving.
-const CardContent = ({ step, config, walkIndex, reduced, send }) => {
+const CardContent = ({ step, config, walkIndex, reduced, send, onJump, theme, persistNotes }) => {
   const rootRef = useRef(null);
 
   useEffect(() => {
@@ -105,8 +250,31 @@ const CardContent = ({ step, config, walkIndex, reduced, send }) => {
   const isGreeting = step === "greeting";
   const isFarewell = step === "farewell";
 
+  // Every real stop echoes the actual control it's discussing with a small
+  // badge of that control's own icon. Two exceptions flip live instead of
+  // holding still, each mirroring its real button's own logic exactly:
+  // theme shows the destination icon (what tapping it switches TO, same as
+  // Header.jsx's toolbar button), while persist shows the current-state
+  // icon (locked while remembering, open while not — Header.jsx's own
+  // persist button reads the same way, not a destination).
+  const StopIcon = step === "theme" ? (theme === "dark" ? FaSun : FaMoon)
+    : step === "persist" ? (persistNotes ? FaLock : FaLockOpen)
+    : config.icon;
+
   return (
     <div ref={ rootRef } className={ `tour-card-inner ${ isFarewell ? "centered" : "" }` }>
+      {
+        StopIcon && (
+          <motion.span
+            className="tour-card-icon"
+            initial={{ scale: 0, rotate: -60, opacity: 0 }}
+            animate={{ scale: 1, rotate: 0, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 320, damping: 11, delay: .05 }}
+          >
+            <StopIcon />
+          </motion.span>
+        )
+      }
       <div className="tour-card-topline">
         <span className="tour-card-eyebrow">
           {
@@ -120,9 +288,14 @@ const CardContent = ({ step, config, walkIndex, reduced, send }) => {
             <span className="tour-dots">
               {
                 WALK.map((name, index) => (
-                  <i
+                  <button
                     key={ name }
+                    type="button"
                     className={ `tour-dot ${ index < walkIndex ? "past" : "" } ${ index === walkIndex ? "live" : "" }` }
+                    aria-label={ `Jump to ${ SCRIPT[name]?.title || name }` }
+                    aria-current={ index === walkIndex ? "step" : undefined }
+                    onPointerDown={ (e) => e.stopPropagation() }
+                    onClick={ () => onJump(index) }
                   >
                     {
                       !reduced && index === walkIndex && (
@@ -133,7 +306,7 @@ const CardContent = ({ step, config, walkIndex, reduced, send }) => {
                         />
                       )
                     }
-                  </i>
+                  </button>
                 ))
               }
             </span>
@@ -174,6 +347,7 @@ const CardContent = ({ step, config, walkIndex, reduced, send }) => {
               whileHover={{ opacity: .8 }}
               whileTap={{ scale: .94 }}
               transition={{ type: "spring", stiffness: 700, damping: 35 }}
+              onPointerDown={ (e) => e.stopPropagation() }
               onClick={ () => send("SKIP") }
             >
               { isGreeting ? "I'll wander" : "Skip" }
@@ -190,6 +364,7 @@ const CardContent = ({ step, config, walkIndex, reduced, send }) => {
                     whileHover={{ scale: 1.12 }}
                     whileTap={{ scale: .86 }}
                     transition={{ type: "spring", stiffness: 420, damping: 13 }}
+                    onPointerDown={ (e) => e.stopPropagation() }
                     onClick={ () => send("BACK") }
                   >
                     <FaArrowLeft />
@@ -202,9 +377,10 @@ const CardContent = ({ step, config, walkIndex, reduced, send }) => {
                 whileHover={{ scale: 1.08, rotate: -1.5 }}
                 whileTap={{ scale: .9 }}
                 transition={{ type: "spring", stiffness: 420, damping: 12 }}
+                onPointerDown={ (e) => e.stopPropagation() }
                 onClick={ () => send("NEXT") }
               >
-                { isGreeting ? "Show me around" : step === "theme" ? "Got it" : "Next" }
+                { isGreeting ? "Show me around" : step === "shortcuts" ? "Got it" : "Next" }
                 <FaArrowRight className="tour-next-icon" />
               </motion.button>
             </div>
@@ -217,21 +393,25 @@ const CardContent = ({ step, config, walkIndex, reduced, send }) => {
 
 // The first-run walk of the desk, without its old spotlight — nothing is
 // dimmed, nothing is blocked, and nothing is painted over the target.
-// The control under discussion answers for itself: it gets the .tour-poke
-// class and does a looping jelly wobble in place, while the one paper
-// card blooms up out of a drop the same dot-to-sheet way the command
-// palette and every other panel does, then rides loose springs from stop
-// to stop — wobbling upright and jelly-squashing on landing exactly the
-// way a freshly poured note does. At each stop the control itself leans
-// in: gsap grows just that element, in place around its own center, with
-// a bouncy overshoot — never the page around it — and eases back down the
+// The control under discussion answers for itself: InkGoo's own mark()
+// pools a ring of liquid ink around it in the stop's own accent (see
+// InkGoo.jsx) — a second metaball field entirely decoupled from the
+// control's own DOM transform, so it never has anything to fight aimCamera
+// over — while the one paper card blooms up out of a drop the same
+// dot-to-sheet way the command palette and every other panel does, then
+// rides loose springs from stop to stop — wobbling
+// upright and jelly-squashing on landing exactly the way a freshly poured
+// note does. At each stop the control itself leans in too: gsap grows
+// just that element, in place around its own center, with a bouncy
+// overshoot — never the page around it — and eases back down the
 // moment the walk moves to a different one (or to a bookend scene, which
 // has nothing to zoom into). The walk itself is still one xstate machine
 // (TourState.js); this component just measures the desk and points.
-const TourGuide = () => {
+const TourGuide = ({ theme, persistNotes }) => {
   const [service] = useState(() => interpret(tourMachine));
   const [step, setStep] = useState("closed");
   const [reduced] = useState(prefersReducedMotion);
+  const [ringRect, setRingRect] = useState(null);
 
   // The card hangs from deliberately under-damped springs, so every hop
   // between stops overshoots and settles with a visible bounce. Tilt is
@@ -248,12 +428,79 @@ const TourGuide = () => {
   const jellyX = useMotionValue(1);
   const jellyY = useMotionValue(1);
 
+  // The card is also a swipeable deck — flick it left or right (mouse or
+  // touch, framer's drag gesture answers both) to pace the walk the same
+  // way the arrow buttons and arrow keys already do, riding the same
+  // elastic-fling-then-spring-back recipe as UndoToast.jsx's swipe-to-
+  // dismiss. dragX is a separate motion value laid on top of the shell's
+  // own spring position, not a replacement for it.
+  const dragX = useMotionValue(0);
+  const dragRotate = useTransform(dragX, [-160, 0, 160], [-9, 0, 9]);
+
   const primedRef = useRef(false);
   const cameraRef = useRef(null);
   const zoomedElRef = useRef(null); // whichever control the camera is currently (or was last) leaning into
-  const pokeRef = useRef(null);
+  const gooRef = useRef(null);
+  const cardRef = useRef(null);
+  const wasOpenRef = useRef(false);
+  const dragResetRef = useRef(null);
 
   const send = useCallback((event) => service.send(event), [service]);
+
+  useEffect(() => () => clearTimeout(dragResetRef.current), []);
+
+  // A swipe past the threshold flings the card off in that direction and
+  // paces the walk exactly as the matching button would; short of that,
+  // it springs back to rest. The card itself never unmounts between stops
+  // (only its inner content crossfades), so — unlike UndoToast, where the
+  // dismissed card is simply gone — the fling has to be reset back to 0 by
+  // hand once the new stop's content has had a beat to swap in.
+  const handleCardDragEnd = useCallback((_e, info) => {
+    const goingBack = info.offset.x > 0;
+    const past = Math.abs(info.offset.x) > 90 || Math.abs(info.velocity.x) > 650;
+    const blocked = !past || (goingBack && WALK.indexOf(step) <= 0);
+
+    clearTimeout(dragResetRef.current);
+
+    if (blocked) {
+      animate(dragX, 0, { type: "spring", stiffness: 420, damping: 26 });
+      return;
+    }
+
+    animate(dragX, goingBack ? 320 : -320, { duration: .2, ease: "easeIn" });
+    send(goingBack ? "BACK" : "NEXT");
+    // A bouncy boomerang back to center, timed to land right as the new
+    // stop's content is settling in underneath — not an instant snap.
+    dragResetRef.current = setTimeout(() => {
+      animate(dragX, 0, { type: "spring", stiffness: 260, damping: 22 });
+    }, 160);
+  }, [step, send, dragX]);
+
+  // The progress dots double as a stepper: jump straight to any stop,
+  // forward or back. The machine only knows NEXT/BACK, not "go to index N"
+  // — so a jump is just however many of those fired in a row, synchronously,
+  // which xstate and React both collapse into a single landing (only the
+  // final step's arrival effect ever runs, same as any other transition).
+  const jumpTo = useCallback((targetIndex) => {
+    const currentIndex = WALK.indexOf(step);
+    if (currentIndex < 0 || targetIndex === currentIndex) return;
+
+    const event = targetIndex > currentIndex ? "NEXT" : "BACK";
+    const hops = Math.abs(targetIndex - currentIndex);
+    for (let i = 0; i < hops; i++) service.send(event);
+  }, [step, service]);
+
+  // The live top-center of the rendered card, read fresh every frame by
+  // InkGoo's own RAF loop (see cardTip in InkGoo.jsx) — getBoundingClientRect
+  // already folds in the card's spring position, scale and jelly squash, so
+  // the creature's stem always reaches exactly where the card currently is
+  // rather than where it was aimed.
+  const cardTip = useCallback(() => {
+    const el = cardRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top };
+  }, []);
 
   useEffect(() => {
     service
@@ -269,6 +516,37 @@ const TourGuide = () => {
 
     const timer = setTimeout(() => service.send("START"), 1600);
     return () => clearTimeout(timer);
+  }, [service]);
+
+  // A manual replay — either directly (TOUR_EVENT) or chained on right
+  // after the origin-story cinematic finishes (REPLAY_DONE_EVENT, see
+  // ShotReplay.jsx) — sends START regardless of hasSeenTour(); TourState.js
+  // gives "done" its own way back to "greeting" specifically for this.
+  // The short delay after a chained start lets the cinematic's own camera
+  // actually finish settling (ShotReplay's cleanup eases it back over
+  // .45s) before the guide's card blooms in over it.
+  useEffect(() => {
+    let chainTimer = null;
+    // A replay's first "greeting" seat should jump straight to center, the
+    // same clean landing the very first walk gets — not spring-slide in
+    // from wherever the card happened to be sitting (still near the last
+    // stop of a PREVIOUS walk) the moment this one starts.
+    const startNow = () => {
+      primedRef.current = false;
+      service.send("START");
+    };
+    const startAfterReplay = () => {
+      clearTimeout(chainTimer);
+      chainTimer = setTimeout(startNow, 700);
+    };
+
+    window.addEventListener(TOUR_EVENT, startNow);
+    window.addEventListener(REPLAY_DONE_EVENT, startAfterReplay);
+    return () => {
+      clearTimeout(chainTimer);
+      window.removeEventListener(TOUR_EVENT, startNow);
+      window.removeEventListener(REPLAY_DONE_EVENT, startAfterReplay);
+    };
   }, [service]);
 
   useEffect(() => {
@@ -306,6 +584,18 @@ const TourGuide = () => {
   }, [open, releaseCamera]);
 
   useEffect(() => () => releaseCamera(true), [releaseCamera]);
+
+  // The ink guide bows out the moment the walk actually closes (SKIP, or
+  // the farewell timing out to "done") — not on every stop-to-stop hop,
+  // which only ever nudges or re-splats it. InkGoo is mounted for the
+  // component's whole lifetime (see the render below) so its own soak-away
+  // has time to finish without the canvas disappearing mid-animation.
+  useEffect(() => {
+    if (!reduced && !open && wasOpenRef.current) {
+      gooRef.current?.dismiss();
+    }
+    wasOpenRef.current = open;
+  }, [open, reduced]);
 
   // Measure the current stop and seat everything: the card under the
   // target, the camera leaning in over it. Re-measured on resize/scroll —
@@ -357,6 +647,58 @@ const TourGuide = () => {
         springX.set(left);
         springY.set(top);
       }
+
+      // The sketch ring only has a target for stops with a real selector;
+      // greeting/farewell hold centre stage with no control to circle.
+      setRingRect(focus ? { cx: focus.cx, cy: focus.cy, width: focus.width, height: focus.height } : null);
+
+      // A light sound arc across the whole walk, reusing existing cues
+      // rather than composing new ones: the opening beat reads as the same
+      // "something new arriving" moment a poured note gets, each stop in
+      // between gets the small repeatable tick already used for fiddly,
+      // non-desk-changing UI steps, and the close gets the one genuinely
+      // celebratory chime in the palette. Independent of reduced motion —
+      // this is gated by the sound setting itself (play() in sound.js),
+      // not by the animation preference.
+      if (travel) {
+        if (step === "farewell") playMilestone();
+        else if (step === "greeting") playSpawn();
+        else playTick();
+      }
+
+      if (!reduced) {
+        // The creature's own perch: nestled just under the control (between
+        // it and the card) for a targeted stop, or just above the card
+        // itself for the bookend scenes — either way close enough that its
+        // two stem drops always have a short, natural reach up to the
+        // card's live top edge. A fresh arrival (travel) earns the full
+        // splat-and-retint landing; an ambient reposition (resize, scroll,
+        // mid-zoom re-measure) just nudges the perch without replaying it.
+        const anchor = focus
+          ? { x: focus.cx, y: focus.bottom + 14 }
+          : { x: vw / 2, y: top - 34 };
+
+        if (travel) {
+          // InkGoo hands the accent straight to THREE.Color, which has no
+          // idea what to do with a raw "var(--x)" string — resolve it to
+          // the computed color first, the same way HistoryAmbient/
+          // LiquidMeter already do for every other WebGL retint in the app.
+          gooRef.current?.moveTo({ x: anchor.x, y: anchor.y, accent: resolveCssColor(config.accent), stem: true });
+        } else {
+          gooRef.current?.nudge(anchor);
+        }
+
+        // The discussed control's own mark: a ring of liquid ink pooling
+        // just outside it, rendered by the same WebGL canvas (see mark()/
+        // unmark() in InkGoo.jsx). Called on every seat(), not just travel,
+        // so it keeps pace with aimCamera's own live-growing rect during
+        // the zoom — a bookend scene (no focus) has nothing to mark.
+        if (focus) {
+          gooRef.current?.mark({ rect: focus, accent: resolveCssColor(config.accent) });
+        } else {
+          gooRef.current?.unmark();
+        }
+      }
     };
 
     // The camera: lean this stop's own control in toward the viewer with a
@@ -398,19 +740,6 @@ const TourGuide = () => {
 
     seat(true);
 
-    // The item under discussion does its own talking: the .tour-poke class
-    // loops a jelly wobble on the real control. It animates the standalone
-    // scale/rotate properties rather than transform, so the browser
-    // composes it with whatever transforms the control already wears, and
-    // taking the class off leaves no trace behind.
-    if (config.selector) {
-      const target = document.querySelector(config.selector);
-      if (target) {
-        target.classList.add("tour-poke");
-        pokeRef.current = target;
-      }
-    }
-
     if (!reduced) {
       aimCamera();
 
@@ -441,8 +770,6 @@ const TourGuide = () => {
     window.addEventListener("resize", replace);
     scroller?.addEventListener("scroll", replace, { passive: true });
     return () => {
-      pokeRef.current?.classList.remove("tour-poke");
-      pokeRef.current = null;
       window.removeEventListener("resize", replace);
       scroller?.removeEventListener("scroll", replace);
     };
@@ -475,71 +802,106 @@ const TourGuide = () => {
 
   const config = SCRIPT[step];
   const walkIndex = WALK.indexOf(step);
+  // The bookends hold centre stage on their own timers/buttons rather than
+  // a direction to flick toward — greeting has nothing behind it to swipe
+  // back to, farewell is already on its way out.
+  const swipeable = walkIndex >= 0;
 
   return (
-    <AnimatePresence>
+    <>
       {
-        open && (
-          <motion.div
-            className="tour-layer"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, transition: { duration: .25, ease: "easeIn" } }}
-          >
-            {
-              config && (
-                <motion.div
-                  className="tour-card-shell"
-                  style={{
-                    x: springX,
-                    y: springY,
-                    rotate,
-                    scaleX: jellyX,
-                    scaleY: jellyY,
-                    originY: 0,
-                  }}
-                >
+        // The guide's own body: a WebGL ink creature that perches beside
+        // whatever the walk is pointing at and hangs the card off itself
+        // by a gooey stem (see InkGoo.jsx). Mounted for the component's
+        // whole lifetime, not just while open — it drives its own
+        // visibility (born/soak-away) through moveTo/dismiss, and staying
+        // mounted is what lets the soak-away actually finish instead of
+        // being cut off by the card layer unmounting under it. Skipped
+        // entirely under reduced motion, the same fallback CursorAura uses
+        // for its own always-on WebGL layer.
+        !reduced && <InkGoo ref={ gooRef } theme={ theme } cardTip={ cardTip } />
+      }
+      <AnimatePresence>
+        {
+          open && (
+            <motion.div
+              className="tour-layer"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: .25, ease: "easeIn" } }}
+            >
+              {
+                // The hand-drawn spotlight: a sketchy ring circling whichever
+                // control the current stop targets. Nothing to circle at the
+                // bookend scenes, so ringRect stays null there.
+                ringRect && (
+                  <AnimatePresence mode="wait">
+                    <SketchRing key={ step } rect={ ringRect } accent={ config?.accent } reduced={ reduced } />
+                  </AnimatePresence>
+                )
+              }
+              {
+                config && (
                   <motion.div
-                    className="tour-card"
-                    role="dialog"
-                    aria-live="polite"
-                    aria-label={ config.title }
-                    style={{ originY: 0, "--tour-accent": config.accent }}
-                    initial={{ opacity: 0, scale: .2, borderRadius: 44 }}
-                    animate={{ opacity: 1, scale: 1, borderRadius: 16, width: config.width }}
-                    exit={{ opacity: 0, scale: .3, borderRadius: 44, transition: { duration: .16, ease: "easeIn" } }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 230,
-                      damping: 12,
-                      width: { type: "spring", stiffness: 170, damping: 14 },
+                    className="tour-card-shell"
+                    style={{
+                      x: springX,
+                      y: springY,
+                      rotate,
+                      scaleX: jellyX,
+                      scaleY: jellyY,
+                      originY: 0,
                     }}
                   >
-                    <AnimatePresence mode="wait" initial={ false }>
-                      <motion.div
-                        key={ step }
-                        initial={{ opacity: 0, y: 16, scale: .88 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -8, scale: .96, transition: { duration: .13, ease: "easeIn" } }}
-                        transition={{ type: "spring", stiffness: 480, damping: 14 }}
-                      >
-                        <CardContent
-                          step={ step }
-                          config={ config }
-                          walkIndex={ walkIndex }
-                          reduced={ reduced }
-                          send={ send }
-                        />
-                      </motion.div>
-                    </AnimatePresence>
+                    <motion.div
+                      ref={ cardRef }
+                      className={ `tour-card ${ swipeable ? "swipeable" : "" }` }
+                      role="dialog"
+                      aria-live="polite"
+                      aria-label={ config.title }
+                      style={{ originY: 0, "--tour-accent": config.accent, x: dragX, rotate: dragRotate }}
+                      initial={{ opacity: 0, scale: .2, borderRadius: 44 }}
+                      animate={{ opacity: 1, scale: 1, borderRadius: 16, width: config.width }}
+                      exit={{ opacity: 0, scale: .3, borderRadius: 44, transition: { duration: .16, ease: "easeIn" } }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 230,
+                        damping: 12,
+                        width: { type: "spring", stiffness: 170, damping: 14 },
+                      }}
+                      drag={ swipeable ? "x" : false }
+                      whileDrag={{ scale: 1.02, cursor: "grabbing" }}
+                      onDragEnd={ handleCardDragEnd }
+                    >
+                      <AnimatePresence mode="wait" initial={ false }>
+                        <motion.div
+                          key={ step }
+                          initial={{ opacity: 0, y: 16, scale: .88 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -8, scale: .96, transition: { duration: .13, ease: "easeIn" } }}
+                          transition={{ type: "spring", stiffness: 480, damping: 14 }}
+                        >
+                          <CardContent
+                            step={ step }
+                            config={ config }
+                            walkIndex={ walkIndex }
+                            reduced={ reduced }
+                            send={ send }
+                            onJump={ jumpTo }
+                            theme={ theme }
+                            persistNotes={ persistNotes }
+                          />
+                        </motion.div>
+                      </AnimatePresence>
+                    </motion.div>
                   </motion.div>
-                </motion.div>
-              )
-            }
-          </motion.div>
-        )
-      }
-    </AnimatePresence>
+                )
+              }
+            </motion.div>
+          )
+        }
+      </AnimatePresence>
+    </>
   );
 };
 

@@ -10,6 +10,12 @@ import "./ShotReplay.css";
 // Fired (by the command palette, or anyone) to start the show.
 export const REPLAY_EVENT = "docket:replay-shot";
 
+// Fired once the show has genuinely run its course — reaching "bow" on its
+// own timers, not cut short by Escape — so anything wanting to chain off
+// the end of the origin story (see TOUR_EVENT in TourGuide.jsx, which
+// follows this with a fresh walk of the desk) has something to listen for.
+export const REPLAY_DONE_EVENT = "docket:replay-shot-done";
+
 // What the newborn note says in the original film.
 const NOTE_LINE = "This is a Docket note.";
 
@@ -51,6 +57,15 @@ const ShotReplay = () => {
   const timeoutsRef = useRef([]);
   const typerRef = useRef(null);
 
+  // Tracks whether this run actually got going (set in "curtain") and
+  // whether it was cut short by Escape (set in the keydown handler below)
+  // — together, what tells the "idle" case whether to fire
+  // REPLAY_DONE_EVENT. A show that never really started (mount's own
+  // initial "idle") or one the visitor deliberately walked out of
+  // shouldn't drag the tutorial along behind it.
+  const hasPlayedRef = useRef(false);
+  const stoppedManuallyRef = useRef(false);
+
   useEffect(() => {
     service
       .onTransition((state) => setPhase(String(state.value)))
@@ -72,7 +87,10 @@ const ShotReplay = () => {
     if (phase === "idle") return;
 
     const handleKey = (e) => {
-      if (e.key === "Escape") service.send("STOP");
+      if (e.key === "Escape") {
+        stoppedManuallyRef.current = true;
+        service.send("STOP");
+      }
     };
 
     window.addEventListener("keydown", handleKey);
@@ -164,6 +182,7 @@ const ShotReplay = () => {
     switch (phase) {
       case "curtain": {
         runTokenRef.current += 1;
+        hasPlayedRef.current = true;
         document.body.classList.add("replay-active");
         homeEl()?.scrollTo({ top: 0, behavior: "smooth" });
 
@@ -338,6 +357,15 @@ const ShotReplay = () => {
       case "idle": {
         // Whether the film ran out or Escape cut it, hand the desk back.
         cleanup(true);
+
+        // Only a genuine, uninterrupted run hands off to the tutorial —
+        // not the component's own initial "idle" on mount, and not a run
+        // the visitor deliberately walked out of with Escape.
+        if (hasPlayedRef.current && !stoppedManuallyRef.current) {
+          window.dispatchEvent(new CustomEvent(REPLAY_DONE_EVENT));
+        }
+        hasPlayedRef.current = false;
+        stoppedManuallyRef.current = false;
         break;
       }
 

@@ -31,11 +31,12 @@ const QuickDock = ({
   toggleFocusMode,
   theme,
   toggleTheme,
+  reduceMotion,
 }) => {
   const dockRef = useRef(null);
   const [hovered, setHovered] = useState(null);
   const dockPulse = useInkPulse(hovered);
-  const magnetic = useMagnetic({ range: 96, maxLift: 16, maxScale: 1.55, axis: "x" });
+  const magnetic = useMagnetic({ range: 96, maxLift: 16, maxScale: 1.55, axis: "x", reduceMotion });
 
   const handleThemeToggle = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();

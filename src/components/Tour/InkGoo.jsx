@@ -12,6 +12,15 @@ import gsap from "gsap";
 // hangs off the creature by a gooey stem no matter where its springs have
 // carried it. gsap conducts everything scalar: the splat pulse on arrival,
 // the accent sheen re-tinting per stop, the birth and the final soak-away.
+//
+// A second, independent metaball cluster (mark()/unmark() below) renders in
+// this same draw call: a ring of ink pooling just outside whichever control
+// the current stop is discussing, elastic on arrival, breathing at rest,
+// tinted in that stop's own accent — the control's whole "you are here" cue,
+// replacing an earlier version that animated the control's own CSS
+// transform/filter directly and fought aimCamera's zoom for the privilege.
+// This one never touches the control at all; it's a second field in the
+// same shader, decoupled from the DOM node it happens to be circling.
 
 // Raw shader colors go to the canvas untouched, so keep THREE from
 // converting hex inks into linear space on the way in.
@@ -24,8 +33,19 @@ const BODY = BODY_RADII.length;
 const STEM = 2;
 const COUNT = BODY + STEM;
 
+// The discussed control's own mark: a second, independent metaball cluster
+// — evenly spaced around whichever rect the current stop targets — that
+// renders in the same draw call as the creature but answers to none of its
+// springs. Liquid ink pooling in a ring just outside the control (so the
+// icon underneath stays legible), continuously breathing, rather than the
+// hand-drawn SketchRing's crisp pen line: two different marks of "look
+// here," layered rather than duplicated.
+const MARK_COUNT = 12;
+
 // The creature is always drawn in the page's own ink.
 const INK = { light: "#191919", dark: "#fffeff" };
+
+const clamp = (value, lo, hi) => Math.min(Math.max(value, lo), hi);
 
 const VERT = `
   void main() {
@@ -37,7 +57,10 @@ const VERT = `
 // thresholded into a body with a soft inky edge, and a thin band just
 // inside that edge picks up the current stop's accent as a wet sheen.
 // Per-drop radius wobble on uTime keeps the surface simmering even when
-// the springs have gone still.
+// the springs have gone still. The mark cluster (uMarkBalls) runs the same
+// metaball math a second time, entirely independent of the creature's own
+// field, then the two are combined by a simple alpha-weighted blend —
+// cheap, and correct wherever the two fields happen to overlap.
 const FRAG = `
   precision highp float;
 
@@ -48,6 +71,9 @@ const FRAG = `
   uniform vec3 uInk;
   uniform vec3 uRim;
   uniform float uAlpha;
+  uniform vec3 uMarkBalls[${MARK_COUNT}];
+  uniform vec3 uMarkColor;
+  uniform float uMarkAlpha;
 
   void main() {
     vec2 p = gl_FragCoord.xy / uDpr;
@@ -66,10 +92,26 @@ const FRAG = `
     float body = smoothstep(0.5, 0.56, field);
     float rim = smoothstep(0.5, 0.6, field) * (1.0 - smoothstep(0.6, 1.05, field));
     vec3 col = mix(uInk, uRim, rim * 0.55);
-
     float alpha = body * uAlpha;
-    if (alpha < 0.004) discard;
-    gl_FragColor = vec4(col, alpha);
+
+    float markField = 0.0;
+    for (int i = 0; i < ${MARK_COUNT}; i++) {
+      vec3 b = uMarkBalls[i];
+      if (b.z > 0.5) {
+        vec2 d = p - b.xy;
+        markField += exp(-dot(d, d) / (b.z * b.z));
+      }
+    }
+
+    float markBody = smoothstep(0.5, 0.64, markField);
+    float markRim = smoothstep(0.5, 0.7, markField) * (1.0 - smoothstep(0.7, 1.2, markField));
+    vec3 markCol = mix(uMarkColor * 0.7, uMarkColor * 1.2, markRim);
+    float markAlpha = markBody * uMarkAlpha;
+
+    float total = alpha + markAlpha;
+    if (total < 0.004) discard;
+    vec3 outCol = (col * alpha + markCol * markAlpha) / max(total, 0.0001);
+    gl_FragColor = vec4(outCol, min(total, 1.0));
   }
 `;
 
@@ -104,8 +146,33 @@ const InkGoo = forwardRef(({ theme, cardTip }, ref) => {
       ink: new THREE.Color(INK.light),
       rim: new THREE.Color("#ffd56b"),
       pulseTl: null,
+      // The mark cluster: liquid ink pooling around whichever control the
+      // current stop targets, entirely separate from the creature's own
+      // body/springs above. marked tracks whether it's currently blooming
+      // over a real target (gates the one-time elastic bloom-in the same
+      // way `born` gates the creature's own one-time entrance); anchor is
+      // the rect it's chasing; balls are the ring of drops themselves.
+      marked: false,
+      markAnchor: null,
+      markBaseRadius: 18,
+      markBalls: Array.from({ length: MARK_COUNT }, () => ({ x: 0, y: 0, vx: 0, vy: 0 })),
+      markFx: { alpha: 0, spread: 0 },
+      markColor: new THREE.Color("#ffd56b"),
     };
   }
+
+  // Shared by mark() below and the walk-ending dismiss() — the same swell-
+  // then-vanish signature every other soak-away in this file already uses.
+  const soakMark = () => {
+    const s = simRef.current;
+    if (!s.marked) return;
+    s.marked = false;
+    s.markAnchor = null;
+    gsap.killTweensOf(s.markFx);
+    gsap.to(s.markFx, { spread: 1.14, duration: 0.16, ease: "power2.out" });
+    gsap.to(s.markFx, { spread: 0, duration: 0.5, ease: "back.in(1.8)", delay: 0.16 });
+    gsap.to(s.markFx, { alpha: 0, duration: 0.3, ease: "power1.in", delay: 0.32 });
+  };
 
   useImperativeHandle(ref, () => ({
     // Send the creature to a new perch — the springs do the actual swim,
@@ -161,14 +228,62 @@ const InkGoo = forwardRef(({ theme, cardTip }, ref) => {
       s.anchor.y = y;
     },
 
-    // The farewell bow: a quick swell, then the whole creature soaks away
-    // into the paper.
+    // Pool a ring of ink around whichever rect the current stop targets —
+    // called every time that rect is (re)measured (arrival, resize,
+    // scroll, and every frame of aimCamera's own zoom), so the ring's
+    // radius and center track a growing/shrinking/moving target live. The
+    // one-time elastic bloom only plays the first time this control gets
+    // marked (or the first mark after unmark() below); after that, moving
+    // to a new rect just re-aims the same springs and re-tints the color —
+    // exactly the travel/nudge split moveTo already draws for the creature.
+    mark({ rect, accent }) {
+      const s = simRef.current;
+      const a = rect.width / 2 + 15;
+      const b = rect.height / 2 + 15;
+      s.markAnchor = { cx: rect.cx, cy: rect.cy, a, b };
+      // Radius tuned so MARK_COUNT drops, evenly spaced around that
+      // ellipse, overlap into one continuous ring rather than a beaded
+      // necklace or a solid disc.
+      s.markBaseRadius = clamp(((a + b) / 2) * ((2 * Math.PI) / MARK_COUNT) * 0.68, 12, 34);
+
+      const c = new THREE.Color(accent);
+      gsap.to(s.markColor, { r: c.r, g: c.g, b: c.b, duration: 0.6, ease: "power2.inOut" });
+
+      if (!s.marked) {
+        s.marked = true;
+        // Seed every drop straight onto the ring (no fly-in for the ring's
+        // own shape) — only its alpha and overall spread bloom in, elastic,
+        // the same "not quite settled yet" overshoot the creature's own
+        // arrival pulse plays.
+        for (let i = 0; i < MARK_COUNT; i++) {
+          const ang = (i / MARK_COUNT) * Math.PI * 2;
+          const ball = s.markBalls[i];
+          ball.x = rect.cx + Math.cos(ang) * a;
+          ball.y = rect.cy + Math.sin(ang) * b;
+          ball.vx = 0;
+          ball.vy = 0;
+        }
+        gsap.killTweensOf(s.markFx);
+        gsap.set(s.markFx, { spread: 0 });
+        gsap.to(s.markFx, { alpha: 0.85, duration: 0.3, ease: "power1.out" });
+        gsap.to(s.markFx, { spread: 1, duration: 0.9, ease: "elastic.out(1, 0.5)", delay: 0.05 });
+      }
+    },
+
+    // Nothing to mark right now — a bookend scene, or a selector that
+    // didn't resolve. Swells briefly then soaks away, same signature as
+    // the creature's own dismiss() below.
+    unmark: soakMark,
+
+    // The farewell bow: a quick swell, then the whole creature — and
+    // whatever ring is still marking a control — soaks away into the paper.
     dismiss() {
       const s = simRef.current;
       gsap.to(s.dims, { stemA: 0, stemB: 0, duration: 0.3, ease: "power2.in", delay: 0.35 });
       gsap.to(s.fx, { spread: 1.16, duration: 0.2, ease: "power2.out", delay: 0.55 });
       gsap.to(s.fx, { spread: 0, duration: 0.55, ease: "back.in(1.9)", delay: 0.78 });
       gsap.to(s.fx, { alpha: 0, duration: 0.3, ease: "power1.in", delay: 1.05 });
+      soakMark();
     },
   }), []);
 
@@ -202,6 +317,9 @@ const InkGoo = forwardRef(({ theme, cardTip }, ref) => {
       uInk: { value: simRef.current.ink },
       uRim: { value: simRef.current.rim },
       uAlpha: { value: 0 },
+      uMarkBalls: { value: Array.from({ length: MARK_COUNT }, () => new THREE.Vector3(0, 0, 0)) },
+      uMarkColor: { value: simRef.current.markColor },
+      uMarkAlpha: { value: 0 },
     };
     const material = new THREE.ShaderMaterial({
       uniforms,
@@ -263,16 +381,55 @@ const InkGoo = forwardRef(({ theme, cardTip }, ref) => {
       uniforms.uAlpha.value = s.fx.alpha;
       uniforms.uTime.value = t;
 
+      // The mark ring: each drop's resting spot drifts slowly around its
+      // own point on the target ellipse — never orbiting past its
+      // neighbors, just breathing in and out — so the union reads as a
+      // simmering liquid border rather than a rigid dashed line.
+      if (s.markAnchor) {
+        const { cx, cy, a, b } = s.markAnchor;
+        for (let i = 0; i < MARK_COUNT; i++) {
+          const ang = (i / MARK_COUNT) * Math.PI * 2;
+          const jitter = Math.sin(t * (1.1 + i * 0.13) + i * 1.7) * 4;
+          const tx = cx + Math.cos(ang) * (a + jitter);
+          const ty = cy + Math.sin(ang) * (b + jitter * 0.6);
+          springStep(s.markBalls[i], tx, ty, 190, 19, dt);
+        }
+      }
+      for (let i = 0; i < MARK_COUNT; i++) {
+        const wobble = 1 + 0.12 * Math.sin(t * (1.3 + i * 0.21) + i * 2.4);
+        const r = s.markAnchor ? s.markBaseRadius * wobble * s.markFx.spread : 0;
+        uniforms.uMarkBalls.value[i].set(s.markBalls[i].x, s.markBalls[i].y, r);
+      }
+      uniforms.uMarkAlpha.value = s.markFx.alpha;
+
       renderer.render(scene, camera);
     };
+
+    // InkGoo is mounted for the app's whole lifetime (see TourGuide.jsx),
+    // not just while a walk is on screen, so an idle RAF loop left running
+    // in a backgrounded tab would burn cycles indefinitely — pause it the
+    // same way CursorAura/LiquidMeter already do for their own always-on
+    // WebGL layers.
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (raf) cancelAnimationFrame(raf);
+        raf = null;
+      } else if (!raf) {
+        clock.getDelta();
+        tick();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     tick();
 
     return () => {
-      cancelAnimationFrame(raf);
+      if (raf) cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("resize", resize);
       const s = simRef.current;
       s.pulseTl?.kill();
-      gsap.killTweensOf([s.dims, s.fx, s.rim, s.ink]);
+      gsap.killTweensOf([s.dims, s.fx, s.rim, s.ink, s.markFx, s.markColor]);
       quad.geometry.dispose();
       material.dispose();
       renderer.dispose();

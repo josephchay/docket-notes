@@ -41,6 +41,7 @@ const Note = ({
   openEditor,
   onHoverStart,
   onHoverEnd,
+  reduceMotion,
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteConfirmed, setDeleteConfirmed] = useState(false);
@@ -173,14 +174,17 @@ const Note = ({
   }
 
   // The paper tilts under the pointer like it is resting on a soft desk,
-  // springing flat again when the pointer leaves.
+  // springing flat again when the pointer leaves — continuous,
+  // pointer-tracking motion firing on every hover of every note, so it's
+  // gated under reduced motion the same way the app's other pointer-follow
+  // effects (the toolbar's magnetic icons, the nav rail's ink pots) are.
   const tiltSourceX = useMotionValue(0);
   const tiltSourceY = useMotionValue(0);
   const tiltX = useSpring(useTransform(tiltSourceY, [-0.5, 0.5], [6, -6]), { stiffness: 300, damping: 22 });
   const tiltY = useSpring(useTransform(tiltSourceX, [-0.5, 0.5], [-6, 6]), { stiffness: 300, damping: 22 });
 
   const handleTiltMove = (e) => {
-    if (isDeleting) return;
+    if (isDeleting || reduceMotion) return;
 
     const rect = e.currentTarget.getBoundingClientRect();
     tiltSourceX.set((e.clientX - rect.left) / rect.width - 0.5);
@@ -549,20 +553,34 @@ const Note = ({
         </AnimatePresence>
         {/* A soft breathing halo in the note's own ink while it has the
             caret — the same live-editing moment the static ring already
-            marks, just given a pulse instead of a flat line. */}
+            marks, just given a pulse instead of a flat line. The pulse
+            itself is a repeat: Infinity loop that can run for as long as
+            someone is actually writing — under reduced motion it holds a
+            single steady glow instead, marking the same live-editing
+            moment without the sustained animation. */}
         <AnimatePresence>
           {
             isTyping && (
-              <motion.span
-                className={ `note-focus-halo ${ note.color }-bg` }
-                initial={{ opacity: 0, scale: .94 }}
-                animate={{ opacity: [0, .55, .3, .55], scale: [.94, 1.015, 1, 1.015] }}
-                exit={{ opacity: 0, scale: .94, transition: { duration: .3, ease: "easeIn" } }}
-                transition={{
-                  opacity: { duration: 2.6, repeat: Infinity, ease: "easeInOut", times: [0, .3, .6, 1] },
-                  scale: { duration: 2.6, repeat: Infinity, ease: "easeInOut", times: [0, .3, .6, 1] },
-                }}
-              />
+              reduceMotion ? (
+                <motion.span
+                  className={ `note-focus-halo ${ note.color }-bg` }
+                  initial={{ opacity: 0, scale: .94 }}
+                  animate={{ opacity: .4, scale: 1 }}
+                  exit={{ opacity: 0, scale: .94, transition: { duration: .3, ease: "easeIn" } }}
+                  transition={{ duration: .3 }}
+                />
+              ) : (
+                <motion.span
+                  className={ `note-focus-halo ${ note.color }-bg` }
+                  initial={{ opacity: 0, scale: .94 }}
+                  animate={{ opacity: [0, .55, .3, .55], scale: [.94, 1.015, 1, 1.015] }}
+                  exit={{ opacity: 0, scale: .94, transition: { duration: .3, ease: "easeIn" } }}
+                  transition={{
+                    opacity: { duration: 2.6, repeat: Infinity, ease: "easeInOut", times: [0, .3, .6, 1] },
+                    scale: { duration: 2.6, repeat: Infinity, ease: "easeInOut", times: [0, .3, .6, 1] },
+                  }}
+                />
+              )
             )
           }
         </AnimatePresence>

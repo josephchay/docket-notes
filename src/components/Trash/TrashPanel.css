@@ -171,6 +171,7 @@
 
 .trash-item-restore,
 .trash-item-shred {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -191,4 +192,22 @@
 .trash-item-restore:hover,
 .trash-item-shred:hover {
   opacity: 1;
+}
+
+/* A small handful of ink sparks off the restore button — same recipe as
+   the star toggle's own burst in Header.css. */
+.trash-item-restore .trash-restore-burst {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.trash-item-restore .trash-restore-spark {
+  position: absolute;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--green-color);
 }

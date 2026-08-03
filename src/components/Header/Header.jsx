@@ -105,7 +105,7 @@ const Header = ({
   // own plain wrapper span as the GSAP target, never the same node framer's
   // jelly/hover/tap animations already control, so the two never fight over
   // one transform.
-  const toolbarMagnetic = useMagnetic({ range: 80, maxLift: 10, maxScale: 1.28, axis: "xy" });
+  const toolbarMagnetic = useMagnetic({ range: 80, maxLift: 10, maxScale: 1.28, axis: "xy", reduceMotion });
 
   const handleSearch = (e) => {
     setNotesSortText(e.target.value);
@@ -455,7 +455,7 @@ const Header = ({
                 transition={{ type: "spring", stiffness: 240, damping: 15 }}
               >
                 <div className="ink-meter-row">
-                  <LiquidMeter ratio={ milestoneRatio } color="var(--page-ink-color)" label={ milestoneLabel } />
+                  <LiquidMeter ratio={ milestoneRatio } color="var(--page-ink-color)" label={ milestoneLabel } reduceMotion={ reduceMotion } />
                 </div>
                 <div className="ink-row">
                   {
@@ -525,7 +525,7 @@ const Header = ({
         transition={ springy }
         onTapStart={ insightsJelly.squash }
         onClick={ () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)) }
-        className="wand"
+        className="wand insights-trigger"
       >
         <span ref={ toolbarMagnetic.registerItem(2) } style={{ display: "inline-flex" }}>
           <motion.span animate={ insightsJelly.jelly } style={{ display: "inline-flex" }}>
@@ -542,7 +542,7 @@ const Header = ({
         transition={ springy }
         onTapStart={ historyJelly.squash }
         onClick={ () => window.dispatchEvent(new CustomEvent(HISTORY_EVENT)) }
-        className="wand"
+        className="wand history-trigger"
       >
         <span ref={ toolbarMagnetic.registerItem(3) } style={{ display: "inline-flex" }}>
           <motion.span animate={ historyJelly.jelly } style={{ display: "inline-flex" }}>
@@ -592,7 +592,7 @@ const Header = ({
         transition={ springy }
         onTapStart={ commandJelly.squash }
         onClick={ () => window.dispatchEvent(new CustomEvent(COMMAND_EVENT)) }
-        className="wand"
+        className="wand command-trigger"
       >
         <span ref={ toolbarMagnetic.registerItem(5) } style={{ display: "inline-flex" }}>
           <motion.span animate={ commandJelly.jelly } style={{ display: "inline-flex" }}>
@@ -609,7 +609,7 @@ const Header = ({
         transition={ springy }
         onTapStart={ focusJelly.squash }
         onClick={ toggleFocusMode }
-        className="wand"
+        className="wand focus-trigger"
       >
         <span ref={ toolbarMagnetic.registerItem(6) } style={{ display: "inline-flex" }}>
           <motion.span animate={ focusJelly.jelly } style={{ display: "inline-flex" }}>
@@ -632,7 +632,7 @@ const Header = ({
             transition={ springy }
             onTapStart={ pileJelly.squash }
             onClick={ togglePileView }
-            className={ `wand ${ pileView ? "active" : "" }` }
+            className={ `wand pile-toggle ${ pileView ? "active" : "" }` }
           >
             <span ref={ toolbarMagnetic.registerItem(7) } style={{ display: "inline-flex" }}>
               <motion.span animate={ pileJelly.jelly } style={{ display: "inline-flex" }}>
@@ -740,7 +740,7 @@ const Header = ({
         transition={ springy }
         onTapStart={ settingsJelly.squash }
         onClick={ () => window.dispatchEvent(new CustomEvent(SETTINGS_EVENT)) }
-        className="wand"
+        className="wand settings-trigger"
       >
         <span ref={ toolbarMagnetic.registerItem(10) } style={{ display: "inline-flex" }}>
           <motion.span animate={ settingsJelly.jelly } style={{ display: "inline-flex" }}>

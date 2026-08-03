@@ -34,7 +34,7 @@ const formatClock = (totalSeconds) => {
 // Closing the panel never stops the sprint; it just folds the ring away
 // into a small ticking capsule so a sprint keeps counting down quietly in
 // the background until it's reopened.
-const SprintPanel = () => {
+const SprintPanel = ({ reduceMotion }) => {
   const [service] = useState(() => interpret(sprintMachine));
   const [phase, setPhase] = useState("idle");
   const [context, setContext] = useState(sprintMachine.context);
@@ -123,11 +123,16 @@ const SprintPanel = () => {
   // shapes the whole time a sprint or break is actually counting down, and
   // freezes mid-shape (rather than snapping back to a circle) the moment it
   // is paused — the same "soaking in" quality Note.jsx's delete-blob has.
+  // An infinite loop (repeat: -1) is exactly the large, continuous motion
+  // reduceMotion gates everywhere else in this app — and this one can run
+  // for the length of an entire focus sprint, not just a few seconds — so
+  // under it the tween never starts at all; the blob just sits at its
+  // default resting shape instead.
   const blobRef = useRef(null);
   const blobTweenRef = useRef(null);
 
   useEffect(() => {
-    if (!blobRef.current) return;
+    if (!blobRef.current || reduceMotion) return;
     const active = phase === "running" || phase === "break";
 
     if (active && !blobTweenRef.current) {
@@ -143,7 +148,7 @@ const SprintPanel = () => {
     } else if (active && blobTweenRef.current) {
       blobTweenRef.current.play();
     }
-  }, [phase]);
+  }, [phase, reduceMotion]);
 
   useEffect(() => () => blobTweenRef.current?.kill(), []);
 

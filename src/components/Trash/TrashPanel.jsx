@@ -18,9 +18,20 @@ export const TRASH_EVENT = "docket:trash";
 // desk insights. Restoring peels a note back out toward the grid it came
 // from; shredding crumples it away for good instead — two different exits
 // off the one list, so the panel reads the difference even without text.
-const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
+const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
   const [open, setOpen] = useState(false);
   const [pendingExit, setPendingExit] = useState({});
+
+  // A small handful of ink sparks off the restore button — shred already
+  // gets a real physics handoff (see dropPhysics below); restore had
+  // nothing of its own, just a plain slide-and-fade indistinguishable in
+  // spirit from any other exit. Same spark-burst recipe the star toggle
+  // already uses in Header.jsx/Note.jsx, reused here for the same reason:
+  // a quick, satisfying "yes, that landed" pop for a positive action.
+  const [restoreBurst, setRestoreBurst] = useState(null);
+  const burstTimerRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(burstTimerRef.current), []);
 
   // Every shred/empty hands its swatch's own current spot off to
   // TrashPhysics.jsx, so the piece that takes over visually starts exactly
@@ -72,6 +83,9 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
 
   const handleRestore = (noteId) => {
     setPendingExit((prev) => ({ ...prev, [noteId]: "restore" }));
+    setRestoreBurst(noteId);
+    clearTimeout(burstTimerRef.current);
+    burstTimerRef.current = setTimeout(() => setRestoreBurst(null), 600);
     onRestore(noteId);
   };
 
@@ -141,7 +155,7 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
       {/* Mounted unconditionally (not gated on `open`) so pieces already
           tumbling keep settling and fading even if the panel closes
           mid-shred, rather than being yanked away with it. */}
-      <TrashPhysics ref={ physicsRef } />
+      <TrashPhysics ref={ physicsRef } reduceMotion={ reduceMotion } />
       <AnimatePresence>
       {
         open && (
@@ -203,10 +217,21 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
               <div className="trash-body">
                 {
                   entries.length === 0 ? (
-                    <div className="trash-empty">
-                      <FaBoxArchive className="trash-empty-icon" />
+                    <motion.div
+                      className="trash-empty"
+                      initial={{ opacity: 0, scale: .7, translateY: 14 }}
+                      animate={{ opacity: 1, scale: 1, translateY: 0 }}
+                      transition={{ type: "spring", stiffness: 260, damping: 18 }}
+                    >
+                      <motion.span
+                        initial={{ rotate: -18, scale: .6 }}
+                        animate={{ rotate: 0, scale: 1 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 14, delay: .08 }}
+                      >
+                        <FaBoxArchive className="trash-empty-icon" />
+                      </motion.span>
                       <p>Nothing in the trash this session.</p>
-                    </div>
+                    </motion.div>
                   ) : (
                     <ul className="trash-list">
                       <AnimatePresence initial={ false }>
@@ -227,11 +252,17 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
                                     x: 50,
                                     transition: { duration: .32, ease: "easeIn" },
                                   }
+                                  // Lifts up and away — back toward the desk
+                                  // above, rather than shred's decisive
+                                  // sideways tumble — with a bouncy pop
+                                  // instead of a flat ease-out, so restoring
+                                  // reads as genuinely different in spirit.
                                   : {
                                     opacity: 0,
-                                    scale: .5,
-                                    x: -60,
-                                    transition: { duration: .28, ease: "easeIn" },
+                                    scale: .4,
+                                    y: -80,
+                                    rotate: -10,
+                                    transition: { type: "spring", stiffness: 320, damping: 16 },
                                   }
                               }
                               transition={{ type: "spring", stiffness: 380, damping: 26 }}
@@ -258,6 +289,41 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty }) => {
                                 onClick={ () => handleRestore(entry.note.id) }
                               >
                                 <FaArrowRotateLeft />
+                                <AnimatePresence>
+                                  {
+                                    restoreBurst === entry.note.id && (
+                                      <motion.span
+                                        className="trash-restore-burst"
+                                        initial={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                      >
+                                        {
+                                          Array.from({ length: 5 }).map((_, i) => {
+                                            const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+                                            const distance = 20;
+
+                                            return (
+                                              <motion.span
+                                                key={ i }
+                                                className="trash-restore-spark"
+                                                initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
+                                                animate={{
+                                                  x: Math.cos(angle) * distance,
+                                                  y: Math.sin(angle) * distance,
+                                                  scale: [0, 1, 0],
+                                                  opacity: [1, 1, 0],
+                                                }}
+                                                transition={{ duration: .5, ease: "easeOut" }}
+                                              >
+                                                ✦
+                                              </motion.span>
+                                            );
+                                          })
+                                        }
+                                      </motion.span>
+                                    )
+                                  }
+                                </AnimatePresence>
                               </motion.button>
                               <motion.button
                                 type="button"
