@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   FaXmark, FaPlus, FaExpand, FaHourglassHalf, FaMagnifyingGlass,
   FaWandMagicSparkles, FaRotateLeft, FaArrowRotateRight, FaArrowsUpDown,
   FaCheck, FaQuestion,
 } from "react-icons/fa6";
 
-import useBlobClipMorph from "../../hooks/useBlobClipMorph";
-import useFocusTrap from "../../hooks/useFocusTrap";
+import SheetPanel from "../Sheet/SheetPanel";
 import useJellyTap from "../../hooks/useJellyTap";
 
 import "./ShortcutsSheet.css";
@@ -79,11 +78,6 @@ const ShortcutsSheet = () => {
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
 
-  // The dot-to-sheet morph clips through a real organic blob stage
-  // (utils/blob.js's flubber-powered createBlobMorph) on top of the scale
-  // spring below.
-  const onBlobUpdate = useBlobClipMorph(panelRef, open, 20);
-
   useEffect(() => {
     const handleKey = (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -106,40 +100,17 @@ const ShortcutsSheet = () => {
     };
   }, []);
 
-  // Traps Tab/Shift+Tab within the sheet while open and returns focus to
-  // whatever triggered it once closed — see useFocusTrap.js. Missed in the
-  // previous round's sweep across the other five dot-to-sheet panels;
-  // same convention, same fix.
-  useFocusTrap(panelRef, open);
-
   return (
-    <AnimatePresence>
-      {
-        open && (
-          <div className="shortcuts-layer">
-            <motion.div
-              className="shortcuts-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, transition: { duration: .2 } }}
-              onClick={ () => setOpen(false) }
-            />
-            <motion.div
-              ref={ panelRef }
-              tabIndex={ -1 }
-              className="shortcuts-panel"
-              initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
-              onUpdate={ onBlobUpdate }
-              animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 20 }}
-              exit={{
-                opacity: 0,
-                scale: .24,
-                translateY: 60,
-                borderRadius: 50,
-                transition: { duration: .2, ease: "easeIn" },
-              }}
-              transition={{ type: "spring", stiffness: 190, damping: 14 }}
-            >
+    <SheetPanel
+      open={ open }
+      onClose={ () => setOpen(false) }
+      panelRef={ panelRef }
+      radius={ 20 }
+      layerClassName="shortcuts-layer"
+      backdropClassName="shortcuts-backdrop"
+      panelClassName="shortcuts-panel"
+      ariaLabel="Keyboard shortcuts"
+    >
               <div className="shortcuts-header">
                 <h3>Shortcuts</h3>
                 <motion.button
@@ -161,11 +132,7 @@ const ShortcutsSheet = () => {
                   ))
                 }
               </div>
-            </motion.div>
-          </div>
-        )
-      }
-    </AnimatePresence>
+    </SheetPanel>
   );
 };
 

@@ -81,7 +81,10 @@ const VERT = `
 
     gl_Position = projectionMatrix * mvPosition;
 
-    float pulse = aActive > 0.5 ? 1.0 + 0.3 * sin(uTime * 4.0) : 1.0;
+    // A continuous multiply rather than a boolean threshold — identical
+    // at aActive's own resting values (0 or 1), but lets the cursor
+    // effect below ease a node in/out of "active" instead of snapping.
+    float pulse = 1.0 + aActive * 0.3 * sin(uTime * 4.0);
     float focusBoost = aFocused > 0.5 ? 1.4 : 1.0;
     // Nodes bloom in along the spiral's own chronological order as uReveal
     // sweeps 0→1 on mount (see the reveal effect below) — a size of 0
@@ -119,7 +122,8 @@ const FRAG = `
     float a = smoothstep(0.5, 0.0, d);
     if (a < 0.01) discard;
 
-    float glow = vActive > 0.5 ? 1.15 : 0.85;
+    // Same continuous-not-boolean treatment as aActive's pulse above.
+    float glow = 0.85 + vActive * 0.3;
     vec3 finalColor = vColor * glow;
 
     // Keyboard focus — a rim-light rather than a separately drawn ring, so
@@ -179,6 +183,13 @@ const HistoryConstellation = ({
   focusedIndexRef.current = focusedIndex;
   const reduceMotionRef = useRef(reduceMotion);
   reduceMotionRef.current = reduceMotion;
+  // Which node's aActive slot is currently live, and whatever tween is
+  // mid-flight animating the handoff to a new one — see the cursor effect
+  // further down. Reset to -1 whenever the geometry itself is rebuilt,
+  // since a rebuild renumbers every node and this index would otherwise
+  // point at whatever now happens to sit in that old slot.
+  const activeNodeIdxRef = useRef(-1);
+  const activeTweenRef = useRef(null);
 
   // Mount-once: renderer/scene/camera + the render loop + input handling.
   // Reads whatever's currently in sceneRef (populated/replaced by the
@@ -483,6 +494,7 @@ const HistoryConstellation = ({
       canvas.removeEventListener("wheel", markActivity);
       gsap.killTweensOf(state.camState);
       gsap.killTweensOf(state.zoom);
+      activeTweenRef.current?.kill();
       sceneRef.current?.points?.geometry.dispose();
       sceneRef.current?.points?.material.dispose();
       sceneRef.current?.lines?.geometry.dispose();
@@ -677,12 +689,26 @@ const HistoryConstellation = ({
     s.points = points;
     s.lines = lines;
     s.nodes = allNodes;
+
+    // A rebuild renumbers every node, so whatever the cursor effect below
+    // thought was "the active slot" no longer reliably means that — reset
+    // it to wherever the current cursor actually landed in the fresh
+    // array (already burned into aActive above, correctly, with no
+    // animation needed for this transition) rather than let a stale index
+    // survive into the next cursor change.
+    activeTweenRef.current?.kill();
+    activeNodeIdxRef.current = allNodes.findIndex((n) => n.index === cursor);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeline, branchStash]);
 
-  // The live cursor's node pulses — updated on its own rather than folded
+  // The live cursor's node glow — updated on its own rather than folded
   // into the rebuild above, so scrubbing/clicking through the graph never
-  // has to rebuild the whole geometry just to move the highlight.
+  // has to rebuild the whole geometry just to move the highlight. Used to
+  // just snap the flag from one node to the next; now eased instead, the
+  // outgoing node's glow fading down while the incoming one blooms up with
+  // a touch of overshoot — the same elastic character every other state
+  // change in this app already carries, on the one node graph that didn't
+  // have it yet.
   useEffect(() => {
     const s = sceneRef.current;
     if (!s?.points) return;
@@ -690,8 +716,29 @@ const HistoryConstellation = ({
     const attr = s.points.geometry.getAttribute("aActive");
     if (!attr) return;
 
-    s.nodes.forEach((node, i) => { attr.array[i] = node.index === cursor ? 1 : 0; });
-    attr.needsUpdate = true;
+    const newIndex = s.nodes.findIndex((node) => node.index === cursor);
+    const prevIndex = activeNodeIdxRef.current;
+    activeNodeIdxRef.current = newIndex;
+
+    activeTweenRef.current?.kill();
+
+    if (reduceMotionRef.current || prevIndex === newIndex) {
+      s.nodes.forEach((node, i) => { attr.array[i] = node.index === cursor ? 1 : 0; });
+      attr.needsUpdate = true;
+      return;
+    }
+
+    const bump = { t: 0 };
+    activeTweenRef.current = gsap.to(bump, {
+      t: 1,
+      duration: .5,
+      ease: "elastic.out(1, .6)",
+      onUpdate: () => {
+        if (prevIndex >= 0 && prevIndex < attr.array.length) attr.array[prevIndex] = Math.max(0, 1 - bump.t);
+        if (newIndex >= 0 && newIndex < attr.array.length) attr.array[newIndex] = Math.max(0, bump.t);
+        attr.needsUpdate = true;
+      },
+    });
   }, [cursor]);
 
   // Keyboard focus's own rim-light — see moveFocus above.

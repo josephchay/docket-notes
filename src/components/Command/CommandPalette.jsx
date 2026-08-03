@@ -1,11 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { interpret } from "xstate";
 
 import { commandMachine } from "./CommandState";
 import useInkPulse from "../../hooks/useInkPulse";
-import useBlobClipMorph from "../../hooks/useBlobClipMorph";
-import useFocusTrap from "../../hooks/useFocusTrap";
+import SheetPanel from "../Sheet/SheetPanel";
 
 import "./CommandPalette.css";
 
@@ -114,136 +113,107 @@ const CommandPalette = ({ actions }) => {
   const highlight = Math.min(selected, Math.max(filtered.length - 1, 0));
   const commandPulse = useInkPulse(highlight);
 
-  // The dot-to-sheet morph now clips through a real organic blob stage
-  // (utils/blob.js's flubber-powered createBlobMorph) on top of the scale
-  // spring above, rather than relying on the border-radius keyframes alone
-  // to sell the "grown from a drop of ink" feeling.
   const panelRef = useRef(null);
-  const onBlobUpdate = useBlobClipMorph(panelRef, open, 18);
 
-  // Traps Tab/Shift+Tab within the panel while open and returns focus to
-  // whatever triggered it once closed — see useFocusTrap.js. focusOnOpen
-  // is off here specifically: the search input already has its own
-  // autoFocus below (so typing works the instant the palette opens,
-  // core to a command palette's whole point), and the hook's usual
-  // focus-the-panel-root step would just steal that back a frame later.
-  useFocusTrap(panelRef, open, { focusOnOpen: false });
+  // Casting a command still gets its own quick squash pulse rather than the
+  // shared entrance shape — a distinct micro-interaction (confirming a cast
+  // landed), not a second way to open the palette — passed straight through
+  // to SheetPanel's `animate` override.
+  const castingAnimate = phase === "casting" ? {
+    opacity: 1,
+    scale: [1, .93, 1.04],
+    translateY: 0,
+    borderRadius: 24,
+    transition: { duration: .24, times: [0, .5, 1], ease: "easeInOut" },
+  } : undefined;
 
   return (
-    <AnimatePresence>
-      {
-        open && (
-          <div className="command-layer">
-            <motion.div
-              className="command-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, transition: { duration: .2 } }}
-              onClick={ () => service.send("CLOSE") }
-            />
-            <motion.div
-              ref={ panelRef }
-              tabIndex={ -1 }
-              className="command-panel"
-              initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
-              onUpdate={ onBlobUpdate }
-              animate={
-                phase === "casting" ? {
-                  opacity: 1,
-                  scale: [1, .93, 1.04],
-                  translateY: 0,
-                  borderRadius: 24,
-                  transition: { duration: .24, times: [0, .5, 1], ease: "easeInOut" },
-                } : {
-                  opacity: 1,
-                  scale: 1,
-                  translateY: 0,
-                  borderRadius: 18,
-                  transition: { type: "spring", stiffness: 200, damping: 13.5 },
-                }
-              }
-              exit={{
-                opacity: 0,
-                scale: .24,
-                translateY: 60,
-                borderRadius: 50,
-                transition: { duration: .2, ease: "easeIn" },
+    <SheetPanel
+      open={ open }
+      onClose={ () => service.send("CLOSE") }
+      panelRef={ panelRef }
+      radius={ 18 }
+      layerClassName="command-layer"
+      backdropClassName="command-backdrop"
+      panelClassName="command-panel"
+      ariaLabel="Command palette"
+      animate={ castingAnimate }
+      // The search input has its own autoFocus below (so typing works the
+      // instant the palette opens, core to a command palette's whole
+      // point) — SheetPanel's usual focus-the-panel-root step would just
+      // steal that back a frame later.
+      focusOnOpen={ false }
+    >
+      <input
+        autoFocus
+        type="text"
+        className="command-input"
+        placeholder="Cast a command…"
+        value={ query }
+        onChange={ (e) => { setQuery(e.target.value); setSelected(0); } }
+        onKeyDown={ handleListKeys }
+      />
+      <div className="command-list custom-scroll">
+        {
+          filtered.map((action, index) => (
+            <motion.button
+              key={ action.key }
+              type="button"
+              className={ `command-item ${ index === highlight ? "selected" : "" }` }
+              initial={{ opacity: 0, translateX: -16 }}
+              animate={{ opacity: 1, translateX: 0 }}
+              transition={{
+                type: "spring",
+                stiffness: 340,
+                damping: 20,
+                delay: .05 + index * .035,
               }}
+              onMouseEnter={ () => setSelected(index) }
+              onTapStart={ commandPulse.squash }
+              onClick={ () => run(action) }
             >
-              <input
-                autoFocus
-                type="text"
-                className="command-input"
-                placeholder="Cast a command…"
-                value={ query }
-                onChange={ (e) => { setQuery(e.target.value); setSelected(0); } }
-                onKeyDown={ handleListKeys }
-              />
-              <div className="command-list custom-scroll">
-                {
-                  filtered.map((action, index) => (
-                    <motion.button
-                      key={ action.key }
-                      type="button"
-                      className={ `command-item ${ index === highlight ? "selected" : "" }` }
-                      initial={{ opacity: 0, translateX: -16 }}
-                      animate={{ opacity: 1, translateX: 0 }}
-                      transition={{
-                        type: "spring",
-                        stiffness: 340,
-                        damping: 20,
-                        delay: .05 + index * .035,
-                      }}
-                      onMouseEnter={ () => setSelected(index) }
-                      onTapStart={ commandPulse.squash }
-                      onClick={ () => run(action) }
-                    >
-                      {
-                        index === highlight && (
-                          <motion.span
-                            layoutId="commandThumb"
-                            style={{ position: "absolute", inset: 0, borderRadius: 12 }}
-                            transition={{ type: "spring", stiffness: 520, damping: 20 }}
-                          >
-                            <motion.span
-                              className="command-thumb"
-                              animate={ commandPulse.jelly }
-                              style={{ borderRadius: "inherit" }}
-                            />
-                          </motion.span>
-                        )
-                      }
-                      <span className="command-item-icon">{ action.icon }</span>
-                      <span className="command-item-label">{ renderLabel(action.label) }</span>
-                      {
-                        action.hint && (
-                          <kbd className="command-item-hint">{ action.hint }</kbd>
-                        )
-                      }
-                    </motion.button>
-                  ))
-                }
-                {
-                  filtered.length === 0 && (
-                    <motion.p
-                      className="command-empty"
-                      initial={{ opacity: 0, scale: .8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 18 }}
-                    >
-                      Nothing casts like that
-                    </motion.p>
-                  )
-                }
-              </div>
-              <div className="command-footer">
-                ↑↓ choose · Enter cast · Esc fold
-              </div>
-            </motion.div>
-          </div>
-        )
-      }
-    </AnimatePresence>
+              {
+                index === highlight && (
+                  <motion.span
+                    layoutId="commandThumb"
+                    style={{ position: "absolute", inset: 0, borderRadius: 12 }}
+                    transition={{ type: "spring", stiffness: 520, damping: 20 }}
+                  >
+                    <motion.span
+                      className="command-thumb"
+                      animate={ commandPulse.jelly }
+                      style={{ borderRadius: "inherit" }}
+                    />
+                  </motion.span>
+                )
+              }
+              <span className="command-item-icon">{ action.icon }</span>
+              <span className="command-item-label">{ renderLabel(action.label) }</span>
+              {
+                action.hint && (
+                  <kbd className="command-item-hint">{ action.hint }</kbd>
+                )
+              }
+            </motion.button>
+          ))
+        }
+        {
+          filtered.length === 0 && (
+            <motion.p
+              className="command-empty"
+              initial={{ opacity: 0, scale: .8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: "spring", stiffness: 300, damping: 18 }}
+            >
+              Nothing casts like that
+            </motion.p>
+          )
+        }
+      </div>
+      <div className="command-footer">
+        ↑↓ choose · Enter cast · Esc fold
+      </div>
+    </SheetPanel>
   );
 }
 

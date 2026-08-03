@@ -72,12 +72,19 @@ const SketchRing = ({ rect, accent, reduced }) => {
       el.style.strokeDashoffset = len;
     });
 
+    // An elastic draw-on rather than a plain ease — the line overshoots
+    // past its own endpoint and springs back the last little way, like a
+    // pen flourish rather than a ruled stroke. The same easeOutElastic
+    // curve InkGoo's own glow-flash already uses elsewhere in this tour,
+    // reused here for a third, differently-channeled read of "elastic":
+    // InkGoo's mark ring breathes fluid and organic, bounceElement's jelly
+    // squashes the control itself, and this one flourishes the pen line.
     anime({
       targets: strokes,
       strokeDashoffset: [anime.setDashoffset, 0],
-      duration: 780,
+      duration: 850,
       delay: 380,
-      easing: "easeInOutQuart",
+      easing: "easeOutElastic(1, .5)",
       complete: () => strokes.forEach((el) => { el.style.strokeDasharray = "none"; }),
     });
 
@@ -101,10 +108,17 @@ const SketchRing = ({ rect, accent, reduced }) => {
       width={ w }
       height={ h }
       viewBox={ `0 0 ${ w } ${ h }` }
-      initial={{ opacity: 0, scale: .86 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: .9, transition: { duration: .16, ease: "easeIn" } }}
-      transition={{ type: "spring", stiffness: 240, damping: 20 }}
+      // A stretchy snap rather than a plain uniform scale spring —
+      // scaleX/scaleY ride their own asymmetric overshoot, like a rubber
+      // band flicked into a circle, instead of just growing in place.
+      initial={{ opacity: 0, scaleX: .7, scaleY: .7 }}
+      animate={{
+        opacity: 1,
+        scaleX: [.7, 1.14, .93, 1.04, 1],
+        scaleY: [.7, .88, 1.1, .96, 1],
+      }}
+      exit={{ opacity: 0, scaleX: .85, scaleY: .85, transition: { duration: .16, ease: "easeIn" } }}
+      transition={{ duration: .6, ease: "easeInOut" }}
       aria-hidden="true"
     >
       <defs>

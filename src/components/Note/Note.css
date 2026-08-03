@@ -112,7 +112,9 @@
   width: 34px;
 }
 
-/* The handful of sparks thrown when a note is starred. */
+/* The handful of ink drops thrown when a note is starred — see
+   SparkBurst.jsx/.css for the shared dot shape this colors via
+   currentColor. */
 .note .header .star .star-burst {
   position: absolute;
   left: 50%;
@@ -120,14 +122,6 @@
   width: 0;
   height: 0;
   pointer-events: none;
-}
-
-.note .header .star .star-burst .spark {
-  position: absolute;
-  left: 0;
-  top: 0;
-  font-size: 12px;
-  line-height: 1;
   color: var(--black-color);
 }
 
@@ -438,18 +432,14 @@
   background: var(--black-color);
 }
 
+/* Ink drops off a pull-string's tassel, tinted per-note-color via an
+   inline `color` style (see PullString.jsx/MoveString.jsx) — see
+   SparkBurst.jsx/.css for the shared dot shape this colors via
+   currentColor. */
 .note .pull-burst {
   position: absolute;
   top: 0;
   width: 0;
   height: 0;
   pointer-events: none;
-}
-
-.note .pull-burst .spark {
-  position: absolute;
-  left: 0;
-  top: 0;
-  font-size: 16px;
-  line-height: 1;
 }

@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { FaXmark } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { smoothPath, smoothAreaPath } from "../../utils/svgPath";
-import useBlobClipMorph from "../../hooks/useBlobClipMorph";
-import useFocusTrap from "../../hooks/useFocusTrap";
+import SheetPanel from "../Sheet/SheetPanel";
 
 import "./InsightsPanel.css";
 
@@ -39,11 +38,6 @@ const InsightsPanel = ({
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
 
-  // The dot-to-sheet morph clips through a real organic blob stage
-  // (utils/blob.js's flubber-powered createBlobMorph) on top of the scale
-  // spring below.
-  const onBlobUpdate = useBlobClipMorph(panelRef, open, 22);
-
   useEffect(() => {
     const handleKey = (e) => {
       if (e.key === "Escape") setOpen(false);
@@ -57,10 +51,6 @@ const InsightsPanel = ({
       window.removeEventListener(INSIGHTS_EVENT, handleSummon);
     };
   }, []);
-
-  // Traps Tab/Shift+Tab within the panel while open and returns focus to
-  // whatever triggered it once closed — see useFocusTrap.js.
-  useFocusTrap(panelRef, open);
 
   const paletteNames = Object.keys(NOTE_COLORS);
   const maxColorCount = Math.max(1, ...paletteNames.map((name) => colorCounts?.[name] ?? 0));
@@ -86,33 +76,16 @@ const InsightsPanel = ({
   const trendLastPoint = trendPoints[trendPoints.length - 1];
 
   return (
-    <AnimatePresence>
-      {
-        open && (
-          <div className="insights-layer">
-            <motion.div
-              className="insights-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, transition: { duration: .2 } }}
-              onClick={ () => setOpen(false) }
-            />
-            <motion.div
-              ref={ panelRef }
-              tabIndex={ -1 }
-              className="insights-panel"
-              initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
-              onUpdate={ onBlobUpdate }
-              animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 22 }}
-              exit={{
-                opacity: 0,
-                scale: .24,
-                translateY: 60,
-                borderRadius: 50,
-                transition: { duration: .2, ease: "easeIn" },
-              }}
-              transition={{ type: "spring", stiffness: 190, damping: 14 }}
-            >
+    <SheetPanel
+      open={ open }
+      onClose={ () => setOpen(false) }
+      panelRef={ panelRef }
+      radius={ 22 }
+      layerClassName="insights-layer"
+      backdropClassName="insights-backdrop"
+      panelClassName="insights-panel"
+      ariaLabel="Desk insights"
+    >
               <div className="insights-header">
                 <h3>Desk insights</h3>
                 <motion.button
@@ -285,11 +258,7 @@ const InsightsPanel = ({
                   </div>
                 </section>
               </div>
-            </motion.div>
-          </div>
-        )
-      }
-    </AnimatePresence>
+    </SheetPanel>
   );
 };
 

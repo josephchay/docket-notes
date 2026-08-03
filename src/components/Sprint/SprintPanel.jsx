@@ -6,8 +6,7 @@ import { FaPlay, FaPause, FaRotateLeft, FaForward, FaXmark, FaMugHot, FaFeatherP
 
 import { sprintMachine, SPRINT_PRESETS } from "./SprintState";
 import useInkPulse from "../../hooks/useInkPulse";
-import useBlobClipMorph from "../../hooks/useBlobClipMorph";
-import useFocusTrap from "../../hooks/useFocusTrap";
+import SheetPanel from "../Sheet/SheetPanel";
 
 import "./SprintPanel.css";
 
@@ -40,11 +39,6 @@ const SprintPanel = ({ reduceMotion }) => {
   const [context, setContext] = useState(sprintMachine.context);
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
-
-  // The dot-to-sheet morph clips through a real organic blob stage
-  // (utils/blob.js's flubber-powered createBlobMorph) on top of the scale
-  // spring below.
-  const onBlobUpdate = useBlobClipMorph(panelRef, open, 26);
 
   // The sprint-length thumb borrows the free cursor's own press pulse and
   // idle pool (see useInkPulse) so it carries the same elastic personality
@@ -90,15 +84,6 @@ const SprintPanel = ({ reduceMotion }) => {
       window.removeEventListener(SPRINT_EVENT, handleSummon);
     };
   }, []);
-
-  // Traps Tab/Shift+Tab within the panel while open and returns focus to
-  // whatever triggered it once closed — see useFocusTrap.js. Keyed off
-  // this same plain boolean `open`, independent of the sprint machine's
-  // own phase/context (which tracks the countdown itself, not panel
-  // visibility) — closing the panel doesn't stop a running sprint, it just
-  // folds into the small capsule below, so the trap only ever cares about
-  // whether the full sheet is on screen.
-  useFocusTrap(panelRef, open);
 
   const totalForPhase = context.phase === "break" ? context.breakSeconds : context.sprintSeconds;
   const remainingRatio = totalForPhase > 0 ? context.secondsLeft / totalForPhase : 0;
@@ -190,33 +175,16 @@ const SprintPanel = ({ reduceMotion }) => {
 
   return (
     <>
-      <AnimatePresence>
-        {
-          open && (
-            <div className="sprint-layer">
-              <motion.div
-                className="sprint-backdrop"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0, transition: { duration: .2 } }}
-                onClick={ () => setOpen(false) }
-              />
-              <motion.div
-                ref={ panelRef }
-                tabIndex={ -1 }
-                className={ `sprint-panel ${ onBreak ? "on-break" : "" }` }
-                initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
-                onUpdate={ onBlobUpdate }
-                animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 26 }}
-                exit={{
-                  opacity: 0,
-                  scale: .24,
-                  translateY: 60,
-                  borderRadius: 50,
-                  transition: { duration: .2, ease: "easeIn" },
-                }}
-                transition={{ type: "spring", stiffness: 190, damping: 14 }}
-              >
+      <SheetPanel
+        open={ open }
+        onClose={ () => setOpen(false) }
+        panelRef={ panelRef }
+        radius={ 26 }
+        layerClassName="sprint-layer"
+        backdropClassName="sprint-backdrop"
+        panelClassName={ `sprint-panel ${ onBreak ? "on-break" : "" }` }
+        ariaLabel={ onBreak ? "Ink break" : "Focus sprint" }
+      >
                 <div className="sprint-header">
                   <h3>{ onBreak ? "Ink break" : "Focus sprint" }</h3>
                   <motion.button
@@ -392,11 +360,7 @@ const SprintPanel = ({ reduceMotion }) => {
                     )
                   }
                 </div>
-              </motion.div>
-            </div>
-          )
-        }
-      </AnimatePresence>
+      </SheetPanel>
       {/* A sprint left running behind a closed panel keeps a small ticking
           capsule on the desk — tapping it re-opens the full ring rather
           than losing the sprint's progress entirely. */}

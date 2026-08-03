@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   AnimatePresence,
   animate,
@@ -20,6 +20,7 @@ import {
   FaClockRotateLeft,
   FaDroplet,
   FaExpand,
+  FaFeather,
   FaFileArrowDown,
   FaGear,
   FaGrip,
@@ -42,6 +43,7 @@ import { resolveCssColor } from "../History/HistoryAmbient";
 import { playMilestone, playSpawn, playTick } from "../../utils/sound";
 import InkGoo from "./InkGoo";
 import SketchRing from "./SketchRing";
+import InkStamp from "./InkStamp";
 
 import "./TourGuide.css";
 
@@ -58,7 +60,7 @@ const SCRIPT = {
     title: "Welcome to the desk",
     body: "This desk has a few tricks folded into it. Give it a minute and it'll walk you past the ones worth knowing.",
     accent: "var(--yellow-color)",
-    width: 340,
+    width: 360,
   },
   activator: {
     selector: "#navActivator",
@@ -66,7 +68,7 @@ const SCRIPT = {
     body: "Tap any ink pot here — or just press N — to drop a fresh note onto the desk.",
     accent: "var(--orange-color)",
     icon: FaDroplet,
-    width: 312,
+    width: 332,
   },
   backup: {
     selector: ".nav-tool.export-trigger",
@@ -74,7 +76,7 @@ const SCRIPT = {
     body: "Export saves the whole desk as a file you can keep — the button beside it brings a backup back in.",
     accent: "var(--blue-color)",
     icon: FaFileArrowDown,
-    width: 312,
+    width: 332,
   },
   ink: {
     selector: ".ink-levels .ink-button",
@@ -82,7 +84,7 @@ const SCRIPT = {
     body: "A little vial and a bar for every color — tap here to see the whole desk's ink levels at a glance.",
     accent: "var(--purple-color)",
     icon: FaChartSimple,
-    width: 312,
+    width: 332,
   },
   search: {
     selector: ".header .search",
@@ -90,7 +92,7 @@ const SCRIPT = {
     body: "Search titles and text as you type, or press / to jump straight here.",
     accent: "var(--blue-color)",
     icon: FaMagnifyingGlass,
-    width: 312,
+    width: 332,
   },
   star: {
     selector: ".header .search .star",
@@ -98,7 +100,7 @@ const SCRIPT = {
     body: "Tap the star on any note to keep it close, then tap this one to see only your starred notes.",
     accent: "var(--yellow-color)",
     icon: FaStar,
-    width: 312,
+    width: 332,
   },
   pile: {
     selector: ".header .pile-toggle",
@@ -106,7 +108,7 @@ const SCRIPT = {
     body: "Tired of the grid? This tosses every note into a real physics pile you can drag your hand through — tap it again to pour the grid back.",
     accent: "var(--red-color)",
     icon: FaLayerGroup,
-    width: 320,
+    width: 340,
   },
   shuffle: {
     selector: ".shuffle",
@@ -114,7 +116,7 @@ const SCRIPT = {
     body: "Shuffle tosses the order into the air — the same trick lives in the quick dock if your hand's already down there.",
     accent: "var(--pink-color)",
     icon: FaShuffle,
-    width: 312,
+    width: 332,
   },
   sort: {
     selector: ".sort-modes",
@@ -122,7 +124,7 @@ const SCRIPT = {
     body: "Freshest first, grouped by ink, or starred to the front — three ways to read the same desk.",
     accent: "var(--green-color)",
     icon: FaArrowUpWideShort,
-    width: 312,
+    width: 332,
   },
   select: {
     selector: ".select-toggle",
@@ -130,7 +132,7 @@ const SCRIPT = {
     body: "Check off a few notes to star, recolor, export, or delete the whole batch in one go.",
     accent: "var(--purple-color)",
     icon: FaSquareCheck,
-    width: 312,
+    width: 332,
   },
   dock: {
     selector: ".quick-dock",
@@ -138,7 +140,7 @@ const SCRIPT = {
     body: "A floating tray for whatever you reach for most — a fresh note, a shuffle, focus mode, a sprint — parked wherever your hand already is.",
     accent: "var(--gray-color)",
     icon: FaGrip,
-    width: 320,
+    width: 340,
   },
   focus: {
     selector: ".header .focus-trigger",
@@ -146,7 +148,7 @@ const SCRIPT = {
     body: "Focus mode clears away everything but the grid itself — press F, or tap here, whenever the chrome gets in the way.",
     accent: "var(--green-color)",
     icon: FaExpand,
-    width: 312,
+    width: 332,
   },
   insights: {
     selector: ".header .insights-trigger",
@@ -154,7 +156,15 @@ const SCRIPT = {
     body: "A quick read on the whole desk — how many notes, which colors you reach for most, how long you've been at it.",
     accent: "var(--pink-color)",
     icon: FaChartLine,
-    width: 312,
+    width: 332,
+  },
+  quote: {
+    selector: ".quote-tab",
+    title: "A line of daily ink",
+    body: "Fold out a stray line to sit with — tap the shuffle inside for another whenever this one's worn out.",
+    accent: "var(--yellow-color)",
+    icon: FaFeather,
+    width: 332,
   },
   history: {
     selector: ".header .history-trigger",
@@ -162,7 +172,7 @@ const SCRIPT = {
     body: "Scrub back through everything you've done — undo, redo, or jump straight to any moment on the timeline.",
     accent: "var(--orange-color)",
     icon: FaClockRotateLeft,
-    width: 312,
+    width: 332,
   },
   theme: {
     selector: ".header .theme",
@@ -172,7 +182,7 @@ const SCRIPT = {
     // No static icon — this one flips between sun/moon with the theme
     // itself, resolved in CardContent the same way Header.jsx's own
     // toolbar icon is.
-    width: 312,
+    width: 332,
   },
   persist: {
     selector: ".header .persist",
@@ -180,7 +190,7 @@ const SCRIPT = {
     body: "Notes clear when you close this tab by default — lock this to keep them waiting for you next time.",
     accent: "var(--gray-color)",
     // Also flips its own icon live — locked or open — same pattern as theme.
-    width: 312,
+    width: 332,
   },
   settings: {
     selector: ".header .settings-trigger",
@@ -188,7 +198,7 @@ const SCRIPT = {
     body: "Sound, motion, and the notebook's other quiet preferences all live behind this gear.",
     accent: "var(--red-color)",
     icon: FaGear,
-    width: 312,
+    width: 332,
   },
   // The one stop that stands in for everything else this walk doesn't have
   // room for — trash, sprints, replay, all of it lives behind this single
@@ -199,7 +209,7 @@ const SCRIPT = {
     body: "Ctrl+K (or this wand) opens a command palette for everything the desk can do — trash, focus sprints, replaying the intro, all of it.",
     accent: "var(--green-color)",
     icon: FaWandMagicSparkles,
-    width: 320,
+    width: 340,
   },
   // No selector — like the bookends, this one holds centre stage. Unlike
   // them it's still a numbered stop in the walk (it belongs in WALK, just
@@ -209,17 +219,17 @@ const SCRIPT = {
     title: "Or just press ?",
     body: "A full cheat sheet of every shortcut this desk answers to, one keystroke away whenever you forget.",
     accent: "var(--blue-color)",
-    width: 300,
+    width: 320,
   },
   farewell: {
     title: "The desk is yours",
     body: "Pour freely — the ink remembers this session.",
     accent: "var(--pink-color)",
-    width: 300,
+    width: 320,
   },
 };
 
-const WALK = ["activator", "backup", "ink", "search", "star", "pile", "shuffle", "sort", "select", "dock", "focus", "insights", "history", "theme", "persist", "settings", "command", "shortcuts"];
+const WALK = ["activator", "backup", "ink", "search", "star", "pile", "shuffle", "sort", "select", "dock", "focus", "insights", "quote", "history", "theme", "persist", "settings", "command", "shortcuts"];
 
 const clamp = (value, lo, hi) => Math.min(Math.max(value, lo), hi);
 
@@ -339,6 +349,28 @@ const CardContent = ({ step, config, walkIndex, reduced, send, onJump, theme, pe
     return () => anime.remove(targets);
   }, [reduced]);
 
+  // The dot row used to just grow with the walk — fine at a dozen stops,
+  // cramped and eventually wrapping badly well before twenty. Rather than
+  // keep shrinking dots toward illegibility as more stops get added, the
+  // row is now a fixed-width scrollable window (mask-faded at both edges)
+  // that always centers whichever dot is live — every stop stays a real,
+  // full-size, clickable jump target no matter how long the walk grows.
+  // CardContent remounts fresh every step (see the AnimatePresence key in
+  // the render below), so there's no "previous scroll position" to animate
+  // from within one instance — a layout effect sets it before the browser
+  // ever paints, and the ink-reveal clip-path already hides the first
+  // instant of every mount besides.
+  const dotsWrapRef = useRef(null);
+  const liveDotRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const wrap = dotsWrapRef.current;
+    const live = liveDotRef.current;
+    if (!wrap || !live) return;
+
+    wrap.scrollLeft = live.offsetLeft - wrap.clientWidth / 2 + live.clientWidth / 2;
+  }, [walkIndex]);
+
   const isGreeting = step === "greeting";
   const isFarewell = step === "farewell";
 
@@ -381,30 +413,33 @@ const CardContent = ({ step, config, walkIndex, reduced, send, onJump, theme, pe
         </span>
         {
           walkIndex >= 0 && (
-            <span className="tour-dots">
-              {
-                WALK.map((name, index) => (
-                  <button
-                    key={ name }
-                    type="button"
-                    className={ `tour-dot ${ index < walkIndex ? "past" : "" } ${ index === walkIndex ? "live" : "" }` }
-                    aria-label={ `Jump to ${ SCRIPT[name]?.title || name }` }
-                    aria-current={ index === walkIndex ? "step" : undefined }
-                    onPointerDown={ (e) => e.stopPropagation() }
-                    onClick={ () => onJump(index) }
-                  >
-                    {
-                      !reduced && index === walkIndex && (
-                        <motion.span
-                          layoutId="tourDotLive"
-                          className="tour-dot-ring"
-                          transition={{ type: "spring", stiffness: 380, damping: 16 }}
-                        />
-                      )
-                    }
-                  </button>
-                ))
-              }
+            <span className="tour-dots-wrap" ref={ dotsWrapRef }>
+              <span className="tour-dots">
+                {
+                  WALK.map((name, index) => (
+                    <button
+                      key={ name }
+                      ref={ index === walkIndex ? liveDotRef : undefined }
+                      type="button"
+                      className={ `tour-dot ${ index < walkIndex ? "past" : "" } ${ index === walkIndex ? "live" : "" }` }
+                      aria-label={ `Jump to ${ SCRIPT[name]?.title || name }` }
+                      aria-current={ index === walkIndex ? "step" : undefined }
+                      onPointerDown={ (e) => e.stopPropagation() }
+                      onClick={ () => onJump(index) }
+                    >
+                      {
+                        !reduced && index === walkIndex && (
+                          <motion.span
+                            layoutId="tourDotLive"
+                            className="tour-dot-ring"
+                            transition={{ type: "spring", stiffness: 380, damping: 16 }}
+                          />
+                        )
+                      }
+                    </button>
+                  ))
+                }
+              </span>
             </span>
           )
         }
@@ -911,6 +946,18 @@ const TourGuide = ({ theme, persistNotes }) => {
               exit={{ opacity: 0, transition: { duration: .25, ease: "easeIn" } }}
             >
               {
+                // The punctual ink stamp: a flubber blob-morph that blooms
+                // once behind the control and fades within its own first
+                // second — see InkStamp.jsx for why this stays one-shot
+                // rather than a fourth persistent marker. Rendered first so
+                // the hand-drawn ring below settles on top of it.
+                ringRect && (
+                  <AnimatePresence mode="wait">
+                    <InkStamp key={ step } rect={ ringRect } accent={ config?.accent } reduced={ reduced } />
+                  </AnimatePresence>
+                )
+              }
+              {
                 // The hand-drawn spotlight: a sketchy ring circling whichever
                 // control the current stop targets. Nothing to circle at the
                 // bookend scenes, so ringRect stays null there.
@@ -940,9 +987,14 @@ const TourGuide = ({ theme, persistNotes }) => {
                       aria-live="polite"
                       aria-label={ config.title }
                       style={{ originY: 0, "--tour-accent": config.accent, x: dragX, rotate: dragRotate }}
-                      initial={{ opacity: 0, scale: .2, borderRadius: 44 }}
-                      animate={{ opacity: 1, scale: 1, borderRadius: 16, width: config.width }}
-                      exit={{ opacity: 0, scale: .3, borderRadius: 44, transition: { duration: .16, ease: "easeIn" } }}
+                      // A perfectly round dot on the way in/out, an
+                      // asymmetric hand-cut quadrilateral at rest — both
+                      // 4-value strings of the same shape so framer
+                      // interpolates each corner independently instead of
+                      // snapping between a bare number and a complex one.
+                      initial={{ opacity: 0, scale: .2, borderRadius: "44px 44px 44px 44px" }}
+                      animate={{ opacity: 1, scale: 1, borderRadius: "20px 30px 24px 34px", width: config.width }}
+                      exit={{ opacity: 0, scale: .3, borderRadius: "44px 44px 44px 44px", transition: { duration: .16, ease: "easeIn" } }}
                       transition={{
                         type: "spring",
                         stiffness: 230,

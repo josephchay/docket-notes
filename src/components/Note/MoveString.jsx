@@ -1,9 +1,7 @@
-import React, { useState, useRef, useEffect } from "react";
-import {
-  motion,
-  AnimatePresence,
-  useTransform,
-} from "framer-motion";
+import { useState, useRef, useEffect } from "react";
+import { useTransform } from "framer-motion";
+
+import PullRig from "./PullRig";
 
 const HOVER_PADDING = 34;   // how far outside a card the pull still counts (px)
 
@@ -128,98 +126,33 @@ const MoveString = ({ anchorX, restY = 26, colorName, icon, noteId, pullX, pullY
   }, []);
 
   return (
-    <div className={ `pull-string ${ colorName }` }>
-      <svg
-        className="pull-rope"
-        viewBox="0 0 340 260"
-        preserveAspectRatio="none"
-      >
-        <motion.path
-          d={ ropePath }
-          strokeWidth={ ropeWidth }
-          className={ `pull-rope-line ${ armed ? "taut" : "" }` }
-          fill="none"
-          strokeLinecap="round"
-        />
-      </svg>
-      <motion.div
-        className="pull-glow"
-        style={{ opacity: glowOpacity, x: pullX, y: pullY, left: anchorX, top: restY }}
-      />
-      <motion.button
-        ref={ tabRef }
-        type="button"
-        aria-label="Pull onto another note to swap places with it"
-        className={ `pull-tab move ${ colorName }-bg ${ armed ? "ready" : "" }` }
-        drag
-        dragSnapToOrigin
-        dragMomentum={ false }
-        dragTransition={{ bounceStiffness: 340, bounceDamping: 13 }}
-        style={{ x: pullX, y: pullY, scale: gripScale, left: anchorX, top: restY }}
-        onDragStart={ handleStart }
-        onDrag={ handleDrag }
-        onDragEnd={ handleEnd }
-        onMouseDown={ (e) => e.stopPropagation() }
-        onTouchStart={ (e) => e.stopPropagation() }
-      >
-        <span className="pull-grip">
-          { armed ? <span className="pull-grip-arrow">⇄</span> : icon }
-        </span>
-      </motion.button>
-      <AnimatePresence>
-        {
-          armed && (
-            <div className="pull-hint" style={{ left: anchorX }}>
-              <motion.span
-                className="pull-hint-label"
-                initial={{ opacity: 0, scale: .8, y: 6 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: .8 }}
-                transition={{ type: "spring", stiffness: 320, damping: 20 }}
-              >
-                Release to swap notes ⇄
-              </motion.span>
-            </div>
-          )
-        }
-      </AnimatePresence>
-      <AnimatePresence>
-        {
-          burst && (
-            <motion.div
-              className="pull-burst"
-              style={{ left: anchorX }}
-              initial={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              {
-                Array.from({ length: 10 }).map((_, i) => {
-                  const angle = (Math.PI * 2 * i) / 10;
-                  const distance = 52 + (i % 3) * 15;
-
-                  return (
-                    <motion.span
-                      key={ i }
-                      className={ `spark ${ colorName }` }
-                      initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
-                      animate={{
-                        x: Math.cos(angle) * distance,
-                        y: Math.sin(angle) * distance,
-                        scale: [0, 1, 0],
-                        opacity: [1, 1, 0],
-                      }}
-                      transition={{ duration: .7, ease: "easeOut" }}
-                    >
-                      ✦
-                    </motion.span>
-                  );
-                })
-              }
-            </motion.div>
-          )
-        }
-      </AnimatePresence>
-    </div>
+    <PullRig
+      anchorX={ anchorX }
+      restY={ restY }
+      colorName={ colorName }
+      pullX={ pullX }
+      pullY={ pullY }
+      ropePath={ ropePath }
+      ropeWidth={ ropeWidth }
+      gripScale={ gripScale }
+      glowOpacity={ glowOpacity }
+      ready={ armed }
+      hintText="Release to swap notes ⇄"
+      tabRef={ tabRef }
+      tabAriaLabel="Pull onto another note to swap places with it"
+      tabClassName={ `pull-tab move ${ colorName }-bg ${ armed ? "ready" : "" }` }
+      tabContent={ armed ? <span className="pull-grip-arrow">⇄</span> : icon }
+      burst={ burst }
+      dragProps={{
+        drag: true,
+        dragSnapToOrigin: true,
+        dragMomentum: false,
+        dragTransition: { bounceStiffness: 340, bounceDamping: 13 },
+        onDragStart: handleStart,
+        onDrag: handleDrag,
+        onDragEnd: handleEnd,
+      }}
+    />
   );
 };
 

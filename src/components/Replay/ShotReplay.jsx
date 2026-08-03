@@ -393,6 +393,20 @@ const ShotReplay = () => {
               <span ref={ (el) => { dotRefs.current[1] = el; } } className="replay-dot mid" />
               <span ref={ (el) => { dotRefs.current[2] = el; } } className="replay-dot tail" />
             </div>
+            {/* A press used to leave a mechanically perfect circle behind —
+                the same feTurbulence/feDisplacementMap recipe HistoryPanel's
+                own liquid rail already uses gives the ring a permanently
+                organic wobble through its whole life instead, so a press
+                reads as an actual ring of ink spreading through water
+                rather than a UI ripple. */}
+            <svg className="replay-liquid-defs" aria-hidden="true">
+              <defs>
+                <filter id="replay-ripple-liquid" x="-40%" y="-40%" width="180%" height="180%">
+                  <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="7" result="noise" />
+                  <feDisplacementMap in="SourceGraphic" in2="noise" scale="6" />
+                </filter>
+              </defs>
+            </svg>
             {
               ripples.map((ripple) => (
                 <motion.span

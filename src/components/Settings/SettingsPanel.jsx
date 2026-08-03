@@ -3,8 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { FaXmark, FaMoon, FaSun, FaLock, FaLockOpen, FaFeather, FaArrowPointer, FaVolumeHigh, FaVolumeXmark } from "react-icons/fa6";
 
 import { loadSettings, saveSettings } from "../../utils/storage";
-import useBlobClipMorph from "../../hooks/useBlobClipMorph";
-import useFocusTrap from "../../hooks/useFocusTrap";
+import SheetPanel from "../Sheet/SheetPanel";
 import HistoryAmbient from "../History/HistoryAmbient";
 import SettingsToggle from "./SettingsToggle";
 
@@ -43,8 +42,6 @@ const SettingsPanel = ({
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
 
-  const onBlobUpdate = useBlobClipMorph(panelRef, open, 22);
-
   useEffect(() => {
     const handleKey = (e) => {
       if (e.key === "Escape") setOpen(false);
@@ -58,10 +55,6 @@ const SettingsPanel = ({
       window.removeEventListener(SETTINGS_EVENT, handleSummon);
     };
   }, []);
-
-  // Traps Tab/Shift+Tab within the panel while open and returns focus to
-  // whatever triggered it once closed — see useFocusTrap.js.
-  useFocusTrap(panelRef, open);
 
   // The ink wash washes out from the toggle itself, same reasoning as
   // Header's own handleThemeToggle — it should look the same whether it
@@ -86,33 +79,16 @@ const SettingsPanel = ({
   };
 
   return (
-    <AnimatePresence>
-      {
-        open && (
-          <div className="settings-layer">
-            <motion.div
-              className="settings-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, transition: { duration: .2 } }}
-              onClick={ () => setOpen(false) }
-            />
-            <motion.div
-              ref={ panelRef }
-              tabIndex={ -1 }
-              className="settings-panel"
-              initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
-              onUpdate={ onBlobUpdate }
-              animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 22 }}
-              exit={{
-                opacity: 0,
-                scale: .24,
-                translateY: 60,
-                borderRadius: 50,
-                transition: { duration: .2, ease: "easeIn" },
-              }}
-              transition={{ type: "spring", stiffness: 190, damping: 14 }}
-            >
+    <SheetPanel
+      open={ open }
+      onClose={ () => setOpen(false) }
+      panelRef={ panelRef }
+      radius={ 22 }
+      layerClassName="settings-layer"
+      backdropClassName="settings-backdrop"
+      panelClassName="settings-panel"
+      ariaLabel="Settings"
+    >
               <div className="settings-header">
                 <h3>Settings</h3>
                 <motion.button
@@ -289,11 +265,7 @@ const SettingsPanel = ({
                   </div>
                 </div>
               </div>
-            </motion.div>
-          </div>
-        )
-      }
-    </AnimatePresence>
+    </SheetPanel>
   );
 };
 

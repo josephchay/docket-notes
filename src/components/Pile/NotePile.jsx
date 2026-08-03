@@ -35,6 +35,14 @@ const IMPACT_SOUND_COOLDOWN_MS = 45; // keeps an avalanche of pieces from becomi
 // and draggable (a real Matter.MouseConstraint lets you fling pieces
 // around), so a press is only ever "open" once it's clear the pointer
 // barely moved — otherwise it was a toss, and physics keeps it.
+//
+// Two more things ride the same per-tick loop, both off numbers the engine
+// is already computing rather than a second, separately-timed animation:
+// a light paper flutter (a small skew keyed to each piece's own spin, so
+// every piece wobbles on its own unrepeated phase) while a piece is still
+// properly airborne, and a shadow that actually grows and softens the
+// higher up a piece currently is — real depth, cheaply, in place of the
+// old fixed two-state (resting/dragging) shadow.
 const NotePile = ({ notes, onOpenNote, onExit }) => {
   const containerRef = useRef(null);
   const engineRef = useRef(null);
@@ -93,7 +101,14 @@ const NotePile = ({ notes, onOpenNote, onExit }) => {
     // measures click-vs-toss distance and never touches any visuals).
     const handleStartDrag = (e) => {
       const piece = bodiesRef.current[e.body?.__pieceKey];
-      if (piece) piece.el.classList.add("dragging");
+      if (piece) {
+        piece.el.classList.add("dragging");
+        // Hands the shadow back to the .dragging CSS rule — an inline
+        // style always outranks a class regardless of which was written
+        // more recently, so the per-tick airborne shadow below has to
+        // actually let go of it, not just stop overwriting it.
+        piece.el.style.boxShadow = "";
+      }
     };
     const handleEndDrag = (e) => {
       const piece = bodiesRef.current[e.body?.__pieceKey];
@@ -135,6 +150,8 @@ const NotePile = ({ notes, onOpenNote, onExit }) => {
       Matter.Engine.update(engine, 1000 / 60);
 
       const dt = 1 / 60;
+      const floorY = wallsRef.current ? wallsRef.current.floor.position.y : null;
+
       for (const piece of Object.values(bodiesRef.current)) {
         const { body, el } = piece;
 
@@ -148,8 +165,36 @@ const NotePile = ({ notes, onOpenNote, onExit }) => {
         const scaleY = 1 - squash * .55;
         const scaleX = 1 + squash * .4;
 
+        // How high off the floor this piece currently sits, normalized —
+        // real depth read straight off the physics engine's own numbers,
+        // driving both the flutter and the shadow below rather than a
+        // second, separately-timed animation.
+        const airborne = floorY === null ? 0 :
+          Math.max(0, Math.min(1, (floorY - body.position.y - PIECE_H * .6) / 200));
+
+        // A light sheet of paper's own flutter through the air — a small
+        // skew riding the piece's own spin (never a separate clock, so
+        // every piece flutters on its own unrepeated phase), fading out
+        // as it settles so a resting pile stays perfectly still rather
+        // than idly wobbling forever.
+        const flutter = Math.sin(body.angle * 3.2) * 3.5 * airborne;
+
         el.style.transform =
-          `translate(${ body.position.x }px, ${ body.position.y }px) translate(-50%, -50%) rotate(${ body.angle }rad) scale(${ scaleX }, ${ scaleY })`;
+          `translate(${ body.position.x }px, ${ body.position.y }px) translate(-50%, -50%) rotate(${ body.angle }rad) skew(${ flutter }deg) scale(${ scaleX }, ${ scaleY })`;
+
+        // The shadow itself grows, softens, and drifts further out the
+        // higher a piece currently is — real airborne depth, off the same
+        // data — then tightens back into a grounded contact shadow as it
+        // settles. Dragging keeps its own fixed CSS lift (see .dragging
+        // and handleStartDrag above) rather than fighting this per-frame.
+        if (!el.classList.contains("dragging")) {
+          const blur = 10 + airborne * 30;
+          const spread = -10 - airborne * 6;
+          const offsetY = 10 + airborne * 22;
+          const alpha = .3 - airborne * .1;
+          el.style.boxShadow =
+            `0 1px 1px rgba(25, 25, 25, 0.05), 0 ${ offsetY }px ${ blur }px ${ spread }px rgba(25, 25, 25, ${ alpha })`;
+        }
       }
     }
 

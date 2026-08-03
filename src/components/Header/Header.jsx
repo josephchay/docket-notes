@@ -15,6 +15,7 @@ import useInkPulse from "../../hooks/useInkPulse";
 import useMagnetic from "../../hooks/useMagnetic";
 import { playStar } from "../../utils/sound";
 import LiquidMeter from "../Meter/LiquidMeter";
+import SparkBurst from "../Spark/SparkBurst";
 
 import './Header.css';
 
@@ -276,41 +277,12 @@ const Header = ({
               <FaStar className="star-icon" />
             </motion.span>
           </span>
-          <AnimatePresence>
-            {
-              starBurst && (
-                <motion.span
-                  className="star-burst"
-                  initial={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  {
-                    Array.from({ length: 6 }).map((_, i) => {
-                      const angle = (Math.PI * 2 * i) / 6;
-                      const distance = 26 + (i % 2) * 8;
-
-                      return (
-                        <motion.span
-                          key={ i }
-                          className="spark"
-                          initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
-                          animate={{
-                            x: Math.cos(angle) * distance,
-                            y: Math.sin(angle) * distance,
-                            scale: [0, 1, 0],
-                            opacity: [1, 1, 0],
-                          }}
-                          transition={{ duration: .6, ease: "easeOut" }}
-                        >
-                          ✦
-                        </motion.span>
-                      );
-                    })
-                  }
-                </motion.span>
-              )
-            }
-          </AnimatePresence>
+          <SparkBurst
+            active={ starBurst }
+            count={ 6 }
+            radius={ (i) => 26 + (i % 2) * 8 }
+            className="star-burst"
+          />
         </motion.button>
       </div>
       {/* The tally pops with a spring every time a note joins, leaves, or a

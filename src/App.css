@@ -3,6 +3,22 @@
   overflow: hidden;
 }
 
+/* A brief bloom of ink bridging the cut between the two custom cursors
+   (see App.jsx) — sits above both (z-index 999999) so it visibly masks
+   the swap for its short life. */
+.cursor-swap-bloom {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--page-ink-color) 0%, transparent 72%);
+  pointer-events: none;
+  z-index: 1000000;
+}
+
 .custom-scroll::-webkit-scrollbar {
   width: 18px;
 }

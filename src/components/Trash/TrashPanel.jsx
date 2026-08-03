@@ -4,8 +4,8 @@ import { FaXmark, FaArrowRotateLeft, FaTrash, FaBoxArchive } from "react-icons/f
 
 import { timeAgo } from "../../utils/date";
 import TrashPhysics from "./TrashPhysics";
-import useBlobClipMorph from "../../hooks/useBlobClipMorph";
-import useFocusTrap from "../../hooks/useFocusTrap";
+import SheetPanel from "../Sheet/SheetPanel";
+import SparkBurst from "../Spark/SparkBurst";
 
 import "./TrashPanel.css";
 
@@ -40,13 +40,6 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
   const panelRef = useRef(null);
   const swatchRefs = useRef({});
 
-  // The dot-to-sheet morph clips through a real organic blob stage
-  // (utils/blob.js's flubber-powered createBlobMorph) on the way to/from
-  // this shape, layered on top of the scale spring below. clip-path only
-  // affects painting, not layout, so dropPhysics's own getBoundingClientRect
-  // reads off this same ref are unaffected.
-  const onBlobUpdate = useBlobClipMorph(panelRef, open, 22);
-
   const dropPhysics = (note) => {
     const swatch = swatchRefs.current[note.id];
     const panelRect = panelRef.current?.getBoundingClientRect();
@@ -76,10 +69,6 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
       window.removeEventListener(TRASH_EVENT, handleSummon);
     };
   }, []);
-
-  // Traps Tab/Shift+Tab within the panel while open and returns focus to
-  // whatever triggered it once closed — see useFocusTrap.js.
-  useFocusTrap(panelRef, open);
 
   const handleRestore = (noteId) => {
     setPendingExit((prev) => ({ ...prev, [noteId]: "restore" }));
@@ -156,33 +145,16 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
           tumbling keep settling and fading even if the panel closes
           mid-shred, rather than being yanked away with it. */}
       <TrashPhysics ref={ physicsRef } reduceMotion={ reduceMotion } />
-      <AnimatePresence>
-      {
-        open && (
-          <div className="trash-layer">
-            <motion.div
-              className="trash-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, transition: { duration: .2 } }}
-              onClick={ () => setOpen(false) }
-            />
-            <motion.div
-              ref={ panelRef }
-              tabIndex={ -1 }
-              className="trash-panel"
-              initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
-              onUpdate={ onBlobUpdate }
-              animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 22 }}
-              exit={{
-                opacity: 0,
-                scale: .24,
-                translateY: 60,
-                borderRadius: 50,
-                transition: { duration: .2, ease: "easeIn" },
-              }}
-              transition={{ type: "spring", stiffness: 190, damping: 14 }}
-            >
+      <SheetPanel
+        open={ open }
+        onClose={ () => setOpen(false) }
+        panelRef={ panelRef }
+        radius={ 22 }
+        layerClassName="trash-layer"
+        backdropClassName="trash-backdrop"
+        panelClassName="trash-panel"
+        ariaLabel="Trash"
+      >
               <div className="trash-header">
                 <h3>Trash</h3>
                 <div className="trash-header-actions">
@@ -289,41 +261,14 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
                                 onClick={ () => handleRestore(entry.note.id) }
                               >
                                 <FaArrowRotateLeft />
-                                <AnimatePresence>
-                                  {
-                                    restoreBurst === entry.note.id && (
-                                      <motion.span
-                                        className="trash-restore-burst"
-                                        initial={{ opacity: 1 }}
-                                        exit={{ opacity: 0 }}
-                                      >
-                                        {
-                                          Array.from({ length: 5 }).map((_, i) => {
-                                            const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
-                                            const distance = 20;
-
-                                            return (
-                                              <motion.span
-                                                key={ i }
-                                                className="trash-restore-spark"
-                                                initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
-                                                animate={{
-                                                  x: Math.cos(angle) * distance,
-                                                  y: Math.sin(angle) * distance,
-                                                  scale: [0, 1, 0],
-                                                  opacity: [1, 1, 0],
-                                                }}
-                                                transition={{ duration: .5, ease: "easeOut" }}
-                                              >
-                                                ✦
-                                              </motion.span>
-                                            );
-                                          })
-                                        }
-                                      </motion.span>
-                                    )
-                                  }
-                                </AnimatePresence>
+                                <SparkBurst
+                                  active={ restoreBurst === entry.note.id }
+                                  count={ 5 }
+                                  angleOffset={ -Math.PI / 2 }
+                                  radius={ 20 }
+                                  duration={ .5 }
+                                  className="trash-restore-burst"
+                                />
                               </motion.button>
                               <motion.button
                                 type="button"
@@ -345,11 +290,7 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
                   )
                 }
               </div>
-            </motion.div>
-          </div>
-        )
-      }
-      </AnimatePresence>
+      </SheetPanel>
     </>
   );
 };

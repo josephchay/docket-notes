@@ -1,5 +1,7 @@
 import React, { useEffect, useRef } from "react";
 
+import { frameEase, prefersNativeCursor } from "../../utils/cursorMotion";
+
 import "./CursorAura.css";
 
 const TRAIL = 22;            // points in the comet trail
@@ -104,9 +106,7 @@ const CursorAura = () => {
 
     const showNativeCursor = () => document.body.classList.add("native-cursor");
 
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
-    if (reducedMotion || coarsePointer) {
+    if (prefersNativeCursor()) {
       showNativeCursor();
       return;
     }
@@ -211,7 +211,7 @@ const CursorAura = () => {
       last = now;
 
       // Frame-rate independent easing, so the feel is identical at any Hz.
-      const ease = (k) => 1 - Math.pow(1 - k, dt * 60);
+      const ease = (k) => frameEase(k, dt);
 
       points[0].x += (mouse.x - points[0].x) * ease(0.5);
       points[0].y += (mouse.y - points[0].y) * ease(0.5);

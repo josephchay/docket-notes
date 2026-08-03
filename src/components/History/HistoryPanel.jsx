@@ -16,8 +16,7 @@ import { timeAgo } from "../../utils/date";
 import { smoothPath } from "../../utils/svgPath";
 import { NOTE_COLORS } from "../../constants/colors";
 import { playbackMachine, PLAYBACK_SPEEDS } from "./HistoryPlaybackState";
-import useBlobClipMorph from "../../hooks/useBlobClipMorph";
-import useFocusTrap from "../../hooks/useFocusTrap";
+import SheetPanel from "../Sheet/SheetPanel";
 import HistoryAmbient from "./HistoryAmbient";
 import HistoryConstellation from "./HistoryConstellation";
 import useOdometer from "./useOdometer";
@@ -177,11 +176,6 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   // constellation's ambient spin, its cinematic tour's camera flight, its
   // gravity well, and the rail's elastic stretch (see each site below).
 
-  // The dot-to-sheet morph clips through a real organic blob stage
-  // (utils/blob.js's flubber-powered createBlobMorph) on top of the scale
-  // spring below.
-  const onBlobUpdate = useBlobClipMorph(panelRef, open, 22);
-
   // Hovering (or keyboard-focusing) any tick previews that moment in the
   // "now" readout above the rail — its label, time, and color makeup —
   // without actually jumping there; null falls back to the real cursor.
@@ -228,12 +222,6 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   useEffect(() => {
     if (!open) setConstellation(false);
   }, [open]);
-
-  // Traps Tab/Shift+Tab within the panel and returns focus to whatever
-  // triggered it once closed — shared with every other dot-to-sheet panel
-  // in this app now (see useFocusTrap.js), rather than each carrying its
-  // own copy of the same logic the way this one originally did.
-  useFocusTrap(panelRef, open);
 
   const stopPlayback = () => playbackService.send("STOP");
 
@@ -758,33 +746,16 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   }, [open, timeline.length, stepBack, stepForward, togglePlay, restart, jumpToLatest]);
 
   return (
-    <AnimatePresence>
-      {
-        open && (
-          <div className="history-layer">
-            <motion.div
-              className="history-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, transition: { duration: .2 } }}
-              onClick={ () => setOpen(false) }
-            />
-            <motion.div
-              ref={ panelRef }
-              tabIndex={ -1 }
-              className={ `history-panel ${ maximized ? "maximized" : "" }` }
-              initial={{ opacity: 0, scale: .1, translateY: 90, borderRadius: 60 }}
-              onUpdate={ onBlobUpdate }
-              animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 22 }}
-              exit={{
-                opacity: 0,
-                scale: .24,
-                translateY: 60,
-                borderRadius: 50,
-                transition: { duration: .2, ease: "easeIn" },
-              }}
-              transition={{ type: "spring", stiffness: 190, damping: 14 }}
-            >
+    <SheetPanel
+      open={ open }
+      onClose={ () => setOpen(false) }
+      panelRef={ panelRef }
+      radius={ 22 }
+      layerClassName="history-layer"
+      backdropClassName="history-backdrop"
+      panelClassName={ `history-panel ${ maximized ? "maximized" : "" }` }
+      ariaLabel="Edit history"
+    >
               <svg className="history-liquid-defs" aria-hidden="true">
                 <defs>
                   <filter id="history-liquid" x="-20%" y="-20%" width="140%" height="140%">
@@ -1687,11 +1658,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                   document.body
                 )
               }
-            </motion.div>
-          </div>
-        )
-      }
-    </AnimatePresence>
+    </SheetPanel>
   );
 };
 

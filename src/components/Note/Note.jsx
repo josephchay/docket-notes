@@ -10,6 +10,7 @@ import useLongPress from "../../hooks/useLongPress";
 import { playDelete, playStar } from "../../utils/sound";
 import PullString from "./PullString";
 import MoveString from "./MoveString";
+import SparkBurst from "../Spark/SparkBurst";
 
 import "./Note.css";
 
@@ -621,41 +622,12 @@ const Note = ({
             <FaStar
               className={ `star-icon ${ note.color }` }
             />
-            <AnimatePresence>
-              {
-                starBurst && (
-                  <motion.span
-                    className="star-burst"
-                    initial={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                  >
-                    {
-                      Array.from({ length: 6 }).map((_, i) => {
-                        const angle = (Math.PI * 2 * i) / 6;
-                        const distance = 30 + (i % 2) * 10;
-
-                        return (
-                          <motion.span
-                            key={ i }
-                            className="spark"
-                            initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
-                            animate={{
-                              x: Math.cos(angle) * distance,
-                              y: Math.sin(angle) * distance,
-                              scale: [0, 1, 0],
-                              opacity: [1, 1, 0],
-                            }}
-                            transition={{ duration: .6, ease: "easeOut" }}
-                          >
-                            ✦
-                          </motion.span>
-                        );
-                      })
-                    }
-                  </motion.span>
-                )
-              }
-            </AnimatePresence>
+            <SparkBurst
+              active={ starBurst }
+              count={ 6 }
+              radius={ (i) => 30 + (i % 2) * 10 }
+              className="star-burst"
+            />
           </motion.div>
         </div>
         <motion.input

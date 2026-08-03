@@ -50,10 +50,13 @@ export const tourMachine = Machine({
       on: { NEXT: 'insights', BACK: 'dock', SKIP: 'done' },
     },
     insights: {
-      on: { NEXT: 'history', BACK: 'focus', SKIP: 'done' },
+      on: { NEXT: 'quote', BACK: 'focus', SKIP: 'done' },
+    },
+    quote: {
+      on: { NEXT: 'history', BACK: 'insights', SKIP: 'done' },
     },
     history: {
-      on: { NEXT: 'theme', BACK: 'insights', SKIP: 'done' },
+      on: { NEXT: 'theme', BACK: 'quote', SKIP: 'done' },
     },
     theme: {
       on: { NEXT: 'persist', BACK: 'history', SKIP: 'done' },

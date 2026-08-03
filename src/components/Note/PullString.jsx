@@ -1,11 +1,7 @@
-import React, { useState, useRef, useEffect } from "react";
-import {
-  motion,
-  AnimatePresence,
-  useMotionValue,
-  useTransform,
-  useMotionValueEvent,
-} from "framer-motion";
+import { useState, useRef, useEffect } from "react";
+import { useMotionValue, useTransform, useMotionValueEvent } from "framer-motion";
+
+import PullRig from "./PullRig";
 
 const PULL_THRESHOLD = 120;   // how far "far enough" is (px)
 
@@ -68,95 +64,32 @@ const PullString = ({ anchorX, restY = 26, colorName, icon, verb, onTrigger }) =
   }, []);
 
   return (
-    <div className={ `pull-string ${ colorName }` }>
-      <svg
-        className="pull-rope"
-        viewBox="0 0 340 260"
-        preserveAspectRatio="none"
-      >
-        <motion.path
-          d={ ropePath }
-          strokeWidth={ ropeWidth }
-          className={ `pull-rope-line ${ ready ? "taut" : "" }` }
-          fill="none"
-          strokeLinecap="round"
-        />
-      </svg>
-      <motion.div
-        className="pull-glow"
-        style={{ opacity: glowOpacity, x: pullX, y: pullY, left: anchorX, top: restY }}
-      />
-      <motion.button
-        ref={ tabRef }
-        type="button"
-        aria-label={ `Pull to ${ verb }` }
-        className={ `pull-tab ${ colorName }-bg ${ ready ? "ready" : "" }` }
-        drag
-        dragSnapToOrigin
-        dragElastic={ 0.5 }
-        dragConstraints={{ left: -70, right: 70, top: 0, bottom: 220 }}
-        dragTransition={{ bounceStiffness: 340, bounceDamping: 13 }}
-        style={{ x: pullX, y: pullY, scale: gripScale, left: anchorX, top: restY }}
-        onDragEnd={ handleEnd }
-        onMouseDown={ (e) => e.stopPropagation() }
-        onTouchStart={ (e) => e.stopPropagation() }
-      >
-        <span className="pull-grip">{ icon }</span>
-      </motion.button>
-      <AnimatePresence>
-        {
-          ready && (
-            <div className="pull-hint" style={{ left: anchorX }}>
-              <motion.span
-                className="pull-hint-label"
-                initial={{ opacity: 0, scale: .8, y: 6 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: .8 }}
-                transition={{ type: "spring", stiffness: 320, damping: 20 }}
-              >
-                Release to { verb } ✦
-              </motion.span>
-            </div>
-          )
-        }
-      </AnimatePresence>
-      <AnimatePresence>
-        {
-          burst && (
-            <motion.div
-              className="pull-burst"
-              style={{ left: anchorX }}
-              initial={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              {
-                Array.from({ length: 10 }).map((_, i) => {
-                  const angle = (Math.PI * 2 * i) / 10;
-                  const distance = 52 + (i % 3) * 15;
-
-                  return (
-                    <motion.span
-                      key={ i }
-                      className={ `spark ${ colorName }` }
-                      initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
-                      animate={{
-                        x: Math.cos(angle) * distance,
-                        y: Math.sin(angle) * distance,
-                        scale: [0, 1, 0],
-                        opacity: [1, 1, 0],
-                      }}
-                      transition={{ duration: .7, ease: "easeOut" }}
-                    >
-                      ✦
-                    </motion.span>
-                  );
-                })
-              }
-            </motion.div>
-          )
-        }
-      </AnimatePresence>
-    </div>
+    <PullRig
+      anchorX={ anchorX }
+      restY={ restY }
+      colorName={ colorName }
+      pullX={ pullX }
+      pullY={ pullY }
+      ropePath={ ropePath }
+      ropeWidth={ ropeWidth }
+      gripScale={ gripScale }
+      glowOpacity={ glowOpacity }
+      ready={ ready }
+      hintText={ `Release to ${ verb } ✦` }
+      tabRef={ tabRef }
+      tabAriaLabel={ `Pull to ${ verb }` }
+      tabClassName={ `pull-tab ${ colorName }-bg ${ ready ? "ready" : "" }` }
+      tabContent={ icon }
+      burst={ burst }
+      dragProps={{
+        drag: true,
+        dragSnapToOrigin: true,
+        dragElastic: 0.5,
+        dragConstraints: { left: -70, right: 70, top: 0, bottom: 220 },
+        dragTransition: { bounceStiffness: 340, bounceDamping: 13 },
+        onDragEnd: handleEnd,
+      }}
+    />
   );
 };
 

@@ -54,6 +54,21 @@
   opacity: .16;
 }
 
+/* The punctual ink stamp (InkStamp.jsx) — sits in the same layer as the
+   ring, rendered just before it in the JSX so the ring's own line settles
+   on top of the stamp's fill rather than under it. Low opacity so the
+   control's own icon/text still reads through it during its brief life. */
+.tour-stamp {
+  position: fixed;
+  z-index: 1;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tour-stamp-fill {
+  opacity: .28;
+}
+
 /* The springs, travel tilt, arrival wiggle and landing jelly all live on
    this shell, so the card inside can keep its own dot-to-sheet bloom
    without the two sets of transforms fighting. */
@@ -75,15 +90,55 @@
    (first aimCamera's own zoom, later framer's whileHover/whileTap); a mark
    that never touches the control at all has nothing left to fight. */
 
-/* The one paper card, same cloth as every panel on the desk. border-radius
-   is animated by framer during the dot-to-sheet bloom, so it is
-   deliberately not set here. */
+/* The one paper card, same cloth as every panel on the desk — but cut by
+   hand rather than a ruler: border-radius is animated by framer during the
+   dot-to-sheet bloom as a 4-value asymmetric string (see the JSX), not one
+   uniform number, so the resting shape is a genuinely organic quadrilateral
+   rather than a perfect rounded rect. Deliberately not set here for the
+   same reason it never was. */
 .tour-card {
+  position: relative;
+  overflow: hidden;
   padding: 18px 20px 16px;
   background-color: var(--page-bg-color);
   border: 1px solid var(--page-line-color);
   box-shadow: 0 26px 60px -20px rgba(25, 25, 25, 0.5);
   transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+}
+
+/* A soft wash of the stop's own accent bleeding from behind the icon
+   corner — the same --tour-accent custom property the dots/icon/sketch
+   ring already tint against (registered as a real <color> up top, see
+   @property), so this fades between stops on its own existing transition
+   rather than snapping. Paints behind the real content automatically
+   (::before paints first in a stacking context). */
+.tour-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 14% 8%, var(--tour-accent) 0%, transparent 62%);
+  opacity: .14;
+  pointer-events: none;
+}
+
+/* A dog-eared corner — the one purely decorative detail on this card that
+   isn't an animation at all, just a small physical fact: it's a real
+   sheet of paper, and paper's corners crease. Paints above the real
+   content automatically (::after paints last). */
+.tour-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  background: linear-gradient(135deg, transparent 50%, var(--page-line-color) 50%);
+  box-shadow: -1px 1px 3px rgba(25, 25, 25, .18);
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .tour-card::after {
+  box-shadow: -1px 1px 3px rgba(0, 0, 0, .4);
 }
 
 /* Draggable stops only (see `swipeable` in TourGuide.jsx) — the bookend
@@ -140,11 +195,35 @@
   transition: color 0.4s ease-in-out;
 }
 
+/* A fixed-width, horizontally scrollable window onto the dot row below,
+   rather than letting the row itself keep growing with the walk — see the
+   layout effect in CardContent (TourGuide.jsx) that re-centers whichever
+   dot is live inside it every time the step changes. Fades at both edges
+   via mask-image, so a dot scrolled just out of view reads as "the walk
+   continues here" rather than an abrupt cut. Scrollbar hidden — the
+   centering effect (and a manual drag, which still works) are the only
+   ways this needs to move, not a visible scrollbar competing with the
+   rest of the card's quiet, chrome-free look. */
+.tour-dots-wrap {
+  flex-shrink: 0;
+  max-width: 132px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-mask-image: linear-gradient(to right, transparent, black 14px, black calc(100% - 14px), transparent);
+  mask-image: linear-gradient(to right, transparent, black 14px, black calc(100% - 14px), transparent);
+}
+
+.tour-dots-wrap::-webkit-scrollbar {
+  display: none;
+}
+
 /* The walk's progress: one little ink pot per stop, round like the rail's. */
 .tour-dots {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 0 14px;
 }
 
 /* Now a real button — the dots double as a stepper, jumping straight to

@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from "react";
 import gsap from "gsap";
 
+import { frameEase, prefersNativeCursor } from "../../utils/cursorMotion";
+
 import "./CursorDot.css";
 
 const INTERACTIVE = "button, a, [role='button'], .star, .edit";
@@ -81,9 +83,7 @@ const CursorDot = () => {
     const capsule = capsuleRef.current;
     const ink = inkRef.current;
 
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
-    if (reducedMotion || coarsePointer) {
+    if (prefersNativeCursor()) {
       document.body.classList.add("native-cursor");
       return () => document.body.classList.remove("native-cursor");
     }
@@ -238,7 +238,7 @@ const CursorDot = () => {
       last = now;
 
       // Frame-rate independent easing, identical feel at any refresh rate.
-      const ease = (k) => 1 - Math.pow(1 - k, dt * 60);
+      const ease = (k) => frameEase(k, dt);
 
       // Smoothed pointer velocity — a faster, more direct signal than the
       // head/tail lag below, so it can lead the capsule's own stretch.
@@ -382,7 +382,19 @@ const CursorDot = () => {
       raf = requestAnimationFrame(frame);
     };
 
-    raf = requestAnimationFrame(frame);
+    // Paused while the tab is hidden — this rAF loop used to just run
+    // forever, backgrounded tab or not, unlike CursorAura's own pause-on-
+    // hidden; same fix, same reasoning (no cursor to chase when nobody's
+    // looking at the page).
+    const stop = () => cancelAnimationFrame(raf);
+    const start = () => {
+      stop();
+      last = performance.now();
+      raf = requestAnimationFrame(frame);
+    };
+    const handleVisibility = () => (document.hidden ? stop() : start());
+
+    start();
 
     window.addEventListener("pointermove", handleMove, { passive: true });
     window.addEventListener("pointerdown", handleDown, { passive: true });
@@ -390,9 +402,10 @@ const CursorDot = () => {
     document.addEventListener("pointerover", handleOver, { passive: true });
     document.documentElement.addEventListener("mouseleave", handleLeave);
     document.documentElement.addEventListener("mouseenter", handleEnter);
+    document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
-      cancelAnimationFrame(raf);
+      stop();
       pulseTween?.kill();
       poolTween?.kill();
       window.removeEventListener("pointermove", handleMove);
@@ -401,6 +414,7 @@ const CursorDot = () => {
       document.removeEventListener("pointerover", handleOver);
       document.documentElement.removeEventListener("mouseleave", handleLeave);
       document.documentElement.removeEventListener("mouseenter", handleEnter);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, []);
 
