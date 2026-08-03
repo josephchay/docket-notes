@@ -325,7 +325,7 @@ const Navigation = ({
         <motion.button
           type="button"
           aria-label="Save all notes to a backup file"
-          className="nav-tool"
+          className="nav-tool export-trigger"
           whileHover={{ scale: 1.15 }}
           whileTap={{ scale: .9 }}
           transition={{ type: "spring", stiffness: 400, damping: 17 }}

@@ -20,6 +20,7 @@ import {
   FaClockRotateLeft,
   FaDroplet,
   FaExpand,
+  FaFileArrowDown,
   FaGear,
   FaGrip,
   FaLayerGroup,
@@ -27,6 +28,7 @@ import {
   FaLockOpen,
   FaMagnifyingGlass,
   FaMoon,
+  FaShuffle,
   FaSquareCheck,
   FaStar,
   FaSun,
@@ -66,6 +68,14 @@ const SCRIPT = {
     icon: FaDroplet,
     width: 312,
   },
+  backup: {
+    selector: ".nav-tool.export-trigger",
+    title: "Keep a copy",
+    body: "Export saves the whole desk as a file you can keep — the button beside it brings a backup back in.",
+    accent: "var(--blue-color)",
+    icon: FaFileArrowDown,
+    width: 312,
+  },
   ink: {
     selector: ".ink-levels .ink-button",
     title: "How much ink you've used",
@@ -97,6 +107,14 @@ const SCRIPT = {
     accent: "var(--red-color)",
     icon: FaLayerGroup,
     width: 320,
+  },
+  shuffle: {
+    selector: ".shuffle",
+    title: "Give it a riffle",
+    body: "Shuffle tosses the order into the air — the same trick lives in the quick dock if your hand's already down there.",
+    accent: "var(--pink-color)",
+    icon: FaShuffle,
+    width: 312,
   },
   sort: {
     selector: ".sort-modes",
@@ -201,9 +219,57 @@ const SCRIPT = {
   },
 };
 
-const WALK = ["activator", "ink", "search", "star", "pile", "sort", "select", "dock", "focus", "insights", "history", "theme", "persist", "settings", "command", "shortcuts"];
+const WALK = ["activator", "backup", "ink", "search", "star", "pile", "shuffle", "sort", "select", "dock", "focus", "insights", "history", "theme", "persist", "settings", "command", "shortcuts"];
 
 const clamp = (value, lo, hi) => Math.min(Math.max(value, lo), hi);
+
+// The discussed control's own landing, in place of the old "grow and hold
+// a bigger scale for the whole stop" camera zoom: a z-index pop (so it
+// always draws above its own siblings while it's the one being talked
+// about, and never clips under a neighbor mid-wobble) plus one bouncy jelly
+// squash-and-stretch on arrival. The squash/stretch keyframes are the
+// project's own established jelly signature — the exact values useJellyTap
+// already plays on every toolbar icon's tap — reused verbatim here on the
+// raw DOM node (useJellyTap itself only works on mounted framer components,
+// not an arbitrary querySelector hit) so this reads as the same physical
+// material as the rest of the toolbar, not a new invented wobble. Scale
+// always settles back to 1 on its own within the tween; nothing is held
+// afterward except the z-index bump itself.
+const DISCUSSED_Z = 40;
+
+const bounceElement = (el) => {
+  if (window.getComputedStyle(el).position === "static") {
+    el.dataset.tourStaticPos = "1";
+    gsap.set(el, { position: "relative" });
+  }
+  gsap.set(el, { zIndex: DISCUSSED_Z, transformOrigin: "50% 50%", scaleX: 1, scaleY: 1 });
+
+  return gsap.to(el, {
+    keyframes: {
+      "0%": { scaleX: 1, scaleY: 1 },
+      "18%": { scaleX: .74, scaleY: 1.28 },
+      "42%": { scaleX: 1.18, scaleY: .84 },
+      "64%": { scaleX: .93, scaleY: 1.08 },
+      "84%": { scaleX: 1.04, scaleY: .97 },
+      "100%": { scaleX: 1, scaleY: 1 },
+    },
+    duration: .55,
+    ease: "power1.inOut",
+  });
+};
+
+// Undoes bounceElement's own marks — the z-index bump, the transform, and
+// the position override if this element didn't already have one of its
+// own. No easing needed: by the time anything calls this, the jelly tween
+// has long since settled itself back to scaleX/scaleY 1 on its own.
+const releaseElement = (el) => {
+  gsap.killTweensOf(el);
+  gsap.set(el, { clearProps: "scaleX,scaleY,zIndex,transformOrigin" });
+  if (el.dataset.tourStaticPos) {
+    gsap.set(el, { clearProps: "position" });
+    delete el.dataset.tourStaticPos;
+  }
+};
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" &&
@@ -224,8 +290,34 @@ const Chars = ({ text }) => (
 // One stop's worth of card. Its own component so AnimatePresence mounts a
 // fresh instance per stop and the character stagger runs exactly when the
 // new content lands, not while the old is still leaving.
+//
+// The content itself arrives through a growing ink-blot: a circular
+// clip-path opening from roughly where the icon badge sits, out past the
+// card's own corners — the same idea as a drop of ink spreading to soak a
+// whole sheet, done as one clean CSS mask rather than a WebGL/SVG blur
+// filter (a goo-style blur filter reads beautifully on a large blob shape
+// like InkGoo's creature, but turns a paragraph of small text into an
+// illegible smear — clip-path keeps every letter crisp throughout, exactly
+// where a mask belongs and a filter doesn't). The outer AnimatePresence
+// wrapper (see TourGuide's render below) no longer plays its own
+// scale/y entrance for this reason — the reveal below already carries
+// that job — and only handles the outgoing stop's exit fade.
 const CardContent = ({ step, config, walkIndex, reduced, send, onJump, theme, persistNotes }) => {
   const rootRef = useRef(null);
+  const revealMv = useMotionValue(reduced ? 150 : 0);
+  const clipPath = useTransform(revealMv, (r) => `circle(${ r }% at 27px 27px)`);
+
+  useEffect(() => {
+    if (reduced) return;
+
+    const controls = animate(revealMv, 150, {
+      duration: .64,
+      ease: [.22, 1, .36, 1],
+    });
+
+    return () => controls.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reduced]);
 
   useEffect(() => {
     if (reduced) return;
@@ -262,7 +354,11 @@ const CardContent = ({ step, config, walkIndex, reduced, send, onJump, theme, pe
     : config.icon;
 
   return (
-    <div ref={ rootRef } className={ `tour-card-inner ${ isFarewell ? "centered" : "" }` }>
+    <motion.div
+      ref={ rootRef }
+      className={ `tour-card-inner ${ isFarewell ? "centered" : "" }` }
+      style={{ clipPath }}
+    >
       {
         StopIcon && (
           <motion.span
@@ -387,7 +483,7 @@ const CardContent = ({ step, config, walkIndex, reduced, send, onJump, theme, pe
           </motion.div>
         )
       }
-    </div>
+    </motion.div>
   );
 };
 
@@ -396,17 +492,26 @@ const CardContent = ({ step, config, walkIndex, reduced, send, onJump, theme, pe
 // The control under discussion answers for itself: InkGoo's own mark()
 // pools a ring of liquid ink around it in the stop's own accent (see
 // InkGoo.jsx) — a second metaball field entirely decoupled from the
-// control's own DOM transform, so it never has anything to fight aimCamera
-// over — while the one paper card blooms up out of a drop the same
-// dot-to-sheet way the command palette and every other panel does, then
-// rides loose springs from stop to stop — wobbling
+// control's own DOM transform — while the one paper card blooms up out of
+// a drop the same dot-to-sheet way the command palette and every other
+// panel does, then rides loose springs from stop to stop — wobbling
 // upright and jelly-squashing on landing exactly the way a freshly poured
-// note does. At each stop the control itself leans in too: gsap grows
-// just that element, in place around its own center, with a bouncy
-// overshoot — never the page around it — and eases back down the
-// moment the walk moves to a different one (or to a bookend scene, which
-// has nothing to zoom into). The walk itself is still one xstate machine
-// (TourState.js); this component just measures the desk and points.
+// note does. At each stop the control itself reacts too: aimCamera below
+// pops it forward in stacking order and plays one bouncy jelly squash-and-
+// stretch (see bounceElement) — never a held, grown-in-place zoom — and
+// releases the z-index pop the moment the walk moves to a different
+// control (or to a bookend scene, which has nothing to pop). The card's
+// own content arrives the same ink-native way: CardContent's clip-path
+// reveal opens a circle from roughly the icon badge outward, soaking the
+// new stop's title/body/actions into view the way a drop spreads across
+// paper, rather than the flat crossfade every other panel in the app
+// already uses — the one place this walk allows itself something neither
+// InkGoo nor SketchRing nor any other panel already does, since here it's
+// a genuine improvement (a mask keeps small text crisp; the metaball/goo
+// techniques used elsewhere are for blob-sized shapes and would smear
+// text) rather than novelty for its own sake. The walk itself is still one
+// xstate machine (TourState.js); this component just measures the desk
+// and points.
 const TourGuide = ({ theme, persistNotes }) => {
   const [service] = useState(() => interpret(tourMachine));
   const [step, setStep] = useState("closed");
@@ -555,10 +660,10 @@ const TourGuide = ({ theme, persistNotes }) => {
 
   const open = step !== "closed" && step !== "done";
 
-  // Ease the last zoomed control back to rest and hand its transform back
-  // to the stylesheet. Runs whenever the walk ends, and again on unmount in
-  // case the app is torn down mid-zoom.
-  const releaseCamera = useCallback((instant) => {
+  // Hand the last discussed control's z-index and transform back to the
+  // stylesheet. Runs whenever the walk ends, and again on unmount in case
+  // the app is torn down mid-bounce.
+  const releaseCamera = useCallback(() => {
     cameraRef.current?.kill();
     cameraRef.current = null;
 
@@ -566,24 +671,14 @@ const TourGuide = ({ theme, persistNotes }) => {
     zoomedElRef.current = null;
     if (!target) return;
 
-    if (instant) {
-      gsap.set(target, { clearProps: "transform,transformOrigin" });
-      return;
-    }
-
-    gsap.to(target, {
-      scale: 1,
-      duration: .8,
-      ease: "back.out(1.2)",
-      onComplete: () => gsap.set(target, { clearProps: "transform,transformOrigin" }),
-    });
+    releaseElement(target);
   }, []);
 
   useEffect(() => {
-    if (!open) releaseCamera(false);
+    if (!open) releaseCamera();
   }, [open, releaseCamera]);
 
-  useEffect(() => () => releaseCamera(true), [releaseCamera]);
+  useEffect(() => () => releaseCamera(), [releaseCamera]);
 
   // The ink guide bows out the moment the walk actually closes (SKIP, or
   // the farewell timing out to "done") — not on every stop-to-stop hop,
@@ -701,11 +796,12 @@ const TourGuide = ({ theme, persistNotes }) => {
       }
     };
 
-    // The camera: lean this stop's own control in toward the viewer with a
-    // bouncy overshoot — the control grows in place, around its own
-    // center; the page around it never moves or scales. Whatever the
-    // previous stop had zoomed eases back down first if this one is a
-    // different control (or none at all, for the bookend scenes).
+    // The camera: pop this stop's own control forward in stacking order and
+    // give it one bouncy jelly wobble — never a held, grown-in-place scale
+    // (that was the old "lean in and stay bigger" version; this one always
+    // settles back to its everyday size). Whatever the previous stop had
+    // popped releases first if this one is a different control (or none at
+    // all, for the bookend scenes).
     const aimCamera = () => {
       const el = config.selector && document.querySelector(config.selector);
 
@@ -713,29 +809,13 @@ const TourGuide = ({ theme, persistNotes }) => {
 
       const previouslyZoomed = zoomedElRef.current;
       if (previouslyZoomed && previouslyZoomed !== el) {
-        gsap.to(previouslyZoomed, {
-          scale: 1,
-          duration: .8,
-          ease: "back.out(1.2)",
-          onComplete: () => gsap.set(previouslyZoomed, { clearProps: "transform,transformOrigin" }),
-        });
+        releaseElement(previouslyZoomed);
       }
       zoomedElRef.current = el || null;
 
-      if (!el) return; // Bookend scenes: nothing to zoom into.
+      if (!el) return; // Bookend scenes: nothing to pop.
 
-      gsap.set(el, { transformOrigin: "50% 50%" });
-
-      const rect = el.getBoundingClientRect();
-      const scale = clamp(1.6 - rect.width / 700, 1.25, 1.5);
-
-      cameraRef.current = gsap.to(el, {
-        scale,
-        duration: 1.15,
-        ease: "back.out(1.4)",
-        onUpdate: () => seat(false),
-        onComplete: () => seat(false),
-      });
+      cameraRef.current = bounceElement(el);
     };
 
     seat(true);
@@ -873,13 +953,16 @@ const TourGuide = ({ theme, persistNotes }) => {
                       whileDrag={{ scale: 1.02, cursor: "grabbing" }}
                       onDragEnd={ handleCardDragEnd }
                     >
+                      {/* The entrance itself now belongs to CardContent's own
+                          ink-blot clip-path reveal (see there) — this wrapper
+                          only needs to handle the outgoing stop's exit, a
+                          quick plain fade so it gets out of the way fast
+                          without competing with the incoming stop's own
+                          reveal for attention. */}
                       <AnimatePresence mode="wait" initial={ false }>
                         <motion.div
                           key={ step }
-                          initial={{ opacity: 0, y: 16, scale: .88 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: -8, scale: .96, transition: { duration: .13, ease: "easeIn" } }}
-                          transition={{ type: "spring", stiffness: 480, damping: 14 }}
+                          exit={{ opacity: 0, transition: { duration: .13, ease: "easeIn" } }}
                         >
                           <CardContent
                             step={ step }

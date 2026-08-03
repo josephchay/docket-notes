@@ -17,10 +17,13 @@ export const tourMachine = Machine({
       on: { NEXT: 'activator', SKIP: 'done' },
     },
     activator: {
-      on: { NEXT: 'ink', SKIP: 'done' },
+      on: { NEXT: 'backup', SKIP: 'done' },
+    },
+    backup: {
+      on: { NEXT: 'ink', BACK: 'activator', SKIP: 'done' },
     },
     ink: {
-      on: { NEXT: 'search', BACK: 'activator', SKIP: 'done' },
+      on: { NEXT: 'search', BACK: 'backup', SKIP: 'done' },
     },
     search: {
       on: { NEXT: 'star', BACK: 'ink', SKIP: 'done' },
@@ -29,10 +32,13 @@ export const tourMachine = Machine({
       on: { NEXT: 'pile', BACK: 'search', SKIP: 'done' },
     },
     pile: {
-      on: { NEXT: 'sort', BACK: 'star', SKIP: 'done' },
+      on: { NEXT: 'shuffle', BACK: 'star', SKIP: 'done' },
+    },
+    shuffle: {
+      on: { NEXT: 'sort', BACK: 'pile', SKIP: 'done' },
     },
     sort: {
-      on: { NEXT: 'select', BACK: 'pile', SKIP: 'done' },
+      on: { NEXT: 'select', BACK: 'shuffle', SKIP: 'done' },
     },
     select: {
       on: { NEXT: 'dock', BACK: 'sort', SKIP: 'done' },
