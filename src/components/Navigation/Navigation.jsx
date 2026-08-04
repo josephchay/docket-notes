@@ -7,6 +7,7 @@ import { FaFileArrowDown, FaFileArrowUp } from "react-icons/fa6";
 
 import { toggleMachine } from "./NavigationState";
 import plusIcon from "../../assets/icons/plus.svg";
+import { SNAPPY, RAIL_SLIDE } from "../Motion";
 
 import ColorSelector from "./ColorSelector";
 
@@ -206,7 +207,7 @@ const Navigation = ({
       // (Home.css), rather than an open-ended spring — so the rail's slide
       // and the notes grid reclaiming that space finish in the same beat
       // instead of two similar-but-not-quite-matched motions.
-      transition={{ duration: .5, ease: [0.34, 1.56, 0.64, 1] }}
+      transition={ RAIL_SLIDE }
     >
       <motion.div
         initial={{
@@ -335,7 +336,7 @@ const Navigation = ({
           className="nav-tool export-trigger"
           whileHover={{ scale: 1.15 }}
           whileTap={{ scale: .9 }}
-          transition={{ type: "spring", stiffness: 400, damping: 17 }}
+          transition={ SNAPPY }
           onMouseMove={ magnetMove }
           onMouseLeave={ magnetLeave }
           onClick={ exportNotes }
@@ -351,7 +352,7 @@ const Navigation = ({
           className="nav-tool"
           whileHover={{ scale: 1.15 }}
           whileTap={{ scale: .9 }}
-          transition={{ type: "spring", stiffness: 400, damping: 17 }}
+          transition={ SNAPPY }
           onMouseMove={ magnetMove }
           onMouseLeave={ magnetLeave }
           onClick={ () => fileInput.current?.click() }

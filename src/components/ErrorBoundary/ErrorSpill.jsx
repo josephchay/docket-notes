@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { motion } from "framer-motion";
 
 import { blobPath } from "../../utils/blob";
+import { SNAPPY, SETTLE } from "../Motion";
 
 import "./ErrorSpill.css";
 
@@ -36,7 +37,7 @@ const ErrorSpill = ({ onRecover }) => {
         className="error-spill-content"
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: .25, duration: .5 }}
+        transition={{ ...SETTLE, delay: .25 }}
       >
         <h2>The ink spilled</h2>
         <p>Something on the desk tipped over. Your notes are saved separately from whatever just broke.</p>
@@ -45,7 +46,7 @@ const ErrorSpill = ({ onRecover }) => {
           className="error-spill-button"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: .95 }}
-          transition={{ type: "spring", stiffness: 400, damping: 17 }}
+          transition={ SNAPPY }
           onClick={ onRecover }
         >
           Smooth the page back out

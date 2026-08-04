@@ -11,6 +11,7 @@ import { playDelete, playStar } from "../../utils/sound";
 import PullString from "./PullString";
 import MoveString from "./MoveString";
 import SparkBurst from "../Spark/SparkBurst";
+import { SNAPPY, EXIT_SPRING, coinFlip } from "../Motion";
 
 import "./Note.css";
 
@@ -26,6 +27,7 @@ const RADIAL_MARGIN = 110;  // keeps the fully-spread menu clear of the viewport
 const Note = ({
   delay,
   note,
+  searchQuery,
   spawnOrigin,
   clearSpawn,
   selectMode,
@@ -56,6 +58,19 @@ const Note = ({
   const [draftTitle, setDraftTitle] = useState(note.title);
   const [draftText, setDraftText] = useState(note.text);
   const [isTyping, setIsTyping] = useState(false);
+
+  // Title/text render as live, directly-editable inputs rather than static
+  // text (see below), so there's no safe place to drop an in-line <mark>
+  // the way CommandPalette highlights a matched command — a search hit
+  // here gets a soft ink ring around the whole card instead (.search-match
+  // in Note.css), the same family as the .editing/.selected rings just
+  // below it, so a note that survived the current search still reads as
+  // itself rather than needing its own separate treatment. Mirrors
+  // Home.jsx's own filter predicate exactly, so "why is this card here"
+  // always matches "why did the grid keep it."
+  const trimmedQuery = searchQuery?.trim().toLowerCase();
+  const isSearchMatch = !!trimmedQuery &&
+    `${ note.title ?? "" } ${ note.text }`.toLowerCase().includes(trimmedQuery);
 
   const titleRef = useRef(null);
   const textRef = useRef(null);
@@ -475,13 +490,21 @@ const Note = ({
           })
         }
         exit={
+          // deleteCompleted plays its own dedicated delete-blob animation
+          // elsewhere; this exit is only for every *other* way a card
+          // leaves the grid (filtered out, sorted away). It used to be a
+          // flat linear fade-slide under a spawn entrance that's a whole
+          // squeeze-and-bloom sequence — now it echoes that landing jelly's
+          // own squash-and-stretch with a quick bump before it lifts away.
           deleteCompleted ? {} : {
             opacity: 0,
-            translateY: -80,
-            scale: 1.04,
+            scaleX: [1, 1.05, .92],
+            scaleY: [1, .92, .9],
+            translateY: -70,
             transition: {
-              duration: .2,
-              ease: "easeIn",
+              duration: .28,
+              times: [0, .3, 1],
+              ease: "easeInOut",
               delay: delay,
             }
           }
@@ -493,11 +516,7 @@ const Note = ({
           type: "spring",
           stiffness: 220,
           delay: delay,
-          scale: {
-            type: "spring",
-            stiffness: 400,
-            damping: 17,
-          },
+          scale: SNAPPY,
         }}
         style={{
           borderRadius: isDeleting ? "50%" : "24px",
@@ -511,7 +530,7 @@ const Note = ({
         onMouseLeave={ () => onHoverEnd?.(note.id) }
         onClick={ handleCardClick }
         onContextMenu={ openRadialMenu }
-        className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" } ${ isTyping ? "editing" : "" } ${ selectMode && selected ? "selected" : "" }` }
+        className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" } ${ isTyping ? "editing" : "" } ${ selectMode && selected ? "selected" : "" } ${ isSearchMatch ? "search-match" : "" }` }
       >
         {/* The checkmark badge only exists in select mode, and blooms in
             with a bouncy overshoot rather than just appearing. Its own
@@ -832,15 +851,7 @@ const Note = ({
               <motion.span
                 key={ note.lock ? "pen" : "eye" }
                 className="edit-icon-wrap"
-                initial={{ rotateY: -130, scale: .3, opacity: 0 }}
-                animate={{ rotateY: 0, scale: 1, opacity: 1 }}
-                exit={{
-                  rotateY: 130,
-                  scale: .3,
-                  opacity: 0,
-                  transition: { duration: .16, ease: "easeIn" },
-                }}
-                transition={{ type: "spring", stiffness: 420, damping: 17 }}
+                { ...coinFlip({ type: "spring", stiffness: 420, damping: 17 }) }
               >
                 {
                   note.lock ? (
@@ -934,9 +945,8 @@ const Note = ({
                               scale: 0,
                               opacity: 0,
                               transition: {
-                                duration: .18,
+                                ...EXIT_SPRING,
                                 delay: (radialActions.length - index) * .015,
-                                ease: "easeIn",
                               },
                             }}
                             transition={{

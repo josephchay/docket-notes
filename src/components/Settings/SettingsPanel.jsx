@@ -6,6 +6,7 @@ import { loadSettings, saveSettings } from "../../utils/storage";
 import SheetPanel from "../Sheet/SheetPanel";
 import HistoryAmbient from "../History/HistoryAmbient";
 import SettingsToggle from "./SettingsToggle";
+import { iconSpin } from "../Motion";
 
 import "./SettingsPanel.css";
 
@@ -119,10 +120,7 @@ const SettingsPanel = ({
                     <AnimatePresence mode="wait" initial={ false }>
                       <motion.span
                         key={ theme }
-                        initial={{ rotate: -140, scale: 0, opacity: 0 }}
-                        animate={{ rotate: 0, scale: 1, opacity: 1 }}
-                        exit={{ rotate: 140, scale: 0, opacity: 0, transition: { duration: .15, ease: "easeIn" } }}
-                        transition={{ type: "spring", stiffness: 380, damping: 16 }}
+                        { ...iconSpin({ type: "spring", stiffness: 380, damping: 16 }) }
                         style={{ display: "flex" }}
                       >
                         { theme === "dark" ? <FaSun /> : <FaMoon /> }
@@ -147,10 +145,7 @@ const SettingsPanel = ({
                     <AnimatePresence mode="wait" initial={ false }>
                       <motion.span
                         key={ persistNotes ? "locked" : "unlocked" }
-                        initial={{ rotate: -140, scale: 0, opacity: 0 }}
-                        animate={{ rotate: 0, scale: 1, opacity: 1 }}
-                        exit={{ rotate: 140, scale: 0, opacity: 0, transition: { duration: .15, ease: "easeIn" } }}
-                        transition={{ type: "spring", stiffness: 420, damping: 15 }}
+                        { ...iconSpin({ type: "spring", stiffness: 420, damping: 15 }) }
                         style={{ display: "flex" }}
                       >
                         { persistNotes ? <FaLock /> : <FaLockOpen /> }
@@ -201,10 +196,7 @@ const SettingsPanel = ({
                     <AnimatePresence mode="wait" initial={ false }>
                       <motion.span
                         key={ soundEnabled ? "on" : "off" }
-                        initial={{ rotate: -140, scale: 0, opacity: 0 }}
-                        animate={{ rotate: 0, scale: 1, opacity: 1 }}
-                        exit={{ rotate: 140, scale: 0, opacity: 0, transition: { duration: .15, ease: "easeIn" } }}
-                        transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                        { ...iconSpin({ type: "spring", stiffness: 420, damping: 16 }) }
                         style={{ display: "flex" }}
                       >
                         { soundEnabled ? <FaVolumeHigh /> : <FaVolumeXmark /> }

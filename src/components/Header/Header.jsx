@@ -16,26 +16,15 @@ import useMagnetic from "../../hooks/useMagnetic";
 import { playStar } from "../../utils/sound";
 import LiquidMeter from "../Meter/LiquidMeter";
 import SparkBurst from "../Spark/SparkBurst";
+import { SNAPPY, POP, RAIL_SLIDE, enterExitStagger, iconSpin } from "../Motion";
 
 import './Header.css';
 
-const springy = {
-  type: "spring",
-  stiffness: 400,
-  damping: 17,
-};
+const springy = SNAPPY;
 
 // The color squares bounce in one after another, each with a starchy
 // overshoot, once the toolbar itself has landed.
-const filterRowVariants = {
-  hidden: {},
-  shown: {
-    transition: {
-      delayChildren: .55,
-      staggerChildren: .055,
-    },
-  },
-};
+const filterRowVariants = enterExitStagger(.55, .055);
 
 const filterChipVariants = {
   hidden: {
@@ -54,6 +43,50 @@ const filterChipVariants = {
     },
   },
 };
+
+// The insights/history/trash/command/focus/pile/settings wands were seven
+// near-identical copies of the same whileHover/whileTap/jelly/magnetic
+// wiring, differing only in icon, rotation direction, label, and click
+// handler — a real ~90 lines of copy-pasted JSX props for what's
+// structurally one button. `jelly` and `magnetRef` still come from the
+// caller (useJellyTap/registerItem can't run inside a loop), everything
+// else is parameterized. Reuses filterChipVariants for its own pop-in — the
+// same "starchy overshoot" .color-filters' own chips already ride, so the
+// wand row can join the same staggered wave (see header-wand-row below)
+// instead of introducing a second, slightly-different pop shape.
+const WandButton = ({
+  ariaLabel,
+  title,
+  rotate,
+  jelly,
+  magnetRef,
+  onClick,
+  className,
+  icon: Icon,
+  pressed,
+  children,
+}) => (
+  <motion.div
+    role="button"
+    aria-pressed={ pressed }
+    aria-label={ ariaLabel }
+    title={ title }
+    variants={ filterChipVariants }
+    whileHover={{ scale: 1.14, rotate }}
+    whileTap={{ scale: .9 }}
+    transition={ SNAPPY }
+    onTapStart={ jelly.squash }
+    onClick={ onClick }
+    className={ `wand ${ className }` }
+  >
+    <span ref={ magnetRef } style={{ display: "inline-flex" }}>
+      <motion.span animate={ jelly.jelly } style={{ display: "inline-flex" }}>
+        <Icon className="wand-icon" />
+      </motion.span>
+    </span>
+    { children }
+  </motion.div>
+);
 
 const Header = ({
   searchText,
@@ -76,6 +109,7 @@ const Header = ({
   pileView,
   togglePileView,
   reduceMotion,
+  celebration,
 }) => {
   const filtersActive = searchText !== "" || notesSortByFavorite || sortColor !== null;
 
@@ -211,7 +245,7 @@ const Header = ({
         /* Same fixed duration + bezier as the nav rail's slide and .home's
            grid-track collapse (Home.css) — all three finish on the same
            beat instead of drifting apart as three separately-timed springs. */
-        transition={{ duration: .5, ease: [0.34, 1.56, 0.64, 1] }}
+        transition={ RAIL_SLIDE }
       >
       <div className="search">
         <div className="icon">
@@ -427,7 +461,7 @@ const Header = ({
                 transition={{ type: "spring", stiffness: 240, damping: 15 }}
               >
                 <div className="ink-meter-row">
-                  <LiquidMeter ratio={ milestoneRatio } color="var(--page-ink-color)" label={ milestoneLabel } reduceMotion={ reduceMotion } />
+                  <LiquidMeter ratio={ milestoneRatio } color="var(--page-ink-color)" label={ milestoneLabel } reduceMotion={ reduceMotion } celebration={ celebration } />
                 </div>
                 <div className="ink-row">
                   {
@@ -488,56 +522,48 @@ const Header = ({
           }
         </AnimatePresence>
       </div>
+      {/* insights -> settings all pop in as one staggered wave once the
+          toolbar has landed, picking up right where .color-filters' own
+          wave leaves off. display:contents (the same trick QuickDock's own
+          item row uses) lets this group share one variants context without
+          disturbing .header-toolbar's flex layout — every child below still
+          renders as one of its direct flex items. */}
       <motion.div
-        role="button"
-        aria-label="Show desk insights"
+        className="header-wand-row"
+        variants={ enterExitStagger(.62, .045) }
+        initial="hidden"
+        animate="shown"
+      >
+      <WandButton
+        ariaLabel="Show desk insights"
         title="Desk insights"
-        whileHover={{ scale: 1.14, rotate: 10 }}
-        whileTap={{ scale: .9 }}
-        transition={ springy }
-        onTapStart={ insightsJelly.squash }
+        rotate={ 10 }
+        jelly={ insightsJelly }
+        magnetRef={ toolbarMagnetic.registerItem(2) }
         onClick={ () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)) }
-        className="wand insights-trigger"
-      >
-        <span ref={ toolbarMagnetic.registerItem(2) } style={{ display: "inline-flex" }}>
-          <motion.span animate={ insightsJelly.jelly } style={{ display: "inline-flex" }}>
-            <FaChartLine className="wand-icon" />
-          </motion.span>
-        </span>
-      </motion.div>
-      <motion.div
-        role="button"
-        aria-label="Show edit history"
+        className="insights-trigger"
+        icon={ FaChartLine }
+      />
+      <WandButton
+        ariaLabel="Show edit history"
         title="Edit history"
-        whileHover={{ scale: 1.14, rotate: 10 }}
-        whileTap={{ scale: .9 }}
-        transition={ springy }
-        onTapStart={ historyJelly.squash }
+        rotate={ 10 }
+        jelly={ historyJelly }
+        magnetRef={ toolbarMagnetic.registerItem(3) }
         onClick={ () => window.dispatchEvent(new CustomEvent(HISTORY_EVENT)) }
-        className="wand history-trigger"
-      >
-        <span ref={ toolbarMagnetic.registerItem(3) } style={{ display: "inline-flex" }}>
-          <motion.span animate={ historyJelly.jelly } style={{ display: "inline-flex" }}>
-            <FaClockRotateLeft className="wand-icon" />
-          </motion.span>
-        </span>
-      </motion.div>
-      <motion.div
-        role="button"
-        aria-label={ trashCount > 0 ? `Open the trash — ${ trashCount } ${ trashCount === 1 ? "note" : "notes" }` : "Open the trash" }
+        className="history-trigger"
+        icon={ FaClockRotateLeft }
+      />
+      <WandButton
+        ariaLabel={ trashCount > 0 ? `Open the trash — ${ trashCount } ${ trashCount === 1 ? "note" : "notes" }` : "Open the trash" }
         title="Trash"
-        whileHover={{ scale: 1.14, rotate: -10 }}
-        whileTap={{ scale: .9 }}
-        transition={ springy }
-        onTapStart={ trashJelly.squash }
+        rotate={ -10 }
+        jelly={ trashJelly }
+        magnetRef={ toolbarMagnetic.registerItem(4) }
         onClick={ () => window.dispatchEvent(new CustomEvent(TRASH_EVENT)) }
-        className="wand trash-trigger"
+        className="trash-trigger"
+        icon={ FaTrashCan }
       >
-        <span ref={ toolbarMagnetic.registerItem(4) } style={{ display: "inline-flex" }}>
-          <motion.span animate={ trashJelly.jelly } style={{ display: "inline-flex" }}>
-            <FaTrashCan className="wand-icon" />
-          </motion.span>
-        </span>
         <AnimatePresence>
           {
             trashCount > 0 && (
@@ -547,77 +573,57 @@ const Header = ({
                 initial={{ scale: 0, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0, opacity: 0 }}
-                transition={{ type: "spring", stiffness: 500, damping: 20 }}
+                transition={ POP }
               >
                 { trashCount }
               </motion.span>
             )
           }
         </AnimatePresence>
-      </motion.div>
-      <motion.div
-        role="button"
-        aria-label="Open the command palette"
+      </WandButton>
+      <WandButton
+        ariaLabel="Open the command palette"
         title="Command ink (Ctrl K)"
-        whileHover={{ scale: 1.14, rotate: -10 }}
-        whileTap={{ scale: .9 }}
-        transition={ springy }
-        onTapStart={ commandJelly.squash }
+        rotate={ -10 }
+        jelly={ commandJelly }
+        magnetRef={ toolbarMagnetic.registerItem(5) }
         onClick={ () => window.dispatchEvent(new CustomEvent(COMMAND_EVENT)) }
-        className="wand command-trigger"
-      >
-        <span ref={ toolbarMagnetic.registerItem(5) } style={{ display: "inline-flex" }}>
-          <motion.span animate={ commandJelly.jelly } style={{ display: "inline-flex" }}>
-            <FaWandMagicSparkles className="wand-icon" />
-          </motion.span>
-        </span>
-      </motion.div>
-      <motion.div
-        role="button"
-        aria-label="Enter focus mode"
+        className="command-trigger"
+        icon={ FaWandMagicSparkles }
+      />
+      <WandButton
+        ariaLabel="Enter focus mode"
         title="Focus mode (F)"
-        whileHover={{ scale: 1.14, rotate: -14 }}
-        whileTap={{ scale: .9 }}
-        transition={ springy }
-        onTapStart={ focusJelly.squash }
+        rotate={ -14 }
+        jelly={ focusJelly }
+        magnetRef={ toolbarMagnetic.registerItem(6) }
         onClick={ toggleFocusMode }
-        className="wand focus-trigger"
-      >
-        <span ref={ toolbarMagnetic.registerItem(6) } style={{ display: "inline-flex" }}>
-          <motion.span animate={ focusJelly.jelly } style={{ display: "inline-flex" }}>
-            <FaExpand className="wand-icon" />
-          </motion.span>
-        </span>
-      </motion.div>
+        className="focus-trigger"
+        icon={ FaExpand }
+      />
       {/* Tosses the desk into a real physics pile (see NotePile.jsx) — a
           decorative, opt-in view with no reduced-motion variant, so the
           button itself only ever appears when motion is on. */}
       {
         !reduceMotion && (
-          <motion.div
-            role="button"
-            aria-pressed={ !!pileView }
-            aria-label={ pileView ? "Restore the grid" : "Toss notes into a pile" }
+          <WandButton
+            ariaLabel={ pileView ? "Restore the grid" : "Toss notes into a pile" }
             title={ pileView ? "Restore the grid" : "Toss notes into a pile" }
-            whileHover={{ scale: 1.14, rotate: -10 }}
-            whileTap={{ scale: .9 }}
-            transition={ springy }
-            onTapStart={ pileJelly.squash }
+            rotate={ -10 }
+            jelly={ pileJelly }
+            magnetRef={ toolbarMagnetic.registerItem(7) }
             onClick={ togglePileView }
-            className={ `wand pile-toggle ${ pileView ? "active" : "" }` }
-          >
-            <span ref={ toolbarMagnetic.registerItem(7) } style={{ display: "inline-flex" }}>
-              <motion.span animate={ pileJelly.jelly } style={{ display: "inline-flex" }}>
-                <FaLayerGroup className="wand-icon" />
-              </motion.span>
-            </span>
-          </motion.div>
+            className={ `pile-toggle ${ pileView ? "active" : "" }` }
+            icon={ FaLayerGroup }
+            pressed={ !!pileView }
+          />
         )
       }
       <motion.div
         ref={ themeRef }
         role="button"
         aria-label={ theme === "dark" ? "Switch to the light theme" : "Switch to the Ink theme" }
+        variants={ filterChipVariants }
         whileHover={{
           scale: 1.14,
           rotate: 24,
@@ -636,19 +642,7 @@ const Header = ({
             <motion.span
               key={ theme }
               className="theme-icon-wrap"
-              initial={{ rotate: -140, scale: 0, opacity: 0 }}
-              animate={{ rotate: 0, scale: 1, opacity: 1 }}
-              exit={{
-                rotate: 140,
-                scale: 0,
-                opacity: 0,
-                transition: { duration: .15, ease: "easeIn" },
-              }}
-              transition={{
-                type: "spring",
-                stiffness: 380,
-                damping: 16,
-              }}
+              { ...iconSpin({ type: "spring", stiffness: 380, damping: 16 }) }
             >
               {
                 theme === "dark" ? (
@@ -665,6 +659,7 @@ const Header = ({
         role="button"
         aria-label={ persistNotes ? "Stop remembering notes after this tab" : "Remember notes across sessions" }
         title={ persistNotes ? "Notes stick around after you close this tab — click to stop" : "Notes clear when this tab closes — click to remember them" }
+        variants={ filterChipVariants }
         whileHover={{ scale: 1.14, rotate: -10 }}
         whileTap={{ scale: .9 }}
         transition={ springy }
@@ -678,19 +673,7 @@ const Header = ({
             <motion.span
               key={ persistNotes ? "locked" : "unlocked" }
               className="persist-icon-wrap"
-              initial={{ rotate: -140, scale: 0, opacity: 0 }}
-              animate={{ rotate: 0, scale: 1, opacity: 1 }}
-              exit={{
-                rotate: 140,
-                scale: 0,
-                opacity: 0,
-                transition: { duration: .15, ease: "easeIn" },
-              }}
-              transition={{
-                type: "spring",
-                stiffness: 420,
-                damping: 15,
-              }}
+              { ...iconSpin({ type: "spring", stiffness: 420, damping: 15 }) }
             >
               {
                 persistNotes ? (
@@ -703,22 +686,16 @@ const Header = ({
           </AnimatePresence>
         </span>
       </motion.div>
-      <motion.div
-        role="button"
-        aria-label="Open settings"
+      <WandButton
+        ariaLabel="Open settings"
         title="Settings"
-        whileHover={{ scale: 1.14, rotate: 14 }}
-        whileTap={{ scale: .9 }}
-        transition={ springy }
-        onTapStart={ settingsJelly.squash }
+        rotate={ 14 }
+        jelly={ settingsJelly }
+        magnetRef={ toolbarMagnetic.registerItem(10) }
         onClick={ () => window.dispatchEvent(new CustomEvent(SETTINGS_EVENT)) }
-        className="wand settings-trigger"
-      >
-        <span ref={ toolbarMagnetic.registerItem(10) } style={{ display: "inline-flex" }}>
-          <motion.span animate={ settingsJelly.jelly } style={{ display: "inline-flex" }}>
-            <FaGear className="wand-icon" />
-          </motion.span>
-        </span>
+        className="settings-trigger"
+        icon={ FaGear }
+      />
       </motion.div>
       </motion.div>
     </motion.header>

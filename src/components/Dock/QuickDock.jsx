@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   FaPlus,
   FaShuffle,
@@ -16,6 +16,7 @@ import { COMMAND_EVENT } from "../Command/CommandPalette";
 import { SPRINT_EVENT } from "../Sprint/SprintPanel";
 import useInkPulse from "../../hooks/useInkPulse";
 import useMagnetic from "../../hooks/useMagnetic";
+import { iconSpin } from "../Motion";
 
 import "./QuickDock.css";
 
@@ -85,6 +86,7 @@ const QuickDock = ({
       key: "focus",
       label: focusMode ? "Exit focus mode" : "Enter focus mode",
       icon: focusMode ? <FaCompress /> : <FaExpand />,
+      iconKey: focusMode ? "compress" : "expand",
       onRun: () => toggleFocusMode?.(),
     },
     {
@@ -103,6 +105,7 @@ const QuickDock = ({
       key: "theme",
       label: theme === "dark" ? "Switch to fresh paper" : "Switch to Ink",
       icon: theme === "dark" ? <FaSun /> : <FaMoon />,
+      iconKey: theme,
       onRun: handleThemeToggle,
     },
   ];
@@ -117,7 +120,26 @@ const QuickDock = ({
       onMouseLeave={ magnetic.handleLeave }
       initial={{ opacity: 0, scale: .3, translateY: 70 }}
       animate={{ opacity: 1, scale: 1, translateY: 0 }}
-      exit={{ opacity: 0, scale: .3, translateY: 70 }}
+      /* Retracting (focus mode) used to just be the entrance in flat
+         reverse. The shared #gooey-effect filter (every hover highlight on
+         this dock already drips through it) isn't used here — it's tuned
+         for flat single-color blobs, and this shell carries its own
+         border/box-shadow that the filter's contrast matrix would mangle.
+         Instead the stretch itself does the work: a brief vertical pull
+         before it collapses, the same "gathering before it lets go" beat
+         real ink shows leaving a surface, without touching rendering that
+         isn't built for the filter. */
+      exit={{
+        opacity: 0,
+        /* scaleX/scaleY rather than a shared `scale` — the two diverge
+           mid-transition (a taller, narrower pull) but land on the same
+           value at the end, so this settles into a plain uniform shrink
+           rather than compounding into an oddly flattened sliver. */
+        scaleX: [1, 1.05, .82, .3],
+        scaleY: [1, 1.22, .55, .3],
+        translateY: [0, 3, 36, 70],
+        transition: { duration: .38, times: [0, .3, .7, 1], ease: "easeIn" },
+      }}
       transition={{ type: "spring", stiffness: 220, damping: 16, delay: .2 }}
     >
       {/* display:contents keeps these buttons as .quick-dock's own direct
@@ -164,7 +186,27 @@ const QuickDock = ({
               ref={ magnetic.registerItem(index) }
               className="quick-dock-icon-wrap"
             >
-              <span className="quick-dock-icon">{ item.icon }</span>
+              <span className="quick-dock-icon">
+                {/* focus/theme are the only two items whose icon actually
+                    changes under the visitor — everything else keeps a
+                    fixed icon, so only those two carry the AnimatePresence
+                    cost of a real spin-swap (the same iconSpin recipe
+                    Header/Settings' own toggles use) instead of the flat
+                    instant snap this used to be. */}
+                {
+                  item.iconKey ? (
+                    <AnimatePresence mode="wait" initial={ false }>
+                      <motion.span
+                        key={ item.iconKey }
+                        style={{ display: "flex" }}
+                        { ...iconSpin({ type: "spring", stiffness: 420, damping: 16 }) }
+                      >
+                        { item.icon }
+                      </motion.span>
+                    </AnimatePresence>
+                  ) : item.icon
+                }
+              </span>
             </span>
           </motion.button>
         ))

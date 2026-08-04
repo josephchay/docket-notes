@@ -5,31 +5,25 @@ import { FaStar, FaPalette, FaFileArrowDown, FaTrash, FaXmark } from "react-icon
 import useJellyTap from "../../hooks/useJellyTap";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 import useOdometer from "../../hooks/useOdometer";
+import { SNAPPY, DOCK_ITEM, EXIT_SPRING, enterExitStagger } from "../Motion";
 
 import "./BulkActionBar.css";
 
-const springy = {
-  type: "spring",
-  stiffness: 400,
-  damping: 17,
-};
+const springy = SNAPPY;
 
 // The four action icons bounce in one after another once the bar itself
 // has landed — the same recipe the header's color-filter chips use.
-const actionRowVariants = {
-  hidden: {},
-  shown: {
-    transition: { delayChildren: .1, staggerChildren: .05 },
-  },
-};
+const actionRowVariants = enterExitStagger(.1, .05);
 
+// The same spring shape as QuickDock's own item pop-in (DOCK_ITEM) — both
+// are a row of icon buttons bouncing in behind their own shell's entrance.
 const actionItemVariants = {
   hidden: { opacity: 0, scale: 0, translateY: 12 },
   shown: {
     opacity: 1,
     scale: 1,
     translateY: 0,
-    transition: { type: "spring", stiffness: 420, damping: 14 },
+    transition: DOCK_ITEM,
   },
 };
 
@@ -65,12 +59,16 @@ const BulkActionBar = ({ count, onStar, onRecolor, onExport, onDelete, onDone })
               className="bulk-bar"
               initial={{ opacity: 0, scale: .1, translateY: 60, borderRadius: 60 }}
               animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 20 }}
+              /* Bloomed up from a dot through a real blob morph on the way
+                 in (see useBlobClipMorph); on the way out it retreats the
+                 same way — a last small swell before it collapses back
+                 toward the dot it grew from, rather than a flat shrink. */
               exit={{
                 opacity: 0,
-                scale: .2,
-                translateY: 50,
+                scale: [1, 1.06, .12],
+                translateY: 46,
                 borderRadius: 60,
-                transition: { duration: .2, ease: "easeIn" },
+                transition: EXIT_SPRING,
               }}
               transition={{ type: "spring", stiffness: 220, damping: 15 }}
               onUpdate={ onBlobUpdate }

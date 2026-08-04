@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 import useFocusTrap from "../../hooks/useFocusTrap";
+import { EXIT_SPRING } from "../Motion";
 
 // The dot-to-sheet shell every panel in this app opens through — the
 // backdrop, the blob-clip morph (see useBlobClipMorph), and the focus trap
@@ -36,14 +37,28 @@ const buildEnterAnimate = (radius) => ({
   },
 });
 
+// The exit was a flat shrink-and-fade — the one corner of the panel's own
+// grow-from-a-dot language it never echoed back. Now it mirrors
+// buildEnterAnimate in reverse: a small squash-and-stretch bulge (times
+// [0, .35, 1], same asymmetric scaleX/scaleY split) before the sheet
+// flattens back down toward the dot it grew from, tipping forward on
+// rotateX the opposite way the entrance tipped back. scaleX/scaleY stay
+// real numbers throughout so useBlobClipMorph keeps reading a sensible `t`
+// as the blob-clip retreats alongside it.
+const EXIT_TIMES = [0, .35, 1];
+
 const EXIT = {
   opacity: 0,
-  scaleX: .3,
-  scaleY: .22,
-  translateY: 60,
-  rotateX: 16,
-  borderRadius: 50,
-  transition: { duration: .2, ease: "easeIn" },
+  scaleX: [1, 1.06, .1],
+  scaleY: [1, .88, .08],
+  translateY: 70,
+  rotateX: -16,
+  borderRadius: 60,
+  transition: {
+    default: EXIT_SPRING,
+    scaleX: { duration: .34, times: EXIT_TIMES, ease: "easeInOut" },
+    scaleY: { duration: .34, times: EXIT_TIMES, ease: "easeInOut" },
+  },
 };
 
 // `panelRef` is owned by the caller (several panels — Trash's drop-physics

@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { interpret } from "xstate";
 
 import { commandMachine } from "./CommandState";
 import useInkPulse from "../../hooks/useInkPulse";
 import SheetPanel from "../Sheet/SheetPanel";
+import { LIST_ROW_SPRING, listRowDelay } from "../Motion";
 
 import "./CommandPalette.css";
 
@@ -170,49 +171,52 @@ const CommandPalette = ({ actions }) => {
         onKeyDown={ handleListKeys }
       />
       <div className="command-list custom-scroll">
-        {
-          filtered.map((action, index) => (
-            <motion.button
-              key={ action.key }
-              type="button"
-              className={ `command-item ${ index === highlight ? "selected" : "" }` }
-              initial={{ opacity: 0, translateX: -16 }}
-              animate={{ opacity: 1, translateX: 0 }}
-              transition={{
-                type: "spring",
-                stiffness: 340,
-                damping: 20,
-                delay: .05 + index * .035,
-              }}
-              onMouseEnter={ () => setSelected(index) }
-              onTapStart={ commandPulse.squash }
-              onClick={ () => run(action) }
-            >
-              {
-                index === highlight && (
-                  <motion.span
-                    layoutId="commandThumb"
-                    style={{ position: "absolute", inset: 0, borderRadius: 12 }}
-                    transition={{ type: "spring", stiffness: 520, damping: 20 }}
-                  >
+        {/* mode="popLayout" pulls a filtered-out row out of document flow the
+            instant it starts exiting, so the rows below it can immediately
+            reflow up into its place while it fades out on top — a real
+            leave transition instead of narrowing the query just snapping
+            rows away. */}
+        <AnimatePresence mode="popLayout" initial={ false }>
+          {
+            filtered.map((action, index) => (
+              <motion.button
+                key={ action.key }
+                type="button"
+                className={ `command-item ${ index === highlight ? "selected" : "" }` }
+                initial={{ opacity: 0, translateX: -16 }}
+                animate={{ opacity: 1, translateX: 0 }}
+                exit={{ opacity: 0, translateX: -16, scale: .96, transition: { duration: .16, ease: "easeIn" } }}
+                transition={{ ...LIST_ROW_SPRING, delay: listRowDelay(index) }}
+                onMouseEnter={ () => setSelected(index) }
+                onTapStart={ commandPulse.squash }
+                onClick={ () => run(action) }
+              >
+                {
+                  index === highlight && (
                     <motion.span
-                      className="command-thumb"
-                      animate={ commandPulse.jelly }
-                      style={{ borderRadius: "inherit" }}
-                    />
-                  </motion.span>
-                )
-              }
-              <span className="command-item-icon">{ action.icon }</span>
-              <span className="command-item-label">{ renderLabel(action.label) }</span>
-              {
-                action.hint && (
-                  <kbd className="command-item-hint">{ action.hint }</kbd>
-                )
-              }
-            </motion.button>
-          ))
-        }
+                      layoutId="commandThumb"
+                      style={{ position: "absolute", inset: 0, borderRadius: 12 }}
+                      transition={{ type: "spring", stiffness: 520, damping: 20 }}
+                    >
+                      <motion.span
+                        className="command-thumb"
+                        animate={ commandPulse.jelly }
+                        style={{ borderRadius: "inherit" }}
+                      />
+                    </motion.span>
+                  )
+                }
+                <span className="command-item-icon">{ action.icon }</span>
+                <span className="command-item-label">{ renderLabel(action.label) }</span>
+                {
+                  action.hint && (
+                    <kbd className="command-item-hint">{ action.hint }</kbd>
+                  )
+                }
+              </motion.button>
+            ))
+          }
+        </AnimatePresence>
         {
           filtered.length === 0 && (
             <motion.p

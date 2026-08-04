@@ -42,6 +42,7 @@ import { resolveCssColor } from "../History/HistoryAmbient";
 import { playMilestone, playSpawn, playTick } from "../../utils/sound";
 import InkGoo from "./InkGoo";
 import SketchRing from "./SketchRing";
+import { EXIT_SPRING } from "../Motion";
 
 import "./TourGuide.css";
 
@@ -888,7 +889,7 @@ const TourGuide = ({ theme, persistNotes }) => {
                       // snapping between a bare number and a complex one.
                       initial={{ opacity: 0, scale: .2, borderRadius: "44px 44px 44px 44px" }}
                       animate={{ opacity: 1, scale: 1, borderRadius: "20px 30px 24px 34px", width: config.width }}
-                      exit={{ opacity: 0, scale: .3, borderRadius: "44px 44px 44px 44px", transition: { duration: .16, ease: "easeIn" } }}
+                      exit={{ opacity: 0, scale: .3, borderRadius: "44px 44px 44px 44px", transition: EXIT_SPRING }}
                       transition={{
                         type: "spring",
                         stiffness: 230,

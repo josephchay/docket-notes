@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useTransform } from "framer-motion";
 
 import PullRig from "./PullRig";
+import { DRAG_SNAP } from "../Motion";
 
 const HOVER_PADDING = 34;   // how far outside a card the pull still counts (px)
 
@@ -147,7 +148,7 @@ const MoveString = ({ anchorX, restY = 26, colorName, icon, noteId, pullX, pullY
         drag: true,
         dragSnapToOrigin: true,
         dragMomentum: false,
-        dragTransition: { bounceStiffness: 340, bounceDamping: 13 },
+        dragTransition: DRAG_SNAP,
         onDragStart: handleStart,
         onDrag: handleDrag,
         onDragEnd: handleEnd,

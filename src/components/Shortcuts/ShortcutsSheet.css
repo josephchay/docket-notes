@@ -153,3 +153,20 @@
   transform: translateY(1px);
   border-bottom-width: 1.5px;
 }
+
+/* The real thing the hover state above only approximates — this key's own
+   physical key actually held down while the sheet is open (see
+   ShortcutsSheet.jsx's pressedKeys tracking). Presses a touch further than
+   a hover does and tints toward the ink color, so a real keystroke reads as
+   more emphatic than just resting a pointer over the row. */
+.shortcuts-key.is-pressed {
+  transform: translateY(2px);
+  border-bottom-width: 1px;
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
+  transition:
+    background-color 0.1s ease-out,
+    color 0.1s ease-out,
+    transform 0.1s ease-out,
+    border-bottom-width 0.1s ease-out;
+}

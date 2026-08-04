@@ -63,11 +63,16 @@ const ActionStamp = ({ stamp }) => (
                 scaleY: [2.2, .7, 1.08, 1],
                 rotate: 0,
               }}
+              /* The stamp pressed down hard on the way in; on the way out it
+                 lifts back off the paper — a quick squash the opposite way
+                 (widening before it goes) rather than a plain fade-up. */
               exit={{
                 opacity: 0,
-                scale: .85,
-                translateY: -8,
-                transition: { duration: .22, ease: "easeIn" },
+                scaleX: [1, .92, 1.1],
+                scaleY: [1, 1.12, .82],
+                translateY: -14,
+                rotate: 3,
+                transition: { duration: .26, times: [0, .3, 1], ease: "easeInOut" },
               }}
               transition={{ duration: .5, times: [0, .55, .8, 1], ease: "easeOut" }}
             >

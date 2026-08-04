@@ -37,7 +37,11 @@ const DropZoneOverlay = ({ active }) => (
             className="drop-zone-frame"
             initial={{ opacity: 0, scale: .7 }}
             animate={{ opacity: 1, scale: [.7, 1.08, .96, 1] }}
-            exit={{ opacity: 0, scale: .85, transition: { duration: .18, ease: "easeIn" } }}
+            /* The entrance overshoots up past 1 before settling — the exit
+               now echoes that same bulge-then-settle shape in reverse
+               (a last small swell before it collapses back into the pool)
+               instead of a flat shrink. */
+            exit={{ opacity: 0, scale: [1, 1.05, .8], transition: { duration: .26, times: [0, .3, 1], ease: "easeInOut" } }}
             transition={{ duration: .6, times: [0, .55, .8, 1], ease: "easeOut" }}
           >
             <motion.div

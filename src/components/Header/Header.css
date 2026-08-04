@@ -263,6 +263,14 @@ header.header {
   flex-shrink: 0;
 }
 
+/* Lets the insights -> settings cluster share one framer variants context
+   (a staggered mount-in) while every child still renders as .header-toolbar's
+   own direct flex item — the same display:contents trick QuickDock's own
+   item row already uses for the identical reason. */
+.header-wand-row {
+  display: contents;
+}
+
 .header .ink-levels .ink-button,
 .header .wand {
   display: flex;

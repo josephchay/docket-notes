@@ -65,7 +65,7 @@ const FRAG = `
 // the vial's rounded-rect shape via the frame div's own CSS
 // (border-radius + overflow: hidden), the same way HistoryAmbient.jsx's
 // canvas is clipped by its parent rather than a shader-side mask.
-const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduceMotion = false }) => {
+const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduceMotion = false, celebration = null }) => {
   const canvasRef = useRef(null);
   const currentRef = useRef(0);
   const targetRef = useRef(ratio);
@@ -73,6 +73,7 @@ const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduce
   const pulseRef = useRef({ value: 1 });
   const pulseTlRef = useRef(null);
   const prevRatioRef = useRef(ratio);
+  const prevCelebrationKeyRef = useRef(celebration?.key ?? null);
   const colorRef = useRef(color);
   colorRef.current = color;
   const reduceMotionRef = useRef(reduceMotion);
@@ -81,20 +82,31 @@ const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduce
   useEffect(() => {
     targetRef.current = Math.max(0, Math.min(1, ratio));
 
-    // Milestone crossing detector — Header.jsx's own milestoneRatio sits at
-    // essentially 1 for the render right before a crossing, then drops
-    // sharply the next note pours in (the anchor points shift to the next
-    // milestone pair). No prop needed for this; it falls straight out of
-    // watching the ratio Header already hands down.
+    // Two ways to notice the same crossing, kept together rather than
+    // picking one: the ratio heuristic below already covers a vial that was
+    // open through the exact render a milestone landed on (Header.jsx's own
+    // milestoneRatio sits at essentially 1 right before a crossing, then
+    // drops sharply once the next note pours in); `celebration` is the
+    // same crossing Home.jsx's own InkCelebration pill fires from, so a
+    // vial that's open right when the desk actually crosses a milestone
+    // pulses on the identical instant the pill blooms, rather than a
+    // separately-inferred one. Neither alone covers every case: the ratio
+    // heuristic still needs to stay for a vial that only gets opened later,
+    // well after the crossing (celebration's own key will already have
+    // moved past by then).
     const prev = prevRatioRef.current;
-    if (prev >= .96 && ratio < prev - .3) {
+    const ratioCrossed = prev >= .96 && ratio < prev - .3;
+    const celebrationFired = !!celebration && celebration.key !== prevCelebrationKeyRef.current;
+
+    if (ratioCrossed || celebrationFired) {
       pulseTlRef.current?.kill();
       pulseTlRef.current = gsap.timeline()
         .to(pulseRef.current, { value: 1.4, duration: .14, ease: "power2.in" })
         .to(pulseRef.current, { value: 1, duration: .9, ease: "elastic.out(1.1, .42)" });
     }
     prevRatioRef.current = ratio;
-  }, [ratio]);
+    prevCelebrationKeyRef.current = celebration?.key ?? prevCelebrationKeyRef.current;
+  }, [ratio, celebration]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

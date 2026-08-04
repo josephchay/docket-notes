@@ -15,9 +15,32 @@
   justify-content: center;
 }
 
+.ink-celebration .ink-celebration-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+/* A ring of ink bleeding outward from behind the pill on arrival — the
+   same "impact settling into the paper" language ActionStamp's own ring
+   already speaks for export/import stamps. */
+.ink-celebration .ink-celebration-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  border-radius: 50%;
+  border: 2px solid var(--page-ink-color);
+  pointer-events: none;
+  transition: border-color 0.4s ease-in-out;
+}
+
 /* border-radius is animated by framer during the drop-to-pill morph, so it
    is deliberately not set here. */
 .ink-celebration .ink-celebration-pill {
+  position: relative;
   padding: 12px 22px;
   font-size: 15px;
   font-weight: 700;

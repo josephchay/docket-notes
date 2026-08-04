@@ -1285,6 +1285,7 @@ const Home = () => {
           pileView={ pileView }
           togglePileView={ togglePileView }
           reduceMotion={ reduceMotion }
+          celebration={ celebration }
         />
         <NoteList
           notes={ filteredNotes }
@@ -1320,6 +1321,7 @@ const Home = () => {
           reduceMotion={ reduceMotion }
           pileView={ pileView }
           togglePileView={ togglePileView }
+          searchQuery={ notesSortText }
         />
       </div>
       <AnimatePresence>

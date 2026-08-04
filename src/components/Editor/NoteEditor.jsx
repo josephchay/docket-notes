@@ -8,10 +8,19 @@ import useJellyTap from "../../hooks/useJellyTap";
 import useInkPulse from "../../hooks/useInkPulse";
 import useFocusTrap from "../../hooks/useFocusTrap";
 import HistoryAmbient from "../History/HistoryAmbient";
+import { EXIT_SPRING, coinFlip } from "../Motion";
 
 import "./NoteEditor.css";
 
 const debounceTimer = 500;
+
+// The palette dots and every action button (star, lock, copy, resize,
+// close) shared this exact spring as a copy-pasted literal six times over
+// in this one file — none of the app's cross-file Motion constants happen
+// to match this file's own already-tuned 420/16 exactly, so it stays a
+// local constant rather than being forced onto a slightly different
+// shared one.
+const actionSpring = { type: "spring", stiffness: 420, damping: 16 };
 
 // The editor's papers: cozy for a quick line, roomy for writing, grand for
 // spreading out, epic for filling the screen.
@@ -218,11 +227,16 @@ const NoteEditor = ({
         className="note-editor-shell"
         initial={{ opacity: 0, scale: .8, y: 90, rotate: -1.5 }}
         animate={{ opacity: 1, scale: 1, y: 0, rotate: 0 }}
+        /* The entrance is a real spring with a slight rotate settle; the
+           exit used to be a flat linear fade-shrink with none of that
+           character. Now it reverses the same spring, tipping back the
+           way it came in instead of just shrinking straight down. */
         exit={{
           opacity: 0,
           scale: .86,
           y: 60,
-          transition: { duration: .22, ease: "easeIn" },
+          rotate: 1.5,
+          transition: EXIT_SPRING,
         }}
         transition={{
           type: "spring",
@@ -265,7 +279,7 @@ const NoteEditor = ({
                       className={ `note-editor-dot ${ name }-bg ${ name === note.color ? "active" : "" }` }
                       whileHover={{ scale: 1.25 }}
                       whileTap={{ scale: .85 }}
-                      transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                      transition={ actionSpring }
                       onTapStart={ paletteRingPulse.squash }
                       onClick={ () => setNoteColor(name, note.id) }
                     >
@@ -295,7 +309,7 @@ const NoteEditor = ({
                   className="note-editor-action"
                   whileHover={{ scale: 1.15, rotate: -10 }}
                   whileTap={{ scale: .9 }}
-                  transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                  transition={ actionSpring }
                   style={{
                     backgroundColor: note.favorite ? "var(--black-color)" : "var(--black-even-more-transclucent-color)",
                   }}
@@ -313,7 +327,7 @@ const NoteEditor = ({
                   style={{ transformPerspective: 300 }}
                   whileHover={{ scale: 1.15 }}
                   whileTap={{ scale: .9 }}
-                  transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                  transition={ actionSpring }
                   onTapStart={ lockTap.squash }
                   onClick={ () => updateLock(note.id) }
                 >
@@ -322,15 +336,7 @@ const NoteEditor = ({
                       <motion.span
                         key={ note.lock ? "pen" : "eye" }
                         className="note-editor-action-icon-wrap"
-                        initial={{ rotateY: -130, scale: .3, opacity: 0 }}
-                        animate={{ rotateY: 0, scale: 1, opacity: 1 }}
-                        exit={{
-                          rotateY: 130,
-                          scale: .3,
-                          opacity: 0,
-                          transition: { duration: .16, ease: "easeIn" },
-                        }}
-                        transition={{ type: "spring", stiffness: 420, damping: 17 }}
+                        { ...coinFlip({ type: "spring", stiffness: 420, damping: 17 }) }
                       >
                         {
                           note.lock
@@ -347,7 +353,7 @@ const NoteEditor = ({
                   className="note-editor-action dark"
                   whileHover={{ scale: 1.15 }}
                   whileTap={{ scale: .9 }}
-                  transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                  transition={ actionSpring }
                   onTapStart={ copyTap.squash }
                   onClick={ handleCopy }
                 >
@@ -361,7 +367,7 @@ const NoteEditor = ({
                   className="note-editor-action"
                   whileHover={{ scale: 1.15 }}
                   whileTap={{ scale: .8 }}
-                  transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                  transition={ actionSpring }
                   onTapStart={ resizeTap.squash }
                   onClick={ () => setSize(EDITOR_SIZES[(EDITOR_SIZES.indexOf(size) + 1) % EDITOR_SIZES.length]) }
                 >
@@ -375,7 +381,7 @@ const NoteEditor = ({
                   className="note-editor-action dark"
                   whileHover={{ scale: 1.15, rotate: 90 }}
                   whileTap={{ scale: .9 }}
-                  transition={{ type: "spring", stiffness: 420, damping: 16 }}
+                  transition={ actionSpring }
                   onTapStart={ closeTap.squash }
                   onClick={ onClose }
                 >

@@ -90,10 +90,16 @@ const UndoToast = ({ note, depth, onUndo, onDismiss }) => {
           scale: .8,
           transition: { duration: .38, ease: "easeOut" },
         } : {
+          // A flung card keeps its own physical exit above; a card that
+          // just settles out (Undo, or the timer running out) now gets a
+          // small squash on its way down instead of a flat fade — the same
+          // echo-of-the-entrance the swipe path already had for free.
           opacity: 0,
+          scaleX: [1, 1.05, .85],
+          scaleY: [1, .9, .82],
           y: 60,
-          scale: .85,
-          transition: { duration: .25, ease: "easeIn" },
+          rotate: -4,
+          transition: { duration: .28, times: [0, .3, 1], ease: "easeInOut" },
         }
       }
       transition={{
@@ -126,11 +132,21 @@ const UndoToast = ({ note, depth, onUndo, onDismiss }) => {
           className="undo-toast-burst"
         />
       </motion.button>
+      {/* The countdown itself (scaleX) stays exactly linear — this is the
+          one place in the toast where legibility matters more than
+          flourish, and an eased drain would misrepresent how much time is
+          actually left. The ink character comes from a second, independent
+          loop on top: a slow breathing thickness/opacity wobble that never
+          touches the timing. */}
       <motion.span
         className={ `undo-toast-progress ${ note.color }-bg` }
-        initial={{ scaleX: 1 }}
-        animate={{ scaleX: 0 }}
-        transition={{ duration: UNDO_WINDOW / 1000, ease: "linear" }}
+        initial={{ scaleX: 1, scaleY: 1, opacity: 1 }}
+        animate={{ scaleX: 0, scaleY: [1, 1.18, 1], opacity: [1, .9, 1] }}
+        transition={{
+          scaleX: { duration: UNDO_WINDOW / 1000, ease: "linear" },
+          scaleY: { duration: 1.3, repeat: Infinity, ease: "easeInOut" },
+          opacity: { duration: 1.3, repeat: Infinity, ease: "easeInOut" },
+        }}
       />
     </motion.div>
   );

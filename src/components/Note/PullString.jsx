@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useMotionValue, useTransform, useMotionValueEvent } from "framer-motion";
 
 import PullRig from "./PullRig";
+import { DRAG_SNAP } from "../Motion";
 
 const PULL_THRESHOLD = 120;   // how far "far enough" is (px)
 
@@ -86,7 +87,7 @@ const PullString = ({ anchorX, restY = 26, colorName, icon, verb, onTrigger }) =
         dragSnapToOrigin: true,
         dragElastic: 0.5,
         dragConstraints: { left: -70, right: 70, top: 0, bottom: 220 },
-        dragTransition: { bounceStiffness: 340, bounceDamping: 13 },
+        dragTransition: DRAG_SNAP,
         onDragEnd: handleEnd,
       }}
     />

@@ -8,6 +8,7 @@ import {
 
 import SheetPanel from "../Sheet/SheetPanel";
 import useJellyTap from "../../hooks/useJellyTap";
+import { LIST_ROW_SPRING, listRowDelay } from "../Motion";
 
 import "./ShortcutsSheet.css";
 
@@ -29,13 +30,31 @@ const SHORTCUTS = [
   { keys: ["?"], label: "Show this sheet", icon: FaQuestion },
 ];
 
+// Maps a KeyboardEvent's own `.key` to whatever label this sheet shows for
+// it — most keys already match once upper-cased, a handful of named ones
+// (arrows, modifiers, Escape) don't.
+const KEY_ALIASES = {
+  Control: "Ctrl",
+  Meta: "Ctrl",
+  Shift: "Shift",
+  Escape: "Esc",
+  ArrowUp: "↑",
+  ArrowDown: "↓",
+  Enter: "Enter",
+};
+
+const labelForKey = (key) => KEY_ALIASES[key] ?? (key.length === 1 ? key.toUpperCase() : key);
+
 // One row: an icon (jelly-squashed on hover, via the same useJellyTap
 // recipe every toolbar icon elsewhere already uses), the action it names,
 // and its keys — which visually depress like a real keycap being pressed
-// (see .shortcuts-row:hover .shortcuts-key) for as long as the row is
-// hovered. Its own component (rather than inlined in the map below) since
-// useJellyTap needs one controller per row, and hooks can't run in a loop.
-const ShortcutRow = ({ row, index }) => {
+// (see .shortcuts-row:hover .shortcuts-key) either on hover or, now, for
+// real: `pressedKeys` (a Set of key labels currently held, see
+// ShortcutsSheet below) lights up any kbd that's actually being pressed
+// while this sheet is open, not just decoratively on hover. Its own
+// component (rather than inlined in the map below) since useJellyTap needs
+// one controller per row, and hooks can't run in a loop.
+const ShortcutRow = ({ row, index, pressedKeys }) => {
   const iconJelly = useJellyTap();
   const Icon = row.icon;
 
@@ -44,12 +63,7 @@ const ShortcutRow = ({ row, index }) => {
       className="shortcuts-row"
       initial={{ opacity: 0, translateX: -16 }}
       animate={{ opacity: 1, translateX: 0 }}
-      transition={{
-        type: "spring",
-        stiffness: 340,
-        damping: 20,
-        delay: .05 + index * .04,
-      }}
+      transition={{ ...LIST_ROW_SPRING, delay: listRowDelay(index, { step: .04 }) }}
       onHoverStart={ iconJelly.squash }
     >
       <span className="shortcuts-row-main">
@@ -61,7 +75,12 @@ const ShortcutRow = ({ row, index }) => {
       <span className="shortcuts-row-keys">
         {
           row.keys.map((key) => (
-            <kbd key={ key } className="shortcuts-key">{ key }</kbd>
+            <kbd
+              key={ key }
+              className={ `shortcuts-key ${ pressedKeys.has(key) ? "is-pressed" : "" }` }
+            >
+              { key }
+            </kbd>
           ))
         }
       </span>
@@ -100,6 +119,45 @@ const ShortcutsSheet = () => {
     };
   }, []);
 
+  // While the sheet is actually open, every kbd gets to be honest about
+  // whether its own key is physically down — a Set of currently-held key
+  // labels, tracked only for this window rather than always-on, so it never
+  // adds a global keydown/keyup pair for a feature nobody's looking at.
+  // Cleared on close and on window blur (alt-tabbing away mid-hold would
+  // otherwise leave a key stuck lit — keyup never fires once focus is gone).
+  const [pressedKeys, setPressedKeys] = useState(() => new Set());
+
+  useEffect(() => {
+    if (!open) {
+      setPressedKeys(new Set());
+      return;
+    }
+
+    const down = (e) => {
+      const label = labelForKey(e.key);
+      setPressedKeys((prev) => (prev.has(label) ? prev : new Set(prev).add(label)));
+    };
+    const up = (e) => {
+      const label = labelForKey(e.key);
+      setPressedKeys((prev) => {
+        if (!prev.has(label)) return prev;
+        const next = new Set(prev);
+        next.delete(label);
+        return next;
+      });
+    };
+    const clear = () => setPressedKeys(new Set());
+
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", clear);
+    };
+  }, [open]);
+
   return (
     <SheetPanel
       open={ open }
@@ -128,7 +186,7 @@ const ShortcutsSheet = () => {
               <div className="shortcuts-list">
                 {
                   SHORTCUTS.map((row, index) => (
-                    <ShortcutRow key={ row.label } row={ row } index={ index } />
+                    <ShortcutRow key={ row.label } row={ row } index={ index } pressedKeys={ pressedKeys } />
                   ))
                 }
               </div>

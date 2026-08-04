@@ -6,14 +6,11 @@ import { FaFeather, FaShuffle } from "react-icons/fa6";
 import { toggleMachine } from "../Navigation/NavigationState";
 import { randomQuote } from "../../utils/data";
 import quotes from "../../assets/data/quotes.json";
+import { SNAPPY, EXIT_SPRING } from "../Motion";
 
 import "./QuoteCard.css";
 
-const springy = {
-  type: "spring",
-  stiffness: 400,
-  damping: 17,
-};
+const springy = SNAPPY;
 
 // A strip of daily ink for the desk. The same xstate toggle machine that
 // drives the nav rail folds it in and out: unfolding morphs a dot of paper
@@ -72,13 +69,18 @@ const QuoteCard = () => {
               style={{ originX: 0, originY: 0 }}
               initial={{ opacity: 0, scaleX: .08, scaleY: .3, translateY: -14, borderRadius: 40 }}
               animate={{ opacity: 1, scaleX: 1, scaleY: 1, translateY: 0, borderRadius: 14 }}
+              /* Unfolded via a loose starchy spring — folding away used to
+                 just be a flat linear shrink. A small swell before it
+                 collapses back toward the tab it grew from, on the same
+                 spring, echoes the unfold instead of just reversing it
+                 mechanically. */
               exit={{
                 opacity: 0,
-                scaleX: .2,
-                scaleY: .25,
+                scaleX: [1, 1.08, .16],
+                scaleY: [1, .94, .22],
                 translateY: -12,
                 borderRadius: 40,
-                transition: { duration: .22, ease: "easeIn" },
+                transition: EXIT_SPRING,
               }}
               transition={{
                 type: "spring",
@@ -97,7 +99,7 @@ const QuoteCard = () => {
                     opacity: 0,
                     rotateX: 70,
                     translateY: -10,
-                    transition: { duration: .18, ease: "easeIn" },
+                    transition: EXIT_SPRING,
                   }}
                   transition={{ type: "spring", stiffness: 260, damping: 16 }}
                   style={{ transformPerspective: 600 }}

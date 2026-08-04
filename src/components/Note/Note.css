@@ -10,7 +10,22 @@
     0 1px 1px rgba(25, 25, 25, 0.04),
     0 10px 24px -8px rgba(25, 25, 25, 0.18),
     0 24px 48px -18px rgba(25, 25, 25, 0.22);
-  transition: border-radius 0.3s ease-in-out
+  /* box-shadow joins the transition list here rather than on each state
+     class individually, so .editing/.selected/.search-match below all cross-
+     fade in and out the same soft way instead of swapping instantly. */
+  transition: border-radius 0.3s ease-in-out, box-shadow 0.25s ease-in-out;
+}
+
+/* A third ring, alongside .editing/.selected below — this one names why a
+   card survived the current search rather than a mode the card itself is
+   in. Translucent ink rather than either of those two's solid black or
+   white, so a note that's both selected and a search match still reads as
+   two distinct rings rather than one state masking the other. */
+.note.search-match {
+  box-shadow:
+    0 0 0 3px var(--black-transclucent-color),
+    0 1px 1px rgba(25, 25, 25, 0.04),
+    0 14px 30px -10px rgba(25, 25, 25, 0.25);
 }
 
 /* Live-editing lift: while the title or body has the caret, the paper rises

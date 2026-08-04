@@ -15,17 +15,14 @@ import { NOTE_COLORS } from "../../constants/colors";
 import "./NoteList.css";
 import { itemsPerFlexRow } from "../../utils/math";
 import useInkPulse from "../../hooks/useInkPulse";
+import { SNAPPY, EXIT_SPRING } from "../Motion";
 
 gsap.registerPlugin(ScrollTrigger);
 
 const GRID_RADIAL_RADIUS = 58;
 const GRID_RADIAL_MARGIN = 100;
 
-const springy = {
-  type: "spring",
-  stiffness: 400,
-  damping: 17,
-};
+const springy = SNAPPY;
 
 // The desk's layouts: freshest first, grouped by ink color, or starred to
 // the front. The active label wears a sliding ink thumb.
@@ -117,6 +114,7 @@ const NoteList = ({
   notes,
   hasNotes,
   focusMode,
+  searchQuery,
   clearFilters,
   deskCleared,
   addNote,
@@ -625,6 +623,7 @@ const NoteList = ({
                       // paint a NaN transition delay.
                       delay={ (index % Math.max(1, numPerRow) + 1) * 0.16 }
                       note={ item }
+                      searchQuery={ searchQuery }
                       spawnOrigin={ spawn && spawn.id === item.id ? spawn : null }
                       clearSpawn={ clearSpawn }
                       selectMode={ selectMode }
@@ -729,11 +728,14 @@ const NoteList = ({
                         className="clean-desk-pill liquid-text"
                         initial={{ opacity: 0, scale: .15, translateY: -10, borderRadius: 40 }}
                         animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 999 }}
+                        /* Bloomed in from a dot; retreats the same way on
+                           the way out — a small swell before it collapses
+                           back down, instead of a flat linear shrink. */
                         exit={{
                           opacity: 0,
-                          scale: .3,
-                          translateY: -8,
-                          transition: { duration: .22, ease: "easeIn" },
+                          scale: [1, 1.06, .15],
+                          translateY: -10,
+                          transition: EXIT_SPRING,
                         }}
                         transition={{ type: "spring", stiffness: 190, damping: 13 }}
                       >
@@ -824,7 +826,7 @@ const NoteList = ({
                   }}
                   initial={{ opacity: 0, scale: .92 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 1.05, transition: { duration: .18, ease: "easeIn" } }}
+                  exit={{ opacity: 0, scale: 1.05, transition: EXIT_SPRING }}
                   transition={{ type: "spring", stiffness: 500, damping: 30 }}
                 />
               )
@@ -861,9 +863,8 @@ const NoteList = ({
                               scale: 0,
                               opacity: 0,
                               transition: {
-                                duration: .18,
+                                ...EXIT_SPRING,
                                 delay: (paletteNames.length - index) * .012,
-                                ease: "easeIn",
                               },
                             }}
                             transition={{
