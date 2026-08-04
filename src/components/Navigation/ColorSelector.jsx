@@ -35,6 +35,31 @@ const ColorSelector = ({
     });
   }
 
+  // The click itself only ever got the same plain hover-bulge every other
+  // press on this pot does — nothing marked the one moment that actually
+  // matters, an ink drop leaving it. This plays instead (mouseUp's own
+  // bulge(1.3) still fires a beat earlier, but anime.remove below cancels
+  // it clean rather than fighting it): a real give, dipping past its rest
+  // scale as if the drop's weight just left, before an elastic rebound —
+  // the same overshoot-settle character the note itself spawns with (see
+  // Note.jsx's own squeeze/bloom/landing sequence), so the pot and the
+  // note it just poured read as one continuous gesture, not two unrelated
+  // animations that happen to fire at the same time.
+  const pour = () => {
+    if (reduceMotion) return;
+
+    const el = ref.current;
+    if (!el) return;
+
+    anime.remove(el);
+    anime({
+      targets: el,
+      scale: [1.3, .68, 1.18, .96, 1.06, 1],
+      duration: 620,
+      easing: "easeOutElastic(1, .5)",
+    });
+  }
+
   return (
     <div
       ref={ ref }
@@ -55,6 +80,7 @@ const ColorSelector = ({
           x: rect.left + rect.width / 2,
           y: rect.top + rect.height / 2,
         } : undefined);
+        pour();
       } }
     ></div>
   );
