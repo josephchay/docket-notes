@@ -1,5 +1,5 @@
 import React from "react";
-import { motion, useScroll, useSpring, useTransform } from "framer-motion";
+import { motion, useScroll, useSpring, useTransform, useVelocity } from "framer-motion";
 
 import "./ScrollProgress.css";
 
@@ -18,6 +18,20 @@ const ScrollProgress = ({ containerRef, markers = [] }) => {
   const { scrollYProgress } = useScroll({ container: containerRef });
   const progress = useSpring(scrollYProgress, { stiffness: 280, damping: 32, mass: .4 });
   const dripLeft = useTransform(progress, (v) => `${ v * 100 }%`);
+
+  // How fast the drip is actually traveling right now, smoothed so a single
+  // jumpy scroll event doesn't snap the stretch — a real comet tail rather
+  // than a twitch. It elongates along the direction of travel and thins
+  // perpendicular to it (clamped so it never inverts or vanishes), the same
+  // squash-and-stretch language every other spring in the app already
+  // speaks, just driven by scroll velocity instead of a spring's overshoot
+  // — replaces the old constant idle breathing pulse, so the drop now only
+  // comes alive in response to an actual scroll rather than looping forever
+  // at rest.
+  const rawVelocity = useVelocity(progress);
+  const velocity = useSpring(rawVelocity, { stiffness: 300, damping: 40, mass: .3 });
+  const dripScaleX = useTransform(velocity, (v) => 1 + Math.min(Math.abs(v), 2.4) * 1.35);
+  const dripScaleY = useTransform(velocity, (v) => 1 - Math.min(Math.abs(v), 2.4) * .28);
 
   const jumpTo = (ratio) => {
     const el = containerRef.current;
@@ -42,9 +56,7 @@ const ScrollProgress = ({ containerRef, markers = [] }) => {
       <motion.div className="scroll-progress" style={{ scaleX: progress }} />
       <motion.div
         className="scroll-progress-drip"
-        style={{ left: dripLeft }}
-        animate={{ scale: [1, 1.18, 1] }}
-        transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+        style={{ left: dripLeft, scaleX: dripScaleX, scaleY: dripScaleY }}
       />
     </div>
   );

@@ -44,6 +44,11 @@
    the jelly wrapper above it carries the squash-and-stretch. */
 .note-editor {
   position: relative;
+  /* Establishes its own stacking context so the ambient wash's z-index:-1
+     (see HistoryAmbient.jsx/HistoryPanel.css's .history-ambient rule) sinks
+     only below this paper's own content, not below whatever sits further
+     up the tree. */
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   max-width: 94vw;

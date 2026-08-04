@@ -19,11 +19,38 @@ import useMagnetic from "../../hooks/useMagnetic";
 
 import "./QuickDock.css";
 
+// The dock items land with their own bouncy stagger once the dock itself
+// has sprung into place, rather than all popping in as one rigid block —
+// the same recipe Header's color-filter row and BulkActionBar's action row
+// already use.
+const dockRowVariants = {
+  hidden: {},
+  shown: {
+    transition: { delayChildren: .3, staggerChildren: .05 },
+  },
+};
+
+const dockItemVariants = {
+  hidden: { opacity: 0, scale: 0, translateY: 14 },
+  shown: {
+    opacity: 1,
+    scale: 1,
+    translateY: 0,
+    transition: { type: "spring", stiffness: 420, damping: 14 },
+  },
+};
+
 // A floating dock of the desk's most-reached-for actions, magnetized the
 // way a real dock is (see useMagnetic.jsx for the shared recipe — Header's
-// toolbar icons borrow the same one). A gooey highlight pill (the same
-// shared-layout recipe as the sort/tag/color thumbs elsewhere in the app)
-// slides and squashes between whichever icon currently has the pointer.
+// toolbar icons borrow the same one). The highlight is properly gooey now
+// rather than just a sliding pill: a slow-chasing "trail" blob and a
+// fast-snapping "core" blob share the same layoutId-driven target (whichever
+// icon has the pointer) but ride different spring speeds, so mid-travel the
+// core arrives first and the trail is still catching up a few pixels behind
+// it — the same shared #gooey-effect filter (see Svg/GooeyEffectSvg,
+// mounted once near Home's root) every other merging blob in the app already
+// uses fuses the two overlapping, offset shapes into one stretched drip
+// instead of two crisp rounded rects.
 const QuickDock = ({
   addNote,
   shuffleNotes,
@@ -93,6 +120,12 @@ const QuickDock = ({
       exit={{ opacity: 0, scale: .3, translateY: 70 }}
       transition={{ type: "spring", stiffness: 220, damping: 16, delay: .2 }}
     >
+      {/* display:contents keeps these buttons as .quick-dock's own direct
+          flex items for layout, while giving the row its own variants
+          context (separate from the dock shell's own raw-object spring
+          above) so staggerChildren has a labeled "shown" state to key off —
+          the same two-layer split Header's toolbar/.color-filters uses. */}
+      <motion.div className="quick-dock-items" variants={ dockRowVariants } initial="hidden" animate="shown">
       {
         items.map((item, index) => (
           <motion.button
@@ -101,6 +134,7 @@ const QuickDock = ({
             aria-label={ item.label }
             title={ item.label }
             className="quick-dock-item"
+            variants={ dockItemVariants }
             whileTap={{ scale: .84 }}
             transition={{ type: "spring", stiffness: 420, damping: 17 }}
             onMouseEnter={ () => setHovered(index) }
@@ -110,13 +144,20 @@ const QuickDock = ({
           >
             {
               hovered === index && (
-                <motion.span
-                  layoutId="dockHighlight"
-                  style={{ position: "absolute", inset: 0, zIndex: -1 }}
-                  transition={{ type: "spring", stiffness: 500, damping: 20 }}
-                >
-                  <motion.span className="quick-dock-highlight" animate={ dockPulse.jelly } />
-                </motion.span>
+                <span className="quick-dock-goo" style={{ position: "absolute", inset: 0, zIndex: -1 }}>
+                  <motion.span
+                    layoutId="dockHighlightTrail"
+                    className="quick-dock-blob quick-dock-blob-trail"
+                    transition={{ type: "spring", stiffness: 170, damping: 15 }}
+                  />
+                  <motion.span
+                    layoutId="dockHighlightCore"
+                    className="quick-dock-blob quick-dock-blob-core"
+                    transition={{ type: "spring", stiffness: 520, damping: 24 }}
+                  >
+                    <motion.span className="quick-dock-highlight" animate={ dockPulse.jelly } />
+                  </motion.span>
+                </span>
               )
             }
             <span
@@ -128,6 +169,7 @@ const QuickDock = ({
           </motion.button>
         ))
       }
+      </motion.div>
     </motion.div>
   );
 };

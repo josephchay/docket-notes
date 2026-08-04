@@ -18,6 +18,12 @@
   transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
 }
 
+/* Keeps the buttons as .quick-dock's own direct flex items for layout —
+   see the comment in QuickDock.jsx on why this wrapper exists at all. */
+.quick-dock-items {
+  display: contents;
+}
+
 .quick-dock-item {
   position: relative;
   display: flex;
@@ -33,12 +39,31 @@
   cursor: pointer;
 }
 
+/* The gooey highlight: a fast "core" blob and a slower "trail" blob chase
+   the same hovered icon at different spring speeds — while they're offset
+   mid-travel, the shared #gooey-effect filter (see Svg/GooeyEffectSvg)
+   fuses their overlapping blurred edges into one stretched drip instead of
+   two crisp rounded rects sliding past each other. */
+.quick-dock-goo {
+  filter: url(#gooey-effect);
+}
+
+.quick-dock-blob {
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+}
+
+.quick-dock-blob-trail {
+  background-color: var(--page-surface-color);
+  opacity: .85;
+}
+
 .quick-dock-highlight {
   position: absolute;
   inset: 0;
   border-radius: 14px;
   background-color: var(--page-surface-color);
-  z-index: -1;
 }
 
 /* GSAP owns scale/y on this wrapper via quickTo — kept off the button

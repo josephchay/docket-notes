@@ -3,6 +3,8 @@ import { motion, useMotionValue, useTransform } from "framer-motion";
 import { FaTrash } from "react-icons/fa";
 import { FaArrowRotateLeft } from "react-icons/fa6";
 
+import SparkBurst from "../Spark/SparkBurst";
+
 import "./UndoToast.css";
 
 const UNDO_WINDOW = 5000;   // how long a deleted note lingers (ms)
@@ -30,6 +32,22 @@ const UndoToast = ({ note, depth, onUndo, onDismiss }) => {
   // knows to keep sailing instead of settling.
   const [flungDir, setFlungDir] = useState(0);
   const dismissedRef = useRef(false);
+
+  // The same handful of ink drops Header's star toggle and the trash
+  // panel's restore button already throw (see SparkBurst.jsx) — Undo is a
+  // "yes, that landed" action too, so it earns the same little flourish
+  // rather than just silently springing the card away.
+  const [undoBurst, setUndoBurst] = useState(false);
+  const burstTimerRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(burstTimerRef.current), []);
+
+  const handleUndo = () => {
+    setUndoBurst(true);
+    clearTimeout(burstTimerRef.current);
+    burstTimerRef.current = setTimeout(() => setUndoBurst(false), 600);
+    onUndo(note.id);
+  };
 
   const handleDragEnd = (_e, info) => {
     if (dismissedRef.current) return;
@@ -95,10 +113,18 @@ const UndoToast = ({ note, depth, onUndo, onDismiss }) => {
         whileTap={{ scale: .92 }}
         transition={{ type: "spring", stiffness: 420, damping: 16 }}
         onPointerDown={ (e) => e.stopPropagation() }
-        onClick={ () => onUndo(note.id) }
+        onClick={ handleUndo }
       >
         <FaArrowRotateLeft className="undo-toast-undo-icon" />
         Undo
+        <SparkBurst
+          active={ undoBurst }
+          count={ 5 }
+          angleOffset={ -Math.PI / 2 }
+          radius={ 22 }
+          duration={ .5 }
+          className="undo-toast-burst"
+        />
       </motion.button>
       <motion.span
         className={ `undo-toast-progress ${ note.color }-bg` }

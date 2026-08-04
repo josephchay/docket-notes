@@ -19,7 +19,7 @@ import { playbackMachine, PLAYBACK_SPEEDS } from "./HistoryPlaybackState";
 import SheetPanel from "../Sheet/SheetPanel";
 import HistoryAmbient from "./HistoryAmbient";
 import HistoryConstellation from "./HistoryConstellation";
-import useOdometer from "./useOdometer";
+import useOdometer from "../../hooks/useOdometer";
 import { playHistoryAction, playTick } from "../../utils/sound";
 
 import "./HistoryPanel.css";

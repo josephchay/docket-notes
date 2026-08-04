@@ -7,6 +7,7 @@ import { NOTE_COLORS } from "../../constants/colors";
 import useJellyTap from "../../hooks/useJellyTap";
 import useInkPulse from "../../hooks/useInkPulse";
 import useFocusTrap from "../../hooks/useFocusTrap";
+import HistoryAmbient from "../History/HistoryAmbient";
 
 import "./NoteEditor.css";
 
@@ -244,6 +245,15 @@ const NoteEditor = ({
               mass: .9,
             }}
           >
+            {/* A faint drift of actual ink specks behind the paper — the
+                exact same raw-Three.js dust technique History's own preview
+                pane and the Settings panel already reuse (see
+                HistoryAmbient.jsx). Tinted to the page's own ink rather than
+                the note's color: the paper itself already *is* that color
+                (note-editor's own background), so dust in the same shade
+                would all but disappear into it — ink motes read clearly
+                against any of the seven paper colors instead. */}
+            <HistoryAmbient color="var(--page-ink-color)" />
             <div className="note-editor-header">
               <div className="note-editor-palette">
                 {

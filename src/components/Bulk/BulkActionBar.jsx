@@ -1,8 +1,10 @@
-import React from "react";
+import React, { useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FaStar, FaPalette, FaFileArrowDown, FaTrash, FaXmark } from "react-icons/fa6";
 
 import useJellyTap from "../../hooks/useJellyTap";
+import useBlobClipMorph from "../../hooks/useBlobClipMorph";
+import useOdometer from "../../hooks/useOdometer";
 
 import "./BulkActionBar.css";
 
@@ -35,7 +37,13 @@ const actionItemVariants = {
 // dot-to-bar expansion, ink-on-paper like the command palette — and folds
 // back down to nothing the moment the last one is deselected. Each icon
 // gets its own tap jelly, squashed on its own inner span so it never
-// fights the button's own hover/tap scale.
+// fights the button's own hover/tap scale. The entrance itself now runs
+// through the same flubber blob-clip morph every SheetPanel opens with
+// (see useBlobClipMorph) — a real organic ink-blob stage between "dot" and
+// "bar", not just a scaling rounded rect — and the count reads through
+// useOdometer's own elastic tween rather than popping in fresh each time,
+// so a multi-note selection/deselection drag rolls through the numbers in
+// between instead of snapping.
 const BulkActionBar = ({ count, onStar, onRecolor, onExport, onDelete, onDone }) => {
   const starJelly = useJellyTap();
   const recolorJelly = useJellyTap();
@@ -43,12 +51,17 @@ const BulkActionBar = ({ count, onStar, onRecolor, onExport, onDelete, onDone })
   const deleteJelly = useJellyTap();
   const doneJelly = useJellyTap();
 
+  const barRef = useRef(null);
+  const onBlobUpdate = useBlobClipMorph(barRef, count > 0, 20);
+  const displayedCount = useOdometer(count);
+
   return (
     <div className="bulk-bar-layer">
       <AnimatePresence>
         {
           count > 0 && (
             <motion.div
+              ref={ barRef }
               className="bulk-bar"
               initial={{ opacity: 0, scale: .1, translateY: 60, borderRadius: 60 }}
               animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 20 }}
@@ -60,16 +73,11 @@ const BulkActionBar = ({ count, onStar, onRecolor, onExport, onDelete, onDone })
                 transition: { duration: .2, ease: "easeIn" },
               }}
               transition={{ type: "spring", stiffness: 220, damping: 15 }}
+              onUpdate={ onBlobUpdate }
             >
-              <motion.span
-                key={ count }
-                className="bulk-bar-count"
-                initial={{ scale: .5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: "spring", stiffness: 500, damping: 18 }}
-              >
-                { count } selected
-              </motion.span>
+              <span className="bulk-bar-count">
+                { displayedCount } selected
+              </span>
               <motion.div className="bulk-bar-actions" variants={ actionRowVariants } initial="hidden" animate="shown">
                 <motion.button
                   type="button"
