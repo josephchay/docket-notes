@@ -88,9 +88,28 @@ const TagThreads = ({ notes, hoveredId, containerRef, reduceMotion }) => {
     // still sees it fire on whichever ancestor actually scrolls (.home).
     document.addEventListener("scroll", compute, { capture: true, passive: true });
     window.addEventListener("resize", compute);
+
+    // Adding, deleting, or sorting notes reflows the grid via each Note's
+    // own `layout` prop (Note.jsx) — a position change that fires neither
+    // scroll nor resize. That reflow is reachable mid-hover (the nav's add
+    // button sits outside the grid, so the pointer never has to leave the
+    // hovered note), so without this a thread stays glued to pre-reflow
+    // coordinates for the rest of the hover. A MutationObserver catches the
+    // DOM change that kicks the reflow off; the trailing recompute catches
+    // where notes land once Note's own layout spring settles.
+    let settleTimer = null;
+    const mutationObserver = new MutationObserver(() => {
+      compute();
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(compute, 400);
+    });
+    mutationObserver.observe(containerRef.current, { childList: true, subtree: true });
+
     return () => {
       document.removeEventListener("scroll", compute, { capture: true });
       window.removeEventListener("resize", compute);
+      mutationObserver.disconnect();
+      clearTimeout(settleTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hovered?.id, relatedKey]);

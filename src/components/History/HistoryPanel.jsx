@@ -438,9 +438,12 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   // live grid below reads whichever of these is active to ring added/
   // changed chips and surface ghost chips for anything removed.
   const previewNoteDiff = useMemo(() => {
-    if (!previewEntry) return null;
-    const before = previewIndex > 0 && timeline[previewIndex - 1] ? timeline[previewIndex - 1].notes : [];
-    return diffNotes(before, previewEntry.notes);
+    // Same convention as previewDiff above: index 0 has nothing before it
+    // to diff against, so this is "no diff" (null), not "everything in it
+    // just got added" — diffing against [] here instead would ring every
+    // note on the desk at that point as newly added, which it wasn't.
+    if (!previewEntry || previewIndex <= 0 || !timeline[previewIndex - 1]) return null;
+    return diffNotes(timeline[previewIndex - 1].notes, previewEntry.notes);
   }, [timeline, previewIndex, previewEntry]);
 
   const compareNoteDiff = useMemo(() => {

@@ -136,6 +136,12 @@ const AmbientField = () => {
     // Re-tints between the light and dark theme's own ink color whenever
     // .home's data-theme attribute flips — mirrors InkGoo.jsx's own
     // per-theme re-tint, just watched here instead of taken as a prop.
+    // Its own rAF chain, separate from tick()'s — tracked in colorRaf so
+    // an unmount mid-transition (a theme flip right as the panel closes,
+    // say) can actually cancel it instead of leaving it scheduling frames
+    // against a disposed material/renderer, the same bug main tick()'s
+    // own `raf` variable already exists to avoid.
+    let colorRaf = null;
     const themeObserver = new MutationObserver(() => {
       const nextInk = getComputedStyle(document.documentElement).getPropertyValue("--page-ink-color").trim();
       if (!nextInk) return;
@@ -144,6 +150,8 @@ const AmbientField = () => {
       const duration = 500;
       const startTime = performance.now();
 
+      if (colorRaf) cancelAnimationFrame(colorRaf);
+
       const step = (now) => {
         const t = Math.min(1, (now - startTime) / duration);
         uniforms.uColor.value.setRGB(
@@ -151,9 +159,9 @@ const AmbientField = () => {
           start.g + (target.g - start.g) * t,
           start.b + (target.b - start.b) * t,
         );
-        if (t < 1) requestAnimationFrame(step);
+        colorRaf = t < 1 ? requestAnimationFrame(step) : null;
       };
-      requestAnimationFrame(step);
+      colorRaf = requestAnimationFrame(step);
     });
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
@@ -185,6 +193,7 @@ const AmbientField = () => {
 
     return () => {
       if (raf) cancelAnimationFrame(raf);
+      if (colorRaf) cancelAnimationFrame(colorRaf);
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("resize", resize);
       window.removeEventListener("pointermove", handlePointerMove);

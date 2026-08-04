@@ -40,9 +40,10 @@ const IMPACT_SOUND_COOLDOWN_MS = 45; // keeps an avalanche of pieces from becomi
 // is already computing rather than a second, separately-timed animation:
 // a light paper flutter (a small skew keyed to each piece's own spin, so
 // every piece wobbles on its own unrepeated phase) while a piece is still
-// properly airborne, and a shadow that actually grows and softens the
-// higher up a piece currently is — real depth, cheaply, in place of the
-// old fixed two-state (resting/dragging) shadow.
+// actually moving, and a shadow that grows and softens with real velocity
+// — not static height, which would stay permanently large for anything
+// sitting high in a settled pile — in place of the old fixed two-state
+// (resting/dragging) shadow.
 const NotePile = ({ notes, onOpenNote, onExit }) => {
   const containerRef = useRef(null);
   const engineRef = useRef(null);
@@ -150,7 +151,6 @@ const NotePile = ({ notes, onOpenNote, onExit }) => {
       Matter.Engine.update(engine, 1000 / 60);
 
       const dt = 1 / 60;
-      const floorY = wallsRef.current ? wallsRef.current.floor.position.y : null;
 
       for (const piece of Object.values(bodiesRef.current)) {
         const { body, el } = piece;
@@ -165,12 +165,16 @@ const NotePile = ({ notes, onOpenNote, onExit }) => {
         const scaleY = 1 - squash * .55;
         const scaleX = 1 + squash * .4;
 
-        // How high off the floor this piece currently sits, normalized —
-        // real depth read straight off the physics engine's own numbers,
-        // driving both the flutter and the shadow below rather than a
-        // second, separately-timed animation.
-        const airborne = floorY === null ? 0 :
-          Math.max(0, Math.min(1, (floorY - body.position.y - PIECE_H * .6) / 200));
+        // How much this piece is actually still moving, normalized — not
+        // its static height above the floor. Height alone would stay
+        // permanently large for anything sitting high in a settled pile
+        // (stacked on other pieces, not falling), giving it an oversized
+        // shadow/flutter forever even at true rest; velocity is what
+        // genuinely distinguishes "still falling" from "settled, just
+        // elevated by the pile beneath it," and drops to 0 the instant a
+        // piece actually stops, wherever in the stack that happens to be.
+        const speed = Math.hypot(body.velocity.x, body.velocity.y);
+        const airborne = Math.max(0, Math.min(1, speed / 6));
 
         // A light sheet of paper's own flutter through the air — a small
         // skew riding the piece's own spin (never a separate clock, so

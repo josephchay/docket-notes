@@ -617,7 +617,13 @@ const NoteList = ({
                   notes.map((item, index) => (
                     <Note
                       key={ item.id }
-                      delay={ (index % numPerRow + 1) * 0.16 }
+                      // numPerRow needs the grid already painted to measure
+                      // row breaks (see itemsPerFlexRow), so it's set 50ms
+                      // after renderFirstRow flips true — during that gap it's
+                      // still 0, and `index % 0` is NaN, so it's floored to 1
+                      // here rather than left to hand every note on the first
+                      // paint a NaN transition delay.
+                      delay={ (index % Math.max(1, numPerRow) + 1) * 0.16 }
                       note={ item }
                       spawnOrigin={ spawn && spawn.id === item.id ? spawn : null }
                       clearSpawn={ clearSpawn }

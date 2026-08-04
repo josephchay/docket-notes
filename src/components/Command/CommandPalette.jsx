@@ -117,15 +117,31 @@ const CommandPalette = ({ actions }) => {
 
   // Casting a command still gets its own quick squash pulse rather than the
   // shared entrance shape — a distinct micro-interaction (confirming a cast
-  // landed), not a second way to open the palette — passed straight through
-  // to SheetPanel's `animate` override.
-  const castingAnimate = phase === "casting" ? {
+  // landed), not a second way to open the palette. Command is the one
+  // SheetPanel caller whose `animate` target actually flips back and forth
+  // while mounted (casting <-> open), so — unlike the other six, which
+  // never re-target `animate` at all and can safely leave this undefined
+  // to fall through to SheetPanel's own keyframe entrance — this always
+  // passes an explicit override, even for the "settled" case. Falling
+  // through here would mean flipping *back* to SheetPanel's default after
+  // a cast retriggers its entrance keyframes (which start at scaleX/scaleY
+  // .08) from the current ~1, visibly shrinking the panel to 8% and
+  // reblooming it on every single cast — a real bug, not a style choice.
+  const panelAnimate = phase === "casting" ? {
     opacity: 1,
     scale: [1, .93, 1.04],
     translateY: 0,
     borderRadius: 24,
     transition: { duration: .24, times: [0, .5, 1], ease: "easeInOut" },
-  } : undefined;
+  } : {
+    opacity: 1,
+    scaleX: 1,
+    scaleY: 1,
+    translateY: 0,
+    rotateX: 0,
+    borderRadius: 18,
+    transition: { type: "spring", stiffness: 200, damping: 13.5 },
+  };
 
   return (
     <SheetPanel
@@ -137,7 +153,7 @@ const CommandPalette = ({ actions }) => {
       backdropClassName="command-backdrop"
       panelClassName="command-panel"
       ariaLabel="Command palette"
-      animate={ castingAnimate }
+      animate={ panelAnimate }
       // The search input has its own autoFocus below (so typing works the
       // instant the palette opens, core to a command palette's whole
       // point) — SheetPanel's usual focus-the-panel-root step would just

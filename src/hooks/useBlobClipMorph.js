@@ -60,11 +60,21 @@ const useBlobClipMorph = (ref, active, radius = 22) => {
     };
   }, [ref, active, radius]);
 
-  // Handed to the panel's own `onUpdate` prop.
+  // Handed to the panel's own `onUpdate` prop. SheetPanel's entrance/exit
+  // animate a squash-and-stretch scaleX/scaleY pair rather than a single
+  // scale (see buildEnterAnimate/EXIT below), so `latest.scale` is never a
+  // number there — falling back to it only covers callers that still pass
+  // a plain `scale` (CommandPalette's casting override does). Averaging
+  // scaleX/scaleY gives one "how open" value to drive the morph despite
+  // the two riding slightly different overshoot curves.
   return (latest) => {
-    if (!morphRef.current || typeof latest.scale !== "number") return;
+    if (!morphRef.current) return;
 
-    const t = Math.max(0, Math.min(1, (latest.scale - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)));
+    const scaleX = typeof latest.scaleX === "number" ? latest.scaleX : latest.scale;
+    const scaleY = typeof latest.scaleY === "number" ? latest.scaleY : latest.scale;
+    if (typeof scaleX !== "number" || typeof scaleY !== "number") return;
+
+    const t = Math.max(0, Math.min(1, ((scaleX + scaleY) / 2 - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)));
 
     // Fully settled — the native border-radius + overflow:hidden every
     // panel already animates to draws this exact same rounded rectangle,

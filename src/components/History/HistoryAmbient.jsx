@@ -102,6 +102,12 @@ const HistoryAmbient = ({ color }) => {
   const uniformsRef = useRef(null);
   const colorRef = useRef(color);
   colorRef.current = color;
+  // Whichever retintUniform() cancel fn is currently in flight, from
+  // *either* source below — shared so a theme flip arriving mid-retint
+  // (or vice versa) actually cancels the other one first, rather than two
+  // rAF loops both writing uColor the same frame and flickering against
+  // each other.
+  const activeRetintRef = useRef(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -202,7 +208,9 @@ const HistoryAmbient = ({ color }) => {
   useEffect(() => {
     const uniforms = uniformsRef.current;
     if (!uniforms) return;
-    return retintUniform(uniforms, color);
+    activeRetintRef.current?.();
+    activeRetintRef.current = retintUniform(uniforms, color);
+    return () => activeRetintRef.current?.();
   }, [color]);
 
   // Also re-tints on a theme flip alone — the same manual RAF-lerp
@@ -216,10 +224,14 @@ const HistoryAmbient = ({ color }) => {
     const observer = new MutationObserver(() => {
       const uniforms = uniformsRef.current;
       if (!uniforms) return;
-      retintUniform(uniforms, colorRef.current);
+      activeRetintRef.current?.();
+      activeRetintRef.current = retintUniform(uniforms, colorRef.current);
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      activeRetintRef.current?.();
+    };
   }, []);
 
   return <canvas ref={ canvasRef } className="history-ambient" aria-hidden="true" />;

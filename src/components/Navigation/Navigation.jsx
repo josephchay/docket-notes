@@ -188,7 +188,14 @@ const Navigation = ({
       return toggleService;
     }
 
-    setToggleService(interpretToggleMachine());
+    const service = interpretToggleMachine();
+    setToggleService(service);
+
+    // Every other xstate machine in this app stops its service on
+    // unmount (CommandPalette, SprintPanel, TourGuide, QuoteCard); this
+    // was the one place that didn't, leaking a running interpreter (and
+    // its subscription) if Navigation ever unmounts.
+    return () => service.stop();
   }, []);
 
   return (

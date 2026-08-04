@@ -951,35 +951,42 @@ const Home = () => {
         const incoming = JSON.parse(reader.result);
         if (!Array.isArray(incoming)) return;
 
-        setNotes((prev) => {
-          const existing = new Set(prev.map((note) => note.id));
+        // showStamp/pushUndo used to run *inside* the setNotes updater
+        // below — StrictMode's dev-only double-invoke of state updaters
+        // (see src/index.js) ran both of them twice per import, pushing
+        // two identical "imported a backup" entries onto the undo stack
+        // (so one Ctrl+Z didn't fully undo it) and firing the stamp/sound
+        // twice. An updater must stay pure; these two are real side
+        // effects, so they're computed and called here instead, and
+        // setNotes below stays a plain, honestly-pure array merge.
+        const existing = new Set(notes.map((note) => note.id));
 
-          const cleaned = incoming
-            .filter((note) => note && typeof note === "object" && typeof note.text === "string")
-            .map((note) => ({
-              id: typeof note.id !== "string" || !note.id || existing.has(note.id) ? id() : note.id,
-              title: typeof note.title === "string" ? note.title : "",
-              text: note.text,
-              placeholder: typeof note.placeholder === "string" && note.placeholder
-                ? note.placeholder
-                : randomQuote(quotes),
-              time: typeof note.time === "string" ? note.time : formattedDateNow(),
-              color: typeof note.color === "string" && note.color in NOTE_COLORS ? note.color : "yellow",
-              favorite: !!note.favorite,
-              lock: !!note.lock,
-              tags: Array.isArray(note.tags) ? note.tags.filter((tag) => typeof tag === "string") : [],
-            }));
+        const cleaned = incoming
+          .filter((note) => note && typeof note === "object" && typeof note.text === "string")
+          .map((note) => ({
+            id: typeof note.id !== "string" || !note.id || existing.has(note.id) ? id() : note.id,
+            title: typeof note.title === "string" ? note.title : "",
+            text: note.text,
+            placeholder: typeof note.placeholder === "string" && note.placeholder
+              ? note.placeholder
+              : randomQuote(quotes),
+            time: typeof note.time === "string" ? note.time : formattedDateNow(),
+            color: typeof note.color === "string" && note.color in NOTE_COLORS ? note.color : "yellow",
+            favorite: !!note.favorite,
+            lock: !!note.lock,
+            tags: Array.isArray(note.tags) ? note.tags.filter((tag) => typeof tag === "string") : [],
+          }));
 
-          showStamp(
-            cleaned.length > 0
-              ? `${ cleaned.length } ${ cleaned.length === 1 ? "note" : "notes" } poured in`
-              : "Nothing to pour in from that file"
-          );
+        showStamp(
+          cleaned.length > 0
+            ? `${ cleaned.length } ${ cleaned.length === 1 ? "note" : "notes" } poured in`
+            : "Nothing to pour in from that file"
+        );
 
-          if (cleaned.length > 0) pushUndo("imported a backup");
-
-          return [...prev, ...cleaned];
-        });
+        if (cleaned.length > 0) {
+          pushUndo("imported a backup");
+          setNotes((prev) => [...prev, ...cleaned]);
+        }
       } catch {
         showStamp("That file isn't a Docket backup");
       }
@@ -987,6 +994,16 @@ const Home = () => {
 
     reader.readAsText(file);
   }
+
+  // importNotes closes over `notes` (for id-collision checks) and is
+  // recreated fresh every render, same as pushUndo/showStamp. The window
+  // drop listener below is only attached once (mount), so it needs to
+  // reach the *current* importNotes rather than close over the first
+  // render's — otherwise dropped-in backups would always be deduped
+  // against the note list as it stood on first load, never anything
+  // added or removed since.
+  const importNotesRef = useRef(importNotes);
+  importNotesRef.current = importNotes;
 
   // Dragging a backup file over the window pours it in on drop, not just
   // the nav's import button. dragenter/dragleave both fire on every
@@ -1024,7 +1041,7 @@ const Home = () => {
       setIsDraggingFile(false);
 
       const file = e.dataTransfer.files?.[0];
-      if (file) importNotes(file);
+      if (file) importNotesRef.current(file);
     };
 
     window.addEventListener("dragenter", handleDragEnter);

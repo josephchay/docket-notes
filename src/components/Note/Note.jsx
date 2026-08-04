@@ -125,13 +125,16 @@ const Note = ({
   });
 
   // In select mode, tapping the paper toggles this note's checkmark — but
-  // only when the tap actually lands on the paper itself. Every existing
-  // control (star, lock, the pull-string tassels, the badge below) is a
-  // button, so excluding anything inside one keeps this from double-firing
-  // alongside their own onClick.
+  // only when the tap actually lands on the paper itself. Most existing
+  // controls (the pull-string tassels, the badge below) are real buttons,
+  // excluded by the first two selectors; the star and lock/edit controls
+  // are plain divs (see .star/.edit below), not buttons, so they need
+  // naming explicitly — without them, starring or locking a note while in
+  // select mode also toggled that note's selection, since the click still
+  // bubbled up here unshielded.
   const handleCardClick = (e) => {
     if (!selectMode) return;
-    if (e.target instanceof Element && e.target.closest("button, input, textarea")) return;
+    if (e.target instanceof Element && e.target.closest("button, input, textarea, .star, .edit")) return;
 
     onToggleSelect?.(note.id);
   }

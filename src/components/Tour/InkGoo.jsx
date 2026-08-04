@@ -15,12 +15,20 @@ import gsap from "gsap";
 //
 // A second, independent metaball cluster (mark()/unmark() below) renders in
 // this same draw call: a ring of ink pooling just outside whichever control
-// the current stop is discussing, elastic on arrival, breathing at rest,
-// tinted in that stop's own accent — the control's whole "you are here" cue,
-// replacing an earlier version that animated the control's own CSS
-// transform/filter directly and fought aimCamera's zoom for the privilege.
-// This one never touches the control at all; it's a second field in the
-// same shader, decoupled from the DOM node it happens to be circling.
+// the current stop is discussing — the control's entire "you are here" cue,
+// replacing three separate things earlier rounds tried instead: a version
+// that animated the control's own CSS transform/filter directly (fought
+// aimCamera's zoom for the privilege), a DOM-side z-index-and-jelly bounce
+// on the control itself, and a separate one-shot flubber blob-morph
+// component (InkStamp) layered on top to sell the arrival. All three are
+// gone now, folded into this one ring: on the very first mark, every drop
+// is seeded at the target's own center and the tick loop's own spring-chase
+// has to pull them outward into the ellipse — a real elastic explode into
+// shape rather than a scale bloom — and every fresh arrival after that
+// (see the `fresh` param) throws one bright impact pulse across every
+// drop's radius, the ring's own "landed here" punctuation. This one never
+// touches the control at all; it's a second field in the same shader,
+// decoupled from the DOM node it happens to be circling.
 
 // Raw shader colors go to the canvas untouched, so keep THREE from
 // converting hex inks into linear space on the way in.
@@ -158,6 +166,9 @@ const InkGoo = forwardRef(({ theme, cardTip }, ref) => {
       markBalls: Array.from({ length: MARK_COUNT }, () => ({ x: 0, y: 0, vx: 0, vy: 0 })),
       markFx: { alpha: 0, spread: 0 },
       markColor: new THREE.Color("#ffd56b"),
+      // A second, independent scalar riding on top of markFx.spread — see
+      // the impact pulse in mark() below.
+      markPulse: { value: 1 },
     };
   }
 
@@ -169,6 +180,7 @@ const InkGoo = forwardRef(({ theme, cardTip }, ref) => {
     s.marked = false;
     s.markAnchor = null;
     gsap.killTweensOf(s.markFx);
+    gsap.killTweensOf(s.markPulse);
     gsap.to(s.markFx, { spread: 1.14, duration: 0.16, ease: "power2.out" });
     gsap.to(s.markFx, { spread: 0, duration: 0.5, ease: "back.in(1.8)", delay: 0.16 });
     gsap.to(s.markFx, { alpha: 0, duration: 0.3, ease: "power1.in", delay: 0.32 });
@@ -230,13 +242,17 @@ const InkGoo = forwardRef(({ theme, cardTip }, ref) => {
 
     // Pool a ring of ink around whichever rect the current stop targets —
     // called every time that rect is (re)measured (arrival, resize,
-    // scroll, and every frame of aimCamera's own zoom), so the ring's
-    // radius and center track a growing/shrinking/moving target live. The
-    // one-time elastic bloom only plays the first time this control gets
-    // marked (or the first mark after unmark() below); after that, moving
-    // to a new rect just re-aims the same springs and re-tints the color —
-    // exactly the travel/nudge split moveTo already draws for the creature.
-    mark({ rect, accent }) {
+    // scroll), so the ring's radius and center track a moving/resizing
+    // target live. `fresh` (true exactly on a genuine new-stop arrival,
+    // false for an ambient re-measure of the same stop) gates the two
+    // things that should only ever happen once per arrival rather than
+    // every frame a
+    // rect happens to be re-measured: the impact pulse, and — the very
+    // first time this control is ever marked — the explode-into-shape
+    // burst below. Every arrival after the first just glides the same
+    // drops from wherever they already are to the new ellipse, exactly
+    // the travel/nudge split moveTo already draws for the creature.
+    mark({ rect, accent, fresh = false }) {
       const s = simRef.current;
       const a = rect.width / 2 + 15;
       const b = rect.height / 2 + 15;
@@ -251,15 +267,15 @@ const InkGoo = forwardRef(({ theme, cardTip }, ref) => {
 
       if (!s.marked) {
         s.marked = true;
-        // Seed every drop straight onto the ring (no fly-in for the ring's
-        // own shape) — only its alpha and overall spread bloom in, elastic,
-        // the same "not quite settled yet" overshoot the creature's own
-        // arrival pulse plays.
+        // Seeded at the target's own center — not already resting on the
+        // ring — so the exact same spring-chase the tick loop below
+        // already drives every frame has to actually pull each drop
+        // outward into shape. The ring explodes into being, stretching
+        // elastic on the way, rather than just fading up at full size.
         for (let i = 0; i < MARK_COUNT; i++) {
-          const ang = (i / MARK_COUNT) * Math.PI * 2;
           const ball = s.markBalls[i];
-          ball.x = rect.cx + Math.cos(ang) * a;
-          ball.y = rect.cy + Math.sin(ang) * b;
+          ball.x = rect.cx;
+          ball.y = rect.cy;
           ball.vx = 0;
           ball.vy = 0;
         }
@@ -267,6 +283,20 @@ const InkGoo = forwardRef(({ theme, cardTip }, ref) => {
         gsap.set(s.markFx, { spread: 0 });
         gsap.to(s.markFx, { alpha: 0.85, duration: 0.3, ease: "power1.out" });
         gsap.to(s.markFx, { spread: 1, duration: 0.9, ease: "elastic.out(1, 0.5)", delay: 0.05 });
+      }
+
+      if (fresh) {
+        // The impact pulse: a bright, brief overshoot across every drop's
+        // radius at once, firing on every fresh arrival — not just the
+        // first-ever one. This is the stop's own "landed here" punctuation,
+        // replacing what used to be a second, separately-timed component
+        // (InkStamp) layered on top of the ring; folded into the ring's
+        // own radius here instead, so there's exactly one thing marking
+        // the control, not two racing to make the same point.
+        gsap.killTweensOf(s.markPulse);
+        gsap.set(s.markPulse, { value: 1 });
+        gsap.to(s.markPulse, { value: 1.55, duration: .16, ease: "power2.out" });
+        gsap.to(s.markPulse, { value: 1, duration: .85, delay: .16, ease: "elastic.out(1, .45)" });
       }
     },
 
@@ -397,7 +427,7 @@ const InkGoo = forwardRef(({ theme, cardTip }, ref) => {
       }
       for (let i = 0; i < MARK_COUNT; i++) {
         const wobble = 1 + 0.12 * Math.sin(t * (1.3 + i * 0.21) + i * 2.4);
-        const r = s.markAnchor ? s.markBaseRadius * wobble * s.markFx.spread : 0;
+        const r = s.markAnchor ? s.markBaseRadius * wobble * s.markFx.spread * s.markPulse.value : 0;
         uniforms.uMarkBalls.value[i].set(s.markBalls[i].x, s.markBalls[i].y, r);
       }
       uniforms.uMarkAlpha.value = s.markFx.alpha;
@@ -429,7 +459,7 @@ const InkGoo = forwardRef(({ theme, cardTip }, ref) => {
       window.removeEventListener("resize", resize);
       const s = simRef.current;
       s.pulseTl?.kill();
-      gsap.killTweensOf([s.dims, s.fx, s.rim, s.ink, s.markFx, s.markColor]);
+      gsap.killTweensOf([s.dims, s.fx, s.rim, s.ink, s.markFx, s.markColor, s.markPulse]);
       quad.geometry.dispose();
       material.dispose();
       renderer.dispose();

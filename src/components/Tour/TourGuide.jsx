@@ -10,7 +10,6 @@ import {
 } from "framer-motion";
 import { interpret } from "xstate";
 import anime from "animejs";
-import gsap from "gsap";
 import {
   FaArrowLeft,
   FaArrowRight,
@@ -43,7 +42,6 @@ import { resolveCssColor } from "../History/HistoryAmbient";
 import { playMilestone, playSpawn, playTick } from "../../utils/sound";
 import InkGoo from "./InkGoo";
 import SketchRing from "./SketchRing";
-import InkStamp from "./InkStamp";
 
 import "./TourGuide.css";
 
@@ -232,54 +230,6 @@ const SCRIPT = {
 const WALK = ["activator", "backup", "ink", "search", "star", "pile", "shuffle", "sort", "select", "dock", "focus", "insights", "quote", "history", "theme", "persist", "settings", "command", "shortcuts"];
 
 const clamp = (value, lo, hi) => Math.min(Math.max(value, lo), hi);
-
-// The discussed control's own landing, in place of the old "grow and hold
-// a bigger scale for the whole stop" camera zoom: a z-index pop (so it
-// always draws above its own siblings while it's the one being talked
-// about, and never clips under a neighbor mid-wobble) plus one bouncy jelly
-// squash-and-stretch on arrival. The squash/stretch keyframes are the
-// project's own established jelly signature — the exact values useJellyTap
-// already plays on every toolbar icon's tap — reused verbatim here on the
-// raw DOM node (useJellyTap itself only works on mounted framer components,
-// not an arbitrary querySelector hit) so this reads as the same physical
-// material as the rest of the toolbar, not a new invented wobble. Scale
-// always settles back to 1 on its own within the tween; nothing is held
-// afterward except the z-index bump itself.
-const DISCUSSED_Z = 40;
-
-const bounceElement = (el) => {
-  if (window.getComputedStyle(el).position === "static") {
-    el.dataset.tourStaticPos = "1";
-    gsap.set(el, { position: "relative" });
-  }
-  gsap.set(el, { zIndex: DISCUSSED_Z, transformOrigin: "50% 50%", scaleX: 1, scaleY: 1 });
-
-  return gsap.to(el, {
-    keyframes: {
-      "0%": { scaleX: 1, scaleY: 1 },
-      "18%": { scaleX: .74, scaleY: 1.28 },
-      "42%": { scaleX: 1.18, scaleY: .84 },
-      "64%": { scaleX: .93, scaleY: 1.08 },
-      "84%": { scaleX: 1.04, scaleY: .97 },
-      "100%": { scaleX: 1, scaleY: 1 },
-    },
-    duration: .55,
-    ease: "power1.inOut",
-  });
-};
-
-// Undoes bounceElement's own marks — the z-index bump, the transform, and
-// the position override if this element didn't already have one of its
-// own. No easing needed: by the time anything calls this, the jelly tween
-// has long since settled itself back to scaleX/scaleY 1 on its own.
-const releaseElement = (el) => {
-  gsap.killTweensOf(el);
-  gsap.set(el, { clearProps: "scaleX,scaleY,zIndex,transformOrigin" });
-  if (el.dataset.tourStaticPos) {
-    gsap.set(el, { clearProps: "position" });
-    delete el.dataset.tourStaticPos;
-  }
-};
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" &&
@@ -524,19 +474,20 @@ const CardContent = ({ step, config, walkIndex, reduced, send, onJump, theme, pe
 
 // The first-run walk of the desk, without its old spotlight — nothing is
 // dimmed, nothing is blocked, and nothing is painted over the target.
-// The control under discussion answers for itself: InkGoo's own mark()
-// pools a ring of liquid ink around it in the stop's own accent (see
-// InkGoo.jsx) — a second metaball field entirely decoupled from the
-// control's own DOM transform — while the one paper card blooms up out of
-// a drop the same dot-to-sheet way the command palette and every other
-// panel does, then rides loose springs from stop to stop — wobbling
-// upright and jelly-squashing on landing exactly the way a freshly poured
-// note does. At each stop the control itself reacts too: aimCamera below
-// pops it forward in stacking order and plays one bouncy jelly squash-and-
-// stretch (see bounceElement) — never a held, grown-in-place zoom — and
-// releases the z-index pop the moment the walk moves to a different
-// control (or to a bookend scene, which has nothing to pop). The card's
-// own content arrives the same ink-native way: CardContent's clip-path
+// The control under discussion answers for itself, entirely through
+// InkGoo's own mark() (see InkGoo.jsx): a ring of liquid ink pools just
+// outside it, exploding elastic into shape from the target's own center
+// on first arrival, throwing one bright impact pulse on every arrival
+// after that. Three earlier, separate mechanisms — a DOM-side z-index-
+// and-jelly bounce on the control itself, and a one-shot flubber blob
+// stamp behind it — are gone, folded into that one ring; the control's
+// own DOM node is never touched by this walk at all now, only circled by
+// a second metaball field entirely decoupled from it. The one paper card
+// blooms up out of a drop the same dot-to-sheet way the command palette
+// and every other panel does, then rides loose springs from stop to
+// stop — wobbling upright and jelly-squashing on landing exactly the way
+// a freshly poured note does. The card's own content arrives the same
+// ink-native way: CardContent's clip-path
 // reveal opens a circle from roughly the icon badge outward, soaking the
 // new stop's title/body/actions into view the way a drop spreads across
 // paper, rather than the flat crossfade every other panel in the app
@@ -578,8 +529,6 @@ const TourGuide = ({ theme, persistNotes }) => {
   const dragRotate = useTransform(dragX, [-160, 0, 160], [-9, 0, 9]);
 
   const primedRef = useRef(false);
-  const cameraRef = useRef(null);
-  const zoomedElRef = useRef(null); // whichever control the camera is currently (or was last) leaning into
   const gooRef = useRef(null);
   const cardRef = useRef(null);
   const wasOpenRef = useRef(false);
@@ -695,26 +644,6 @@ const TourGuide = ({ theme, persistNotes }) => {
 
   const open = step !== "closed" && step !== "done";
 
-  // Hand the last discussed control's z-index and transform back to the
-  // stylesheet. Runs whenever the walk ends, and again on unmount in case
-  // the app is torn down mid-bounce.
-  const releaseCamera = useCallback(() => {
-    cameraRef.current?.kill();
-    cameraRef.current = null;
-
-    const target = zoomedElRef.current;
-    zoomedElRef.current = null;
-    if (!target) return;
-
-    releaseElement(target);
-  }, []);
-
-  useEffect(() => {
-    if (!open) releaseCamera();
-  }, [open, releaseCamera]);
-
-  useEffect(() => () => releaseCamera(), [releaseCamera]);
-
   // The ink guide bows out the moment the walk actually closes (SKIP, or
   // the farewell timing out to "done") — not on every stop-to-stop hop,
   // which only ever nudges or re-splats it. InkGoo is mounted for the
@@ -728,9 +657,8 @@ const TourGuide = ({ theme, persistNotes }) => {
   }, [open, reduced]);
 
   // Measure the current stop and seat everything: the card under the
-  // target, the camera leaning in over it. Re-measured on resize/scroll —
-  // and on every frame of the zoom, so the card tracks the page while it
-  // grows under it.
+  // target, the WebGL mark ring around it. Re-measured on resize/scroll,
+  // so both track the page if it moves underneath them.
   useEffect(() => {
     const config = SCRIPT[step];
     if (!config) return;
@@ -821,43 +749,21 @@ const TourGuide = ({ theme, persistNotes }) => {
         // The discussed control's own mark: a ring of liquid ink pooling
         // just outside it, rendered by the same WebGL canvas (see mark()/
         // unmark() in InkGoo.jsx). Called on every seat(), not just travel,
-        // so it keeps pace with aimCamera's own live-growing rect during
-        // the zoom — a bookend scene (no focus) has nothing to mark.
+        // so it keeps pace with a resize/scroll re-measure of the same
+        // target — `fresh` only true on a genuine new-stop arrival is what
+        // gates the ring's own impact pulse, so an ambient re-measure never
+        // replays it. A bookend scene (no focus) has nothing to mark.
         if (focus) {
-          gooRef.current?.mark({ rect: focus, accent: resolveCssColor(config.accent) });
+          gooRef.current?.mark({ rect: focus, accent: resolveCssColor(config.accent), fresh: travel });
         } else {
           gooRef.current?.unmark();
         }
       }
     };
 
-    // The camera: pop this stop's own control forward in stacking order and
-    // give it one bouncy jelly wobble — never a held, grown-in-place scale
-    // (that was the old "lean in and stay bigger" version; this one always
-    // settles back to its everyday size). Whatever the previous stop had
-    // popped releases first if this one is a different control (or none at
-    // all, for the bookend scenes).
-    const aimCamera = () => {
-      const el = config.selector && document.querySelector(config.selector);
-
-      cameraRef.current?.kill();
-
-      const previouslyZoomed = zoomedElRef.current;
-      if (previouslyZoomed && previouslyZoomed !== el) {
-        releaseElement(previouslyZoomed);
-      }
-      zoomedElRef.current = el || null;
-
-      if (!el) return; // Bookend scenes: nothing to pop.
-
-      cameraRef.current = bounceElement(el);
-    };
-
     seat(true);
 
     if (!reduced) {
-      aimCamera();
-
       // Arrival theatrics: an upright wiggle plus the exact squash-and-
       // stretch a fresh note plays as its paper weight settles.
       animate(wiggleMv, [0, -3.2, 2.4, -1.4, 0], {
@@ -945,18 +851,6 @@ const TourGuide = ({ theme, persistNotes }) => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, transition: { duration: .25, ease: "easeIn" } }}
             >
-              {
-                // The punctual ink stamp: a flubber blob-morph that blooms
-                // once behind the control and fades within its own first
-                // second — see InkStamp.jsx for why this stays one-shot
-                // rather than a fourth persistent marker. Rendered first so
-                // the hand-drawn ring below settles on top of it.
-                ringRect && (
-                  <AnimatePresence mode="wait">
-                    <InkStamp key={ step } rect={ ringRect } accent={ config?.accent } reduced={ reduced } />
-                  </AnimatePresence>
-                )
-              }
               {
                 // The hand-drawn spotlight: a sketchy ring circling whichever
                 // control the current stop targets. Nothing to circle at the
