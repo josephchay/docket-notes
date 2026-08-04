@@ -2,8 +2,6 @@ import React, { useEffect, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import anime from "animejs";
 
-import { EXIT_SPRING } from "../Motion";
-
 // What marks the current stop now that nothing is dimmed: a hand-drawn
 // ellipse of accent ink circled around the control, the way a pen would.
 // The loop is a catmull-rom ring of jittered points (so no two stops get
@@ -119,10 +117,7 @@ const SketchRing = ({ rect, accent, reduced }) => {
         scaleX: [.7, 1.14, .93, 1.04, 1],
         scaleY: [.7, .88, 1.1, .96, 1],
       }}
-      /* The entrance is a rubber-band flick into shape; the exit used to be
-         a flat uniform shrink. A small stretch the opposite way before it
-         shrinks echoes that same snap in reverse. */
-      exit={{ opacity: 0, scaleX: [1, .9, .8], scaleY: [1, 1.08, .8], transition: EXIT_SPRING }}
+      exit={{ opacity: 0, scaleX: .85, scaleY: .85, transition: { duration: .16, ease: "easeIn" } }}
       transition={{ duration: .6, ease: "easeInOut" }}
       aria-hidden="true"
     >

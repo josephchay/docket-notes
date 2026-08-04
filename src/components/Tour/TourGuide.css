@@ -54,6 +54,21 @@
   opacity: .16;
 }
 
+/* The punctual ink stamp (InkStamp.jsx) — sits in the same layer as the
+   ring, rendered just before it in the JSX so the ring's own line settles
+   on top of the stamp's fill rather than under it. Low opacity so the
+   control's own icon/text still reads through it during its brief life. */
+.tour-stamp {
+  position: fixed;
+  z-index: 1;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tour-stamp-fill {
+  opacity: .28;
+}
+
 /* The springs, travel tilt, arrival wiggle and landing jelly all live on
    this shell, so the card inside can keep its own dot-to-sheet bloom
    without the two sets of transforms fighting. */

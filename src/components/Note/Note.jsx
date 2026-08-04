@@ -12,6 +12,7 @@ import PullString from "./PullString";
 import MoveString from "./MoveString";
 import SparkBurst from "../Spark/SparkBurst";
 import { SNAPPY, EXIT_SPRING, coinFlip } from "../Motion";
+import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 
 import "./Note.css";
 
@@ -285,6 +286,31 @@ const Note = ({
   const spawnControls = useAnimationControls();
   const cardRef = useRef(null);
 
+  // The morph below already squares a circle off into paper through a
+  // border-radius tween — real, but only a rounded-rect approximation of
+  // the shape in between. The same flubber-powered blob-clip stage every
+  // dot-to-sheet panel already grows through (see useBlobClipMorph) drops
+  // a genuine organic blob into that same middle beat here too, so a
+  // spawn reads as one continuous piece of ink finding its edges rather
+  // than a rectangle quietly rounding its corners. Skipped for a
+  // duplicate's slide-in (it's already full paper, nothing to morph) and
+  // for every non-spawning mount, which is why `active` is gated on both.
+  const onBlobUpdate = useBlobClipMorph(cardRef, spawning && !spawnOrigin?.duplicate, 24);
+
+  // spawnControls animates `scale` (the pot-to-paper growth) and
+  // `scaleX`/`scaleY` (the squeeze/landing-jelly deformation on top of it)
+  // as separate motion values — unlike SheetPanel, where scaleX/scaleY
+  // alone carry the whole grow. useBlobClipMorph only ever reads
+  // scaleX/scaleY, so this combines all three into the note's actual
+  // per-axis size before handing it off, rather than the hook seeing only
+  // the deformation and missing the growth itself.
+  const handleSpawnUpdate = (latest) => {
+    const scale = typeof latest.scale === "number" ? latest.scale : 1;
+    const scaleX = typeof latest.scaleX === "number" ? latest.scaleX : 1;
+    const scaleY = typeof latest.scaleY === "number" ? latest.scaleY : 1;
+    onBlobUpdate({ scaleX: scale * scaleX, scaleY: scale * scaleY });
+  };
+
   useLayoutEffect(() => {
     if (!spawning || !cardRef.current) return;
 
@@ -524,6 +550,7 @@ const Note = ({
           rotateY: tiltY,
           transformPerspective: 900,
         }}
+        onUpdate={ spawning ? handleSpawnUpdate : undefined }
         onPointerMove={ handleTiltMove }
         onPointerLeave={ handleTiltLeave }
         onMouseEnter={ () => onHoverStart?.(note.id) }
