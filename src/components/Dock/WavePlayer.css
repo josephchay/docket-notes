@@ -5,8 +5,7 @@
   height: 42px;
 }
 
-.wave-player-chevron,
-.wave-player-plus {
+.wave-player-chevron {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -24,8 +23,7 @@
   transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out, opacity 0.2s ease-in-out;
 }
 
-.wave-player-chevron:hover:not(:disabled),
-.wave-player-plus:hover {
+.wave-player-chevron:hover:not(:disabled) {
   background-color: var(--page-surface-color);
 }
 
@@ -34,20 +32,7 @@
   cursor: default;
 }
 
-.wave-player-plus {
-  position: relative;
-  cursor: pointer;
-}
-
-.wave-player-plus input[type="file"] {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-}
-
+/* No background — just the line itself sitting directly on the dock. */
 .wave-player-wave {
   display: flex;
   align-items: center;
@@ -58,8 +43,7 @@
   padding: 0 4px;
   border: none;
   outline: none;
-  border-radius: 12px;
-  background-color: var(--page-surface-color);
+  background: transparent;
   cursor: pointer;
   transition: filter 0.2s ease-in-out;
 }
@@ -68,10 +52,41 @@
   filter: brightness(0.96);
 }
 
+.wave-player-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 86px;
+  height: 34px;
+  color: var(--black-more-transclucent-color);
+  font-size: 13px;
+}
+
 .wave-player-svg {
   width: 100%;
   height: 100%;
   overflow: visible;
+}
+
+/* Registered with QuickDock's shared useMagnetic() instance (see
+   WavePlayer.jsx) — GSAP drives scale/y on this wrapper via quickTo, kept
+   off the button/label itself so it never fights that element's own
+   framer whileTap or hover transitions, the same split
+   .quick-dock-icon-wrap already uses for the icon row. Same bottom-center
+   transform-origin too, so a lift here reads as the same "rising off the
+   shelf" motion as every other dock control instead of a differently-
+   anchored pop. */
+.wave-player-item-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: 50% 100%;
+}
+
+.wave-player-item-wrap-wide {
+  width: 100%;
+  height: 100%;
 }
 
 .wave-player-path {
@@ -85,32 +100,4 @@
 .wave-player-path.is-playing {
   stroke: var(--blue-color);
   opacity: 0.95;
-}
-
-.wave-player-add {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 12px;
-  background-color: var(--page-surface-color);
-  color: var(--page-ink-color);
-  font-size: 12px;
-  cursor: pointer;
-  transition: filter 0.2s ease-in-out;
-}
-
-.wave-player-add:hover {
-  filter: brightness(0.96);
-}
-
-.wave-player-add input[type="file"] {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
 }

@@ -1,7 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import { FaChevronLeft, FaChevronRight, FaMusic, FaPlus } from "react-icons/fa6";
+import { FaChevronLeft, FaChevronRight, FaMusic } from "react-icons/fa6";
 
 import "./WavePlayer.css";
+
+// The whole src/assets/music directory, bundled at build time — no file
+// picker, nothing fetched at runtime. require.context is webpack's own
+// static-analysis API (bundled into react-scripts/CRA without ejecting);
+// it needs a literal directory string and a literal regex, both satisfied
+// here, so webpack can resolve every match into its own asset URL the same
+// way a hand-written `import track from "..."` would. `false` skips
+// subdirectories, which also quietly excludes the stray extension-less
+// `temp` file living alongside the real tracks.
+const musicContext = require.context("../../assets/music", false, /\.(mp3|wav|m4a|ogg|flac)$/i);
+
+// Filenames in this project's music assets carry genre tags as extra dots
+// ("quiet_evening.pop.mp3") — display-only cleanup: drop the real audio
+// extension and swap underscores for spaces, the raw filename stays the
+// require.context key underneath.
+const prettifyName = (key) => key.replace(/^\.\//, "").replace(/\.(mp3|wav|m4a|ogg|flac)$/i, "").replace(/_/g, " ");
+
+const MUSIC_FILES = musicContext.keys().map((key) => ({ name: prettifyName(key), url: musicContext(key) }));
 
 // Local files only, chosen by the visitor via a plain multi-file <input> —
 // nothing bundled or fetched. Same MediaElementSource → AnalyserNode →
@@ -42,14 +60,28 @@ const TENSION = 40;
 const DAMPING = 12;
 const PHYSICS_DT_MAX = 0.05;
 
+// Every time playback actually starts (a fresh track or resuming a paused
+// one — see the <audio>'s onPlay below), the chain gets a real pluck: a
+// velocity impulse shaped like a half-sine across the strip (peaking at the
+// center, tapering to zero at both ends) — the same shape a string's own
+// fundamental mode takes when plucked near its middle, not an arbitrary
+// flourish. It then evolves under the same driven/damped/coupled dynamics
+// as everything else, so it settles back into the live waveform rather than
+// needing its own separate decay. Peak displacement from an impulse v0 into
+// this system follows the same critically-damped estimate used for
+// AudioPulseField's beat pulse, x_peak ≈ v0/(ω·e): at v0 = 16,
+// ω ≈ 14.83 → x_peak ≈ 16/(14.83·2.718) ≈ 0.40 — a clearly visible jolt
+// relative to the ±1 nominal range, well inside RENDER_CLAMP below.
+const PLUCK_STRENGTH = 16;
+
 const IDLE_SPEED = 1.6;
 const IDLE_FREQ = 0.35;
-const IDLE_AMP = 0.5; // fraction of full displacement — a gentle breathing drive target, not silence, before anything's loaded or while paused
+const IDLE_AMP = 0.5; // fraction of full displacement — a gentle breathing drive target while paused
 
 const WAVE_W = 100;
 const WAVE_H = 30;
 const AMPLITUDE_SCALE = 0.85; // keeps a full-scale waveform from touching the box's own top/bottom edge
-const RENDER_CLAMP = 1.15; // a driven-damped chain can briefly overshoot its own target on a sharp transient (real spring behavior, not a bug) — clamped only at render time so a loud spike can't push the drawn line off the visible box
+const RENDER_CLAMP = 1.15; // a driven-damped chain can briefly overshoot its own target on a sharp transient or a pluck (real spring behavior, not a bug) — clamped only at render time so a loud spike can't push the drawn line off the visible box
 
 // Quadratic-bezier midpoint smoothing: for each interior sample, curve to
 // the midpoint between it and its neighbor using the sample itself as the
@@ -72,12 +104,19 @@ const buildSmoothPath = (xs, ys) => {
 const SAMPLE_X = Array.from({ length: FFT_SIZE }, (_, i) => (i / (FFT_SIZE - 1)) * WAVE_W);
 
 // A compact "now playing" strip for the quick dock: a genuine live waveform
-// (not a decorative squiggle) that doubles as the play/pause control, with
-// a small playlist behind it. Entirely self-contained — its own <audio>
-// element, its own Web Audio graph, its own file selection — independent of
-// the bigger AudioPulseField showcase panel, which is a separate feature
-// with its own separate audio session by design.
-const WavePlayer = ({ reduceMotion = false }) => {
+// (not a decorative squiggle) that doubles as the play/pause control, its
+// track list pulled straight from the bundled src/assets/music directory
+// rather than picked by hand. Entirely self-contained — its own <audio>
+// element, its own Web Audio graph — independent of the bigger
+// AudioPulseField showcase panel, which is a separate feature with its own
+// separate audio session by design.
+// `magnetic`/`magneticBaseIndex` are optional — QuickDock passes its own
+// shared useMagnetic() instance down so this row's controls feel the same
+// pointer-distance lift/scale as the icon buttons on either side of it
+// (see useMagnetic.jsx — it's purely getBoundingClientRect-based, so
+// registering elements that live inside a differently-shaped child
+// component works exactly like registering one more dock button).
+const WavePlayer = ({ reduceMotion = false, magnetic = null, magneticBaseIndex = 0 }) => {
   const pathRef = useRef(null);
   const audioElRef = useRef(null);
   const audioCtxRef = useRef(null);
@@ -89,20 +128,21 @@ const WavePlayer = ({ reduceMotion = false }) => {
   const yRef = useRef(new Float32Array(FFT_SIZE));
   const vRef = useRef(new Float32Array(FFT_SIZE));
   const accelRef = useRef(new Float32Array(FFT_SIZE));
-  const objectUrlsRef = useRef([]);
   const reduceMotionRef = useRef(reduceMotion);
   reduceMotionRef.current = reduceMotion;
 
-  const [playlist, setPlaylist] = useState([]); // [{ name, url }]
-  const [currentIndex, setCurrentIndex] = useState(0);
+  // A different starting track each session, not a shuffled catalog —
+  // MUSIC_FILES itself stays in its natural (alphabetical) order, only the
+  // entry point varies, the same small embrace-randomness touch as
+  // QuickDock's own "pour a new note" picking a random palette color.
+  const [currentIndex, setCurrentIndex] = useState(() => (
+    MUSIC_FILES.length > 0 ? Math.floor(Math.random() * MUSIC_FILES.length) : 0
+  ));
   const [isPlaying, setIsPlaying] = useState(false);
-  const playlistRef = useRef([]);
-  playlistRef.current = playlist;
-  const currentIndexRef = useRef(0);
+  const currentIndexRef = useRef(currentIndex);
   currentIndexRef.current = currentIndex;
 
-  // Lazily built once, same reasoning as AudioPulseField.jsx's own
-  // ensureAudioGraph — createMediaElementSource throws on a second call
+  // Lazily built once — createMediaElementSource throws on a second call
   // against the same <audio> element, and that element is rendered once,
   // unconditionally, below.
   const ensureAudioGraph = () => {
@@ -123,66 +163,69 @@ const WavePlayer = ({ reduceMotion = false }) => {
     return ctx;
   };
 
-  const playTrack = (index, list = playlistRef.current) => {
-    const track = list[index];
+  // Loads a track without necessarily playing it — switching tracks while
+  // paused shouldn't start audio the visitor didn't ask for, only
+  // `autoplay: true` (a manual play, a skip while already playing, or a
+  // natural track-end) actually starts sound, and that always happens from
+  // inside a real click handler or this component's own onEnded, both of
+  // which satisfy the browser's user-gesture requirement (onEnded fires as
+  // a direct consequence of a play() the visitor already triggered).
+  const loadTrack = (index, { autoplay = false } = {}) => {
+    const track = MUSIC_FILES[index];
     const audioEl = audioElRef.current;
     if (!track || !audioEl) return;
 
-    ensureAudioGraph();
-    audioCtxRef.current?.resume?.();
     setCurrentIndex(index);
     audioEl.src = track.url;
-    audioEl.play().catch(() => {});
-  };
-
-  // Picking files is itself the user gesture browsers require before audio
-  // can play — safe to build the graph, resume, and start playback right
-  // from this handler. Adding more tracks to an already-playing list just
-  // appends; only an empty-to-non-empty transition auto-starts the first one.
-  const handleAddFiles = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    const additions = files.map((file) => ({ name: file.name, url: URL.createObjectURL(file) }));
-    for (const a of additions) objectUrlsRef.current.push(a.url);
-
-    const wasEmpty = playlistRef.current.length === 0;
-    const nextList = [...playlistRef.current, ...additions];
-    setPlaylist(nextList);
-    if (wasEmpty) playTrack(0, nextList);
-
-    e.target.value = ""; // lets choosing the same file(s) again re-fire onChange
+    if (autoplay) {
+      ensureAudioGraph();
+      audioCtxRef.current?.resume?.();
+      audioEl.play().catch(() => {});
+    }
   };
 
   const handleTogglePlay = () => {
     const audioEl = audioElRef.current;
-    if (!audioEl?.src) return;
-    if (audioEl.paused) {
-      ensureAudioGraph();
-      audioCtxRef.current?.resume?.();
-      audioEl.play().catch(() => {});
-    } else {
-      audioEl.pause();
-    }
+    if (!audioEl || MUSIC_FILES.length === 0) return;
+
+    ensureAudioGraph();
+    audioCtxRef.current?.resume?.();
+    if (!audioEl.src) audioEl.src = MUSIC_FILES[currentIndexRef.current].url;
+
+    if (audioEl.paused) audioEl.play().catch(() => {});
+    else audioEl.pause();
   };
 
+  // Skipping while playing keeps playing; skipping while paused just cues
+  // the new track up. `forcePlay` overrides that for onEnded, below, where
+  // audioEl.paused has already flipped true (the media element sets paused
+  // before firing "ended") — without it, natural track-end would silently
+  // stop the playlist instead of advancing.
   const handlePrev = () => {
-    const list = playlistRef.current;
-    if (list.length < 2) return;
-    playTrack((currentIndexRef.current - 1 + list.length) % list.length, list);
+    if (MUSIC_FILES.length < 2) return;
+    const wasPlaying = !audioElRef.current?.paused;
+    loadTrack((currentIndexRef.current - 1 + MUSIC_FILES.length) % MUSIC_FILES.length, { autoplay: wasPlaying });
   };
-  const handleNext = () => {
-    const list = playlistRef.current;
-    if (list.length === 0) return;
-    playTrack((currentIndexRef.current + 1) % list.length, list);
+  const handleNext = (forcePlay = false) => {
+    if (MUSIC_FILES.length === 0) return;
+    const autoplay = forcePlay || !audioElRef.current?.paused;
+    loadTrack((currentIndexRef.current + 1) % MUSIC_FILES.length, { autoplay });
   };
 
-  // True unmount-only cleanup — see AudioPulseField.jsx's identical comment
-  // on why this rarely fires (QuickDock, and everything in it, stays
-  // mounted for the app's whole lifetime) but is still correct to have.
+  // Every real start of playback (a fresh play, a skip, resuming after a
+  // pause) plucks the chain — see PLUCK_STRENGTH above for why this shape
+  // and magnitude.
+  const handlePlay = () => {
+    setIsPlaying(true);
+    const v = vRef.current;
+    for (let i = 0; i < FFT_SIZE; i++) v[i] += PLUCK_STRENGTH * Math.sin((Math.PI * i) / (FFT_SIZE - 1));
+  };
+
+  // True unmount-only cleanup — QuickDock, and everything in it, stays
+  // mounted for the app's whole lifetime, so this rarely fires, but a real
+  // AudioContext still shouldn't leak if it ever does.
   useEffect(() => () => {
     audioCtxRef.current?.close?.();
-    for (const url of objectUrlsRef.current) URL.revokeObjectURL(url);
   }, []);
 
   // The draw loop — always running while the dock exists (there's no
@@ -269,17 +312,17 @@ const WavePlayer = ({ reduceMotion = false }) => {
     };
   }, []);
 
-  const hasTracks = playlist.length > 0;
-  const currentTrack = playlist[currentIndex];
+  const hasTracks = MUSIC_FILES.length > 0;
+  const currentTrack = MUSIC_FILES[currentIndex];
 
   return (
     <div className="wave-player">
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption -- a visitor's own file, captions aren't meaningful here */}
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption -- this app's own bundled music, captions aren't meaningful here */}
       <audio
         ref={ audioElRef }
-        onPlay={ () => setIsPlaying(true) }
+        onPlay={ handlePlay }
         onPause={ () => setIsPlaying(false) }
-        onEnded={ handleNext }
+        onEnded={ () => handleNext(true) }
         style={{ display: "none" }}
       />
 
@@ -289,10 +332,12 @@ const WavePlayer = ({ reduceMotion = false }) => {
             type="button"
             className="wave-player-chevron"
             aria-label="Previous track"
-            onClick={ handlePrev }
-            disabled={ playlist.length < 2 }
+            onClick={ () => handlePrev() }
+            disabled={ MUSIC_FILES.length < 2 }
           >
-            <FaChevronLeft />
+            <span ref={ magnetic?.registerItem?.(magneticBaseIndex) } className="wave-player-item-wrap">
+              <FaChevronLeft />
+            </span>
           </button>
         )
       }
@@ -306,16 +351,16 @@ const WavePlayer = ({ reduceMotion = false }) => {
             aria-label={ (isPlaying ? "Pause " : "Play ") + (currentTrack?.name || "track") }
             title={ currentTrack?.name }
           >
-            <svg viewBox={ `0 0 ${ WAVE_W } ${ WAVE_H }` } className="wave-player-svg" preserveAspectRatio="none">
-              <path ref={ pathRef } className={ `wave-player-path${ isPlaying ? " is-playing" : "" }` } fill="none" />
-            </svg>
+            <span ref={ magnetic?.registerItem?.(magneticBaseIndex + 1) } className="wave-player-item-wrap wave-player-item-wrap-wide">
+              <svg viewBox={ `0 0 ${ WAVE_W } ${ WAVE_H }` } className="wave-player-svg" preserveAspectRatio="none">
+                <path ref={ pathRef } className={ `wave-player-path${ isPlaying ? " is-playing" : "" }` } fill="none" />
+              </svg>
+            </span>
           </button>
         ) : (
-          <label className="wave-player-add" title="Add tracks">
+          <span className="wave-player-empty" title="No tracks found in src/assets/music">
             <FaMusic />
-            <span>Add tracks</span>
-            <input type="file" accept="audio/*" multiple onChange={ handleAddFiles } />
-          </label>
+          </span>
         )
       }
 
@@ -325,20 +370,13 @@ const WavePlayer = ({ reduceMotion = false }) => {
             type="button"
             className="wave-player-chevron"
             aria-label="Next track"
-            onClick={ handleNext }
-            disabled={ playlist.length < 2 }
+            onClick={ () => handleNext() }
+            disabled={ MUSIC_FILES.length < 2 }
           >
-            <FaChevronRight />
+            <span ref={ magnetic?.registerItem?.(magneticBaseIndex + 2) } className="wave-player-item-wrap">
+              <FaChevronRight />
+            </span>
           </button>
-        )
-      }
-
-      {
-        hasTracks && (
-          <label className="wave-player-plus" aria-label="Add more tracks" title="Add more tracks">
-            <FaPlus />
-            <input type="file" accept="audio/*" multiple onChange={ handleAddFiles } />
-          </label>
         )
       }
     </div>

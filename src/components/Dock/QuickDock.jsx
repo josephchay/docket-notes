@@ -228,7 +228,12 @@ const QuickDock = ({
       {/* A real audio player, not another dock action — flanked by its own
           dividers and its own later entrance delay so it reads as a
           distinct module riding at the capsule's center rather than just
-          another dock item. */}
+          another dock item. Shares this dock's own magnetic instance (see
+          useMagnetic.jsx) via magneticBaseIndex — its three controls
+          (prev/wave/next) register as items.length..items.length+2, past
+          the icon row's own 0..items.length-1, so hovering it feels like
+          the same floating dock rather than a static block sitting
+          between two magnetized halves. */}
       <motion.div
         className="quick-dock-wave-group"
         initial={{ opacity: 0, scale: .85 }}
@@ -236,7 +241,7 @@ const QuickDock = ({
         transition={{ type: "spring", stiffness: 300, damping: 22, delay: .5 }}
       >
         <span className="quick-dock-divider" aria-hidden="true" />
-        <WavePlayer reduceMotion={ reduceMotion } />
+        <WavePlayer reduceMotion={ reduceMotion } magnetic={ magnetic } magneticBaseIndex={ items.length } />
         <span className="quick-dock-divider" aria-hidden="true" />
       </motion.div>
       <motion.div className="quick-dock-items" variants={ dockRowVariants } initial="hidden" animate="shown">
