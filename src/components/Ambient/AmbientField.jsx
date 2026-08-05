@@ -16,6 +16,12 @@ const VERT = `
 
   uniform float uTime;
   uniform vec2 uMouse;    // -1..1, smoothed toward the live pointer
+  // Every mote's own rest position, so each one can feel every other one —
+  // set once at init and never touched again (see the JS side); the field
+  // doesn't need these to move to stay alive, only to know where they
+  // started, the same way LiquidMeter.jsx's own uBalls[] loop already reads
+  // a fixed-size uniform array by index rather than a texture or SSBO.
+  uniform vec2 uBasePositions[${ COUNT }];
 
   varying float vAlpha;
 
@@ -28,7 +34,38 @@ const VERT = `
     // more than small ones — a cheap sense of depth without a real z-axis.
     vec2 parallax = uMouse * 0.05 * (aSize / 7.0);
 
-    vec2 p = position.xy + drift + parallax;
+    // A real mutual repulsion between every pair of motes — 1/r in 2D
+    // (not 1/r²; that's the 3D inverse-square law, the correct 2D analogue
+    // for a field confined to a plane is one power lower), the same
+    // "charged particles" math a force-directed graph layout settles with.
+    // Computed off each mote's static rest position rather than its
+    // current drifting one, so this is a constant per-pair bias baked once
+    // rather than a converging n-body simulation that would need a real
+    // integration step (position += velocity * dt, accumulated frame over
+    // frame) to settle — cheaper, and this field is meant to stay alive
+    // and unsettled anyway, not relax into a fixed arrangement.
+    vec2 repel = vec2(0.0);
+    for (int j = 0; j < ${ COUNT }; j++) {
+      vec2 d = position.xy - uBasePositions[j];
+      float dist2 = dot(d, d);
+      // Guards both the true self-term (d = 0 exactly) and any two motes
+      // that happened to land unusually close together at init — without
+      // this, 1/dist2 blows up as dist approaches 0.
+      if (dist2 > 0.0002) {
+        repel += d / dist2;
+      }
+    }
+    repel *= 0.00035;
+    // A hard cap on top of that near-field guard — belt and suspenders —
+    // so no random initial scatter can ever push a mote meaningfully off
+    // its own patch of the field regardless of how the 50 points happened
+    // to land.
+    float repelLen = length(repel);
+    if (repelLen > 0.06) {
+      repel = repel / repelLen * 0.06;
+    }
+
+    vec2 p = position.xy + drift + parallax + repel;
     gl_Position = vec4(p, 0.0, 1.0);
     gl_PointSize = aSize;
     vAlpha = 0.45 + 0.55 * sin(uTime * aSeed.z * 1.7 + aSeed.x * 2.0);
@@ -79,11 +116,21 @@ const AmbientField = () => {
     const positions = new Float32Array(COUNT * 3);
     const seeds = new Float32Array(COUNT * 3);
     const sizes = new Float32Array(COUNT);
+    // The same rest positions above, handed to the shader a second way — a
+    // plain array of Vector2 rather than a BufferAttribute, since this one
+    // feeds a `uniform vec2[COUNT]` (every mote reads all of them, every
+    // frame) rather than a per-vertex attribute (each mote reads only its
+    // own). Built in the same loop so the two can never drift apart.
+    const basePositions = Array.from({ length: COUNT }, () => new THREE.Vector2());
 
     for (let i = 0; i < COUNT; i++) {
-      positions[i * 3] = (Math.random() * 2 - 1) * 1.05;
-      positions[i * 3 + 1] = (Math.random() * 2 - 1) * 1.05;
+      const x = (Math.random() * 2 - 1) * 1.05;
+      const y = (Math.random() * 2 - 1) * 1.05;
+
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = 0;
+      basePositions[i].set(x, y);
 
       seeds[i * 3] = Math.random() * Math.PI * 2;      // phase
       seeds[i * 3 + 1] = 0.015 + Math.random() * 0.05;  // drift radius
@@ -103,6 +150,7 @@ const AmbientField = () => {
       uMouse: { value: new THREE.Vector2(0, 0) },
       uColor: { value: new THREE.Color(ink || "#191919") },
       uOpacity: { value: 0.16 },
+      uBasePositions: { value: basePositions },
     };
 
     const material = new THREE.ShaderMaterial({

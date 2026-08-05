@@ -3,6 +3,8 @@ import { useTransform } from "framer-motion";
 
 import PullRig from "./PullRig";
 import { DRAG_SNAP } from "../Motion";
+import { smoothPath } from "../../utils/svgPath";
+import { solveCatenaryA, ROPE_SAMPLES } from "./PullString";
 
 const HOVER_PADDING = 34;   // how far outside a card the pull still counts (px)
 
@@ -19,15 +21,52 @@ const MoveString = ({ anchorX, restY = 26, colorName, icon, noteId, pullX, pullY
   const [armed, setArmed] = useState(false);
   const [burst, setBurst] = useState(false);
 
-  // The rope: a quadratic curve from the note's edge to the dragged tassel,
-  // sagging while slack and pulling taut the further it is stretched.
+  // The rope: from the note's edge to the dragged tassel, sagging while
+  // slack and pulling taut the further it's stretched — same catenary math
+  // as PullString.jsx's own rope (see solveCatenaryA there), reused rather
+  // than re-derived since it's the identical physical rope, just anchored
+  // to a different gesture. Unlike PullString this one has no drag
+  // constraints (the whole point is reaching anywhere in the grid), so the
+  // tassel really can land within a pixel or two of the anchor — span
+  // guarded to a plain straight line below rather than handed to the
+  // catenary solve, which would otherwise divide by a near-zero span.
   const ropePath = useTransform([pullX, pullY], ([x, y]) => {
     const tx = anchorX + x;
     const ty = restY + y;
-    const sag = Math.max(0, 20 - Math.hypot(x, y) * 0.16);
-    const cx = (anchorX + tx) / 2;
-    const cy = ty / 2 + sag;
-    return `M ${anchorX} 0 Q ${cx} ${cy} ${tx} ${ty}`;
+    const dx = tx - anchorX;
+    const dy = ty;
+    const span = Math.hypot(dx, dy);
+
+    if (span < 2) return `M ${ anchorX } 0 L ${ tx } ${ ty }`;
+
+    // PullString.jsx's own rope can never ask for more sag than its span
+    // comfortably allows — its drag constraints keep the tassel from ever
+    // getting closer to the anchor than rest (span never drops below the
+    // 26px this already resolves cleanly at). This rope has no such
+    // constraint (reaching across the whole grid is the point), so the
+    // tassel really can end up near the anchor's own height while still
+    // far enough sideways to keep the pull-driven sag target large — capped
+    // proportionally to the span rather than left to ask the solver for a
+    // sag disproportionate to it, which would return a mathematically valid
+    // but visually absurd tight loop rather than a gentle rope.
+    const sag = Math.min(Math.max(0.5, 20 - Math.hypot(x, y) * 0.16), span * 0.4);
+    const a = solveCatenaryA(span, sag);
+    const half = span / 2;
+    const coshHalf = Math.cosh(half / a);
+
+    const points = [];
+    for (let i = 0; i <= ROPE_SAMPLES; i++) {
+      const f = i / ROPE_SAMPLES;
+      const localX = f * span;
+      const droop = a * coshHalf - a * Math.cosh((localX - half) / a);
+
+      points.push({
+        x: anchorX + f * dx,
+        y: f * dy + droop,
+      });
+    }
+
+    return smoothPath(points);
   });
 
   const stretch = useTransform([pullX, pullY], ([x, y]) => Math.hypot(x, y));

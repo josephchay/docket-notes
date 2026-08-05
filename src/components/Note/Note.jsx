@@ -12,7 +12,6 @@ import PullString from "./PullString";
 import MoveString from "./MoveString";
 import SparkBurst from "../Spark/SparkBurst";
 import { SNAPPY, EXIT_SPRING, coinFlip } from "../Motion";
-import useBlobClipMorph from "../../hooks/useBlobClipMorph";
 
 import "./Note.css";
 
@@ -72,6 +71,18 @@ const Note = ({
   const trimmedQuery = searchQuery?.trim().toLowerCase();
   const isSearchMatch = !!trimmedQuery &&
     `${ note.title ?? "" } ${ note.text }`.toLowerCase().includes(trimmedQuery);
+
+  // A wordier note carries real weight in its own spring physics — `mass`
+  // is a genuine parameter of framer's actual damped-harmonic-oscillator
+  // spring solver (m·x″ + d·x′ + k·x = 0, the same equation a real mass on
+  // a real spring obeys), not something hand-derived here, so handing it a
+  // bigger value naturally makes a longer note's own spawn arrival and grid
+  // reflow read as heavier — slower to get moving, a touch more overshoot
+  // settling — while a short note stays at the default snap. Read off the
+  // committed note, not the live draft, so it can't flicker mid-keystroke;
+  // capped well short of anything that would feel sluggish rather than
+  // just weightier.
+  const noteMass = 1 + Math.min(1.4, ((note.title?.length ?? 0) + note.text.length) / 900);
 
   const titleRef = useRef(null);
   const textRef = useRef(null);
@@ -286,31 +297,6 @@ const Note = ({
   const spawnControls = useAnimationControls();
   const cardRef = useRef(null);
 
-  // The morph below already squares a circle off into paper through a
-  // border-radius tween — real, but only a rounded-rect approximation of
-  // the shape in between. The same flubber-powered blob-clip stage every
-  // dot-to-sheet panel already grows through (see useBlobClipMorph) drops
-  // a genuine organic blob into that same middle beat here too, so a
-  // spawn reads as one continuous piece of ink finding its edges rather
-  // than a rectangle quietly rounding its corners. Skipped for a
-  // duplicate's slide-in (it's already full paper, nothing to morph) and
-  // for every non-spawning mount, which is why `active` is gated on both.
-  const onBlobUpdate = useBlobClipMorph(cardRef, spawning && !spawnOrigin?.duplicate, 24);
-
-  // spawnControls animates `scale` (the pot-to-paper growth) and
-  // `scaleX`/`scaleY` (the squeeze/landing-jelly deformation on top of it)
-  // as separate motion values — unlike SheetPanel, where scaleX/scaleY
-  // alone carry the whole grow. useBlobClipMorph only ever reads
-  // scaleX/scaleY, so this combines all three into the note's actual
-  // per-axis size before handing it off, rather than the hook seeing only
-  // the deformation and missing the growth itself.
-  const handleSpawnUpdate = (latest) => {
-    const scale = typeof latest.scale === "number" ? latest.scale : 1;
-    const scaleX = typeof latest.scaleX === "number" ? latest.scaleX : 1;
-    const scaleY = typeof latest.scaleY === "number" ? latest.scaleY : 1;
-    onBlobUpdate({ scaleX: scale * scaleX, scaleY: scale * scaleY });
-  };
-
   useLayoutEffect(() => {
     if (!spawning || !cardRef.current) return;
 
@@ -340,7 +326,7 @@ const Note = ({
             type: "spring",
             stiffness: 170,
             damping: 15,
-            mass: .9,
+            mass: noteMass,
           },
         });
       } else {
@@ -384,7 +370,7 @@ const Note = ({
             type: "spring",
             stiffness: 170,
             damping: 15,
-            mass: .9,
+            mass: noteMass,
           },
         });
       }
@@ -483,10 +469,17 @@ const Note = ({
         type: "spring",
         stiffness: 200,
         damping: 20,
+        // Every reflow (a sort, a filter, another note arriving or leaving)
+        // now carries the same real mass the spawn morph above does — a
+        // wordier note settling into its new grid slot a touch slower and
+        // with a bit more overshoot than a short one, rather than every
+        // card reflowing in perfect lockstep regardless of how much ink
+        // it's actually carrying.
         layout: {
           type: "spring",
           stiffness: 420,
           damping: 34,
+          mass: noteMass,
         },
       }}
       { ...longPressEvent }
@@ -550,7 +543,6 @@ const Note = ({
           rotateY: tiltY,
           transformPerspective: 900,
         }}
-        onUpdate={ spawning ? handleSpawnUpdate : undefined }
         onPointerMove={ handleTiltMove }
         onPointerLeave={ handleTiltLeave }
         onMouseEnter={ () => onHoverStart?.(note.id) }

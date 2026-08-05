@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { NOTE_COLORS } from "../../constants/colors";
+import { smoothPath } from "../../utils/svgPath";
 
 import "./TagThreads.css";
 
@@ -15,17 +16,70 @@ const relate = (notes, hoveredId) => {
   return { hovered, related };
 };
 
-// A quadratic bezier between two note centers, sagging downward like a wet
-// ink thread; a small sine wobble on the control point keeps it breathing
-// gently rather than sitting perfectly still for the length of a hover.
-const threadPath = ({ x1, y1, x2, y2 }, t, index) => {
-  const mx = (x1 + x2) / 2;
-  const my = (y1 + y2) / 2;
-  const dist = Math.hypot(x2 - x1, y2 - y1);
-  const sag = Math.min(46, dist * .16);
-  const wobble = t === 0 ? 0 : Math.sin(t * 1.6 + index * 1.7) * Math.min(6, dist * .02);
+// How taut the ink reads as it hangs — bigger K sags the thread harder per
+// unit span, the same way a real chain's own weight (relative to how hard
+// its ends are pulled apart) decides how sharply it droops. This isn't a
+// tuning knob dressed up as physics — it's the actual catenary parameter
+// (y = a·cosh(x/a), the exact curve a rope hangs in under its own weight,
+// derived from a real force balance along the rope — not the parabola a
+// uniformly-loaded suspension cable settles into, which is what a plain
+// quadratic bezier was quietly approximating before). Solving for the
+// catenary's "a" from a target span *and* a target sag has no closed form
+// short of an iterative root-find; going the other way — picking `a`
+// directly as a fraction of the span and letting the sag fall out of the
+// formula — sidesteps that iteration entirely, at the cost of only being
+// able to name the sag indirectly (via K) rather than in pixels.
+const CATENARY_K = 1.28;
+const CATENARY_SAMPLES = 12;
+const MAX_SAG = 70;
 
-  return `M ${ x1 } ${ y1 } Q ${ mx } ${ my + sag + wobble } ${ x2 } ${ y2 }`;
+// Two note centers, connected by that real catenary curve rather than one
+// bezier control point — worked out in a local frame where the chord
+// between them is horizontal (so both ends sit at the same height, the one
+// case the plain y = a·cosh(x/a) formula actually solves), then rotated
+// back into screen space. The idle "breathing" rides `a` itself (the
+// thread's own apparent taughtness pulses a few percent) rather than
+// perturbing a single point, so the whole curve pulses coherently instead
+// of one corner wobbling on its own.
+const threadPath = ({ x1, y1, x2, y2 }, t, index) => {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = Math.hypot(dx, dy);
+
+  // Overlapping/near-overlapping centers have no meaningful chord to build
+  // a local frame from — a plain line covers that instant without risking
+  // a division by (near) zero in the catenary math below.
+  if (dist < 1) return `M ${ x1 } ${ y1 } L ${ x2 } ${ y2 }`;
+
+  const theta = Math.atan2(dy, dx);
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+
+  const wobble = t === 0 ? 1 : 1 + Math.sin(t * 1.6 + index * 1.7) * 0.06;
+  const a = (dist / CATENARY_K) * wobble;
+  const half = dist / 2;
+  const coshHalf = Math.cosh(half / a);
+
+  // A hard cap on the midpoint sag, same spirit as the old Math.min(46, …)
+  // — scaling the whole curve down rather than clamping it flat keeps the
+  // catenary's actual shape (steep near center, flattening toward the
+  // ends) intact even when a very long span would otherwise droop further
+  // than reads well on the desk.
+  const naturalSag = a * (coshHalf - 1);
+  const sagScale = naturalSag > MAX_SAG ? MAX_SAG / naturalSag : 1;
+
+  const points = [];
+  for (let i = 0; i <= CATENARY_SAMPLES; i++) {
+    const localX = (i / CATENARY_SAMPLES) * dist;
+    const localY = (a * coshHalf - a * Math.cosh((localX - half) / a)) * sagScale;
+
+    points.push({
+      x: x1 + localX * cosT - localY * sinT,
+      y: y1 + localX * sinT + localY * cosT,
+    });
+  }
+
+  return smoothPath(points);
 };
 
 // The gooey ink capillaries that bloom between a hovered note and every

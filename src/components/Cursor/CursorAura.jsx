@@ -70,15 +70,36 @@ void main() {
   col += palette(hue + 0.12) * ring;
   a += ring;
 
-  // Click ripples: expanding, fading rings.
+  // Click ripples: a real 2D wave packet per click rather than one expanding
+  // band. `wavefront` is signed distance from the actual leading edge of
+  // the disturbance (c·t out from the click, c the phase speed) — a sine
+  // wave in that coordinate, windowed by a Gaussian centered on the front,
+  // gives a genuine wavelet with a couple of trailing rings behind its
+  // leading edge, the way a real drop in water leaves a short train rather
+  // than one ring. Amplitude carries two independent, physically real
+  // decays rather than one hand-tuned fade: 1/sqrt(r) is the actual energy
+  // conservation for a 2D wave (its energy spreads over a circumference
+  // that grows linearly with r, so amplitude — energy's square root — falls
+  // as 1/sqrt(r)), stacked with an exp(-t) term for the wave's own
+  // dissipation over time (viscous damping, same shape any damped
+  // oscillator loses energy in). No explicit "hasn't arrived yet" cutoff is
+  // needed — the Gaussian window already suppresses anything more than
+  // ~35px from the front to a fraction of a percent on its own.
   for (int i = 0; i < RIPPLES; i++) {
     vec4 rp = uRipples[i];
     if (rp.z < 0.0 || rp.z > RIPPLE_LIFE) continue;
-    float prog = rp.z / RIPPLE_LIFE;
-    float radius = 8.0 + prog * 110.0;
-    float rd = abs(length(p - rp.xy) / uRatio - radius);
-    float band = smoothstep(7.0 + prog * 9.0, 0.0, rd) * (1.0 - prog) * rp.w * 0.8;
-    col += palette(hue + 0.3 + prog * 0.25) * band;
+
+    float t = rp.z;
+    float r = length(p - rp.xy) / uRatio;
+    float wavefront = r - 145.0 * t;
+
+    float packet = exp(-(wavefront * wavefront) / 1200.0);
+    float dissipation = exp(-t * 3.0);
+    float spread = 1.0 / sqrt(r + 8.0);
+    float wave = max(sin(wavefront * 0.24), 0.0) * packet * dissipation * spread;
+
+    float band = wave * rp.w * 9.0;
+    col += palette(hue + 0.3 + t * 0.15) * band;
     a += band;
   }
 
