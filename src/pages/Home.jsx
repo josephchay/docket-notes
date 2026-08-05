@@ -25,7 +25,6 @@ import {
   FaGear,
   FaLayerGroup,
   FaCompass,
-  FaCubes,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -67,7 +66,6 @@ import DropZoneOverlay from "../components/DropZone/DropZoneOverlay";
 import SprintPanel, { SPRINT_EVENT } from "../components/Sprint/SprintPanel";
 import QuickDock from "../components/Dock/QuickDock";
 import AmbientField from "../components/Ambient/AmbientField";
-import ParticleCuboidPanel, { PARTICLE_CUBOID_EVENT } from "../components/Particles/ParticleCuboidPanel";
 import useLenisScroll from "../hooks/useLenisScroll";
 
 import quotes from "../assets/data/quotes.json";
@@ -1210,12 +1208,6 @@ const Home = () => {
       perform: () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)),
     },
     {
-      key: "particle-cuboid",
-      label: "Show the ink cuboid",
-      icon: <FaCubes />,
-      perform: () => window.dispatchEvent(new CustomEvent(PARTICLE_CUBOID_EVENT)),
-    },
-    {
       key: "trash",
       label: deletedNotes.length > 0 ? `Open the trash · ${ deletedNotes.length }` : "Open the trash",
       icon: <FaTrashCan />,
@@ -1380,7 +1372,6 @@ const Home = () => {
         sortColor={ notesSortColor }
         setSortColor={ setNotesSortColor }
       />
-      <ParticleCuboidPanel reduceMotion={ reduceMotion } />
       <TrashPanel
         entries={ deletedNotes }
         onRestore={ restoreNote }

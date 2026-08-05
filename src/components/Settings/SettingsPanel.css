@@ -77,13 +77,15 @@
   gap: 10px;
 }
 
-/* HistoryAmbient's own canvas is position:absolute;inset:0 sized off its
+/* ParticleCuboid's own canvas is position:absolute;inset:0, sized off its
    parent via ResizeObserver — this is just that parent, given a fixed
-   height and clipped corners to read as a little framed sample rather
-   than a stray rectangle of drifting dust. */
+   height and clipped corners to read as a little framed stage rather than
+   a stray rectangle. Taller than the passive dust sample this used to hold
+   (90px) — a physically-simulated, grabbable lattice actually needs the
+   room to read as a cuboid rather than a cramped smear. */
 .settings-preview {
   position: relative;
-  height: 90px;
+  height: 260px;
   border-radius: 16px;
   overflow: hidden;
   background-color: var(--page-surface-color);

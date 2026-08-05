@@ -4,7 +4,7 @@ import { FaXmark, FaMoon, FaSun, FaLock, FaLockOpen, FaFeather, FaArrowPointer, 
 
 import { loadSettings, saveSettings } from "../../utils/storage";
 import SheetPanel from "../Sheet/SheetPanel";
-import HistoryAmbient from "../History/HistoryAmbient";
+import ParticleCuboid from "../Particles/ParticleCuboid";
 import SettingsToggle from "./SettingsToggle";
 import { iconSpin } from "../Motion";
 
@@ -106,13 +106,16 @@ const SettingsPanel = ({
               </div>
 
               <div className="settings-body">
-                {/* A live sample of the page's own ink — the exact same
-                    raw-Three.js drifting-dust technique (and, since round
-                    11, the exact same live theme-flip retint) History's
-                    right pane already uses, reused wholesale rather than
-                    standing up a second WebGL scene for the same effect. */}
+                {/* A cuboid lattice of ink particles on real damped springs
+                    — push through it, or grab and drag one — rather than
+                    the passive drifting-dust sample this preview used to
+                    show (see History/HistoryAmbient.jsx for that original
+                    technique; this is a different, genuinely interactive
+                    piece, not a reskin of it). Gated on `open` rather than
+                    always active, so the physics loop and WebGL context
+                    only run while this panel is actually visible. */}
                 <div className="settings-preview">
-                  <HistoryAmbient color="var(--page-ink-color)" />
+                  <ParticleCuboid active={ open } reduceMotion={ reduceMotion } />
                 </div>
 
                 <div ref={ themeRowRef } className="settings-row">

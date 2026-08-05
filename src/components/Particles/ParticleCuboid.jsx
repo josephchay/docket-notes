@@ -3,11 +3,19 @@ import * as THREE from "three";
 
 import { resolveCssColor } from "../History/HistoryAmbient";
 import { NOTE_COLORS } from "../../constants/colors";
+import { playImpact } from "../../utils/sound";
+
+import "./ParticleCuboid.css";
 
 THREE.ColorManagement.enabled = false;
 
-const CANVAS_W = 480;
-const CANVAS_H = 420;
+// Only a fallback for the very first frame, before the container's real
+// size has ever been measured — dims.w/h (set by the ResizeObserver below,
+// the same pattern HistoryAmbient.jsx already uses for the same reason:
+// this now lives in settings-preview, a container it doesn't control the
+// size of) are what everything below actually renders against.
+const FALLBACK_W = 480;
+const FALLBACK_H = 300;
 
 // The lattice: 4×3×3 rather than a symmetric cube, so it actually reads as
 // a cuboid rather than a cube once it's rotating and foreshortened.
@@ -59,6 +67,16 @@ const VELOCITY_CLAMP = 8; // world units/s — a hard safety net on top of the a
 const MUTUAL_K = 1.0;
 const MUTUAL_RANGE = 1.15;
 const MUTUAL_MIN_DIST = 0.25;
+
+// A genuine close contact (tighter than the full MUTUAL_RANGE personal-
+// space zone) plays the same soft impact cue NotePile.jsx's own physics
+// already uses for real matter-js collisions — reused as-is, including its
+// own internal volume/pitch response to `strength`, rather than a second
+// sound designed just for this. Rate-limited the same way NotePile's own
+// impact sound is, so a big disturbance with many close particles at once
+// reads as one soft impact rather than a wall of clicks.
+const IMPACT_THRESHOLD = 0.45;
+const IMPACT_COOLDOWN_MS = 90;
 
 // A particle can be picked up directly (see handlePointerDown below) and
 // springs toward the cursor's own 3D position on a stiffer, snappier spring
@@ -141,10 +159,10 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
     if (!active) return undefined;
 
     const canvas = canvasRef.current;
+    const parent = canvas.parentElement;
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     renderer.setPixelRatio(dpr);
-    renderer.setSize(CANVAS_W, CANVAS_H, false);
 
     // The quad that actually gets painted — an orthographic camera over a
     // fullscreen triangle-pair, exactly LiquidMeter.jsx's own setup, driven
@@ -158,14 +176,30 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
     // draws, and to find where the 2D cursor sits in 3D at each particle's
     // own depth. Simple, fixed pose (looking straight down -Z, no roll) so
     // "which way is world +X/+Y" never depends on the cuboid's own rotation
-    // — only the lattice itself rotates, the camera stays put.
-    const worldCamera = new THREE.PerspectiveCamera(48, CANVAS_W / CANVAS_H, 0.1, 100);
+    // — only the lattice itself rotates, the camera stays put. Vertical FOV
+    // is fixed, so a wider container only ever reveals more horizontal
+    // room around the cuboid — it can't crop it, whatever the aspect ratio
+    // settings-preview happens to be at.
+    const worldCamera = new THREE.PerspectiveCamera(48, FALLBACK_W / FALLBACK_H, 0.1, 100);
     worldCamera.position.set(0, 0, 8.5);
     worldCamera.lookAt(0, 0, 0);
     worldCamera.updateMatrixWorld();
 
+    // The container's real, live size — read off the canvas's own parent
+    // (settings-preview) the same way HistoryAmbient.jsx already does for
+    // the same reason, rather than a size this component picks itself.
+    const dims = { w: FALLBACK_W, h: FALLBACK_H };
+    const resize = () => {
+      dims.w = parent.clientWidth || FALLBACK_W;
+      dims.h = parent.clientHeight || FALLBACK_H;
+      renderer.setSize(dims.w, dims.h, false);
+      uniforms.uResolution.value.set(dims.w, dims.h);
+      worldCamera.aspect = dims.w / dims.h;
+      worldCamera.updateProjectionMatrix();
+    };
+
     const uniforms = {
-      uResolution: { value: new THREE.Vector2(CANVAS_W, CANVAS_H) },
+      uResolution: { value: new THREE.Vector2(FALLBACK_W, FALLBACK_H) },
       uDpr: { value: dpr },
       uBalls: { value: Array.from({ length: PARTICLE_COUNT }, () => new THREE.Vector3()) },
       // NOTE_COLORS' own hex strings, not resolveCssColor — they're already
@@ -188,6 +222,10 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
 
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
     scene.add(quad);
+
+    resize();
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(parent);
 
     // Cycled by (ix+iy+iz), not banded along one axis alone — a particle's
     // color still shifts smoothly to its neighbors along any of the three
@@ -246,8 +284,8 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
       if (reduceMotionRef.current) return;
 
       const rect = canvas.getBoundingClientRect();
-      const clickX = ((e.clientX - rect.left) / rect.width) * CANVAS_W;
-      const clickY = ((e.clientY - rect.top) / rect.height) * CANVAS_H;
+      const clickX = ((e.clientX - rect.left) / rect.width) * dims.w;
+      const clickY = ((e.clientY - rect.top) / rect.height) * dims.h;
 
       let nearest = -1;
       let nearestDist = PICK_RADIUS;
@@ -264,6 +302,7 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
 
     let angle = 0;
     let lastTime = performance.now();
+    let lastImpactSound = 0;
     let raf = null;
 
     const projected = new THREE.Vector3();
@@ -317,6 +356,11 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
             const fz = (dz / dist) * push;
             mutualForce[i].x += fx; mutualForce[i].y += fy; mutualForce[i].z += fz;
             mutualForce[j].x -= fx; mutualForce[j].y -= fy; mutualForce[j].z -= fz;
+
+            if (dist < IMPACT_THRESHOLD && now - lastImpactSound > IMPACT_COOLDOWN_MS) {
+              lastImpactSound = now;
+              playImpact(1 - dist / IMPACT_THRESHOLD);
+            }
           }
         }
       }
@@ -389,11 +433,11 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i].pos;
         const viewDist = worldCamera.position.distanceTo(p);
-        const screenScale = (CANVAS_H / 2) / (viewDist * Math.tan((worldCamera.fov * Math.PI) / 360));
+        const screenScale = (dims.h / 2) / (viewDist * Math.tan((worldCamera.fov * Math.PI) / 360));
 
         projected.copy(p).project(worldCamera);
-        const px = (projected.x * 0.5 + 0.5) * CANVAS_W;
-        const py = (1 - (projected.y * 0.5 + 0.5)) * CANVAS_H;
+        const px = (projected.x * 0.5 + 0.5) * dims.w;
+        const py = (1 - (projected.y * 0.5 + 0.5)) * dims.h;
         // World-space radius × (pixels per world unit at this depth) — the
         // bug this replaced multiplied a *pixel* figure by that same
         // px/unit scale, which is a units error (px × px/unit = px²/unit),
@@ -438,6 +482,7 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
       canvas.removeEventListener("pointerleave", handlePointerLeave);
       canvas.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("pointerup", handlePointerUp);
+      resizeObserver.disconnect();
       themeObserver.disconnect();
       quad.geometry.dispose();
       material.dispose();
@@ -445,12 +490,15 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
     };
   }, [active]);
 
+  // No width/height attributes — the canvas fills its parent (position:
+  // absolute; inset:0, see ParticleCuboid.css) and the ResizeObserver above
+  // reads that parent's real size, the same convention HistoryAmbient.jsx
+  // already uses for a canvas living inside a container it doesn't own the
+  // size of.
   return (
     <canvas
       ref={ canvasRef }
       className="particle-cuboid-canvas"
-      width={ CANVAS_W }
-      height={ CANVAS_H }
       aria-hidden="true"
     />
   );

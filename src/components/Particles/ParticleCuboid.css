@@ -1,0 +1,17 @@
+/* Fills its parent (settings-preview) exactly the way HistoryAmbient.jsx's
+   own canvas fills its own parent — position:absolute;inset:0, sized by the
+   ResizeObserver in ParticleCuboid.jsx rather than fixed pixel dimensions.
+   Unlike that one, this canvas is the actual interactive surface (grab and
+   drag a particle) rather than a decorative backdrop behind other content,
+   so it keeps pointer-events on and doesn't need a negative z-index. */
+.particle-cuboid-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+
+.particle-cuboid-canvas:active {
+  cursor: grabbing;
+}
