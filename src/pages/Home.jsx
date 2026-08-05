@@ -25,6 +25,7 @@ import {
   FaGear,
   FaLayerGroup,
   FaCompass,
+  FaMeteor,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -66,6 +67,7 @@ import DropZoneOverlay from "../components/DropZone/DropZoneOverlay";
 import SprintPanel, { SPRINT_EVENT } from "../components/Sprint/SprintPanel";
 import QuickDock from "../components/Dock/QuickDock";
 import AmbientField from "../components/Ambient/AmbientField";
+import GravityFieldPanel, { GRAVITY_FIELD_EVENT } from "../components/Particles/GravityFieldPanel";
 import useLenisScroll from "../hooks/useLenisScroll";
 
 import quotes from "../assets/data/quotes.json";
@@ -1208,6 +1210,12 @@ const Home = () => {
       perform: () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)),
     },
     {
+      key: "gravity-field",
+      label: "Show the gravity field",
+      icon: <FaMeteor />,
+      perform: () => window.dispatchEvent(new CustomEvent(GRAVITY_FIELD_EVENT)),
+    },
+    {
       key: "trash",
       label: deletedNotes.length > 0 ? `Open the trash · ${ deletedNotes.length }` : "Open the trash",
       icon: <FaTrashCan />,
@@ -1372,6 +1380,7 @@ const Home = () => {
         sortColor={ notesSortColor }
         setSortColor={ setNotesSortColor }
       />
+      <GravityFieldPanel reduceMotion={ reduceMotion } />
       <TrashPanel
         entries={ deletedNotes }
         onRestore={ restoreNote }
