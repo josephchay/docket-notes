@@ -4,7 +4,7 @@ Sample animation packages: animejs, xstate, gsap, webgl, threejs, framer motion,
 
 Sample animation effects: morphical, starchy, fluid, bouncy, jelly, elastic, stretchy, weightier, liquid, distortion, shaders, easing, springs, 
 
-Sample systems: physics, mathematics, 
+Sample systems: physics, mathematics, innovative, 
 
 -----------------------
 

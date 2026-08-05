@@ -1,0 +1,91 @@
+.particle-cuboid-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.particle-cuboid-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(25, 25, 25, 0.28);
+}
+
+:root[data-theme="dark"] .particle-cuboid-backdrop {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* border-radius is animated by framer during the drop-to-sheet morph, so it
+   is deliberately not set here. */
+.particle-cuboid-panel {
+  position: relative;
+  width: min(536px, 94vw);
+  overflow: hidden;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
+  will-change: transform;
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+  outline: none;
+}
+
+.particle-cuboid-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 0;
+}
+
+.particle-cuboid-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.particle-cuboid-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.particle-cuboid-hint {
+  margin: 4px 18px 0;
+  font-size: 13px;
+  color: var(--black-more-transclucent-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.particle-cuboid-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 18px 20px;
+}
+
+.particle-cuboid-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 14px;
+  background-color: var(--page-surface-color);
+  cursor: grab;
+  transition: background-color 0.4s ease-in-out;
+}
+
+.particle-cuboid-canvas:active {
+  cursor: grabbing;
+}
