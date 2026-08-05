@@ -26,6 +26,8 @@ import {
   FaLayerGroup,
   FaCompass,
   FaMeteor,
+  FaDroplet,
+  FaWaveSquare,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -68,6 +70,8 @@ import SprintPanel, { SPRINT_EVENT } from "../components/Sprint/SprintPanel";
 import QuickDock from "../components/Dock/QuickDock";
 import AmbientField from "../components/Ambient/AmbientField";
 import GravityFieldPanel, { GRAVITY_FIELD_EVENT } from "../components/Particles/GravityFieldPanel";
+import FluidFieldPanel, { FLUID_FIELD_EVENT } from "../components/Particles/FluidFieldPanel";
+import AudioPulseFieldPanel, { AUDIO_PULSE_FIELD_EVENT } from "../components/Particles/AudioPulseFieldPanel";
 import useLenisScroll from "../hooks/useLenisScroll";
 
 import quotes from "../assets/data/quotes.json";
@@ -1216,6 +1220,18 @@ const Home = () => {
       perform: () => window.dispatchEvent(new CustomEvent(GRAVITY_FIELD_EVENT)),
     },
     {
+      key: "fluid-field",
+      label: "Show the fluid field",
+      icon: <FaDroplet />,
+      perform: () => window.dispatchEvent(new CustomEvent(FLUID_FIELD_EVENT)),
+    },
+    {
+      key: "audio-pulse-field",
+      label: "Show the audio pulse field",
+      icon: <FaWaveSquare />,
+      perform: () => window.dispatchEvent(new CustomEvent(AUDIO_PULSE_FIELD_EVENT)),
+    },
+    {
       key: "trash",
       label: deletedNotes.length > 0 ? `Open the trash · ${ deletedNotes.length }` : "Open the trash",
       icon: <FaTrashCan />,
@@ -1381,6 +1397,8 @@ const Home = () => {
         setSortColor={ setNotesSortColor }
       />
       <GravityFieldPanel reduceMotion={ reduceMotion } />
+      <FluidFieldPanel reduceMotion={ reduceMotion } />
+      <AudioPulseFieldPanel reduceMotion={ reduceMotion } />
       <TrashPanel
         entries={ deletedNotes }
         onRestore={ restoreNote }

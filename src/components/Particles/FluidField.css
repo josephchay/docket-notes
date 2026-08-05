@@ -1,0 +1,12 @@
+/* Fills its parent (fluid-field-stage) — position:absolute;inset:0, sized by
+   the ResizeObserver in FluidField.jsx, the same convention every other
+   Particles/ canvas in this app already uses. The interactive surface
+   itself (the cursor stirs the fluid it moves through), so pointer-events
+   stay on. */
+.fluid-field-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}

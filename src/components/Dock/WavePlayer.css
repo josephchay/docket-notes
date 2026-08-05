@@ -1,0 +1,116 @@
+.wave-player {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 42px;
+}
+
+.wave-player-chevron,
+.wave-player-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--page-ink-color);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out, opacity 0.2s ease-in-out;
+}
+
+.wave-player-chevron:hover:not(:disabled),
+.wave-player-plus:hover {
+  background-color: var(--page-surface-color);
+}
+
+.wave-player-chevron:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.wave-player-plus {
+  position: relative;
+  cursor: pointer;
+}
+
+.wave-player-plus input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.wave-player-wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 86px;
+  height: 34px;
+  padding: 0 4px;
+  border: none;
+  outline: none;
+  border-radius: 12px;
+  background-color: var(--page-surface-color);
+  cursor: pointer;
+  transition: filter 0.2s ease-in-out;
+}
+
+.wave-player-wave:hover {
+  filter: brightness(0.96);
+}
+
+.wave-player-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.wave-player-path {
+  stroke: var(--page-ink-color);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  opacity: 0.55;
+  transition: opacity 0.3s ease-in-out, stroke 0.3s ease-in-out;
+}
+
+.wave-player-path.is-playing {
+  stroke: var(--blue-color);
+  opacity: 0.95;
+}
+
+.wave-player-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  cursor: pointer;
+  transition: filter 0.2s ease-in-out;
+}
+
+.wave-player-add:hover {
+  filter: brightness(0.96);
+}
+
+.wave-player-add input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
