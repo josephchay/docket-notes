@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useMotionValue } from "framer-motion";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Lenis from "lenis";
@@ -20,6 +21,14 @@ gsap.registerPlugin(ScrollTrigger);
 // scrollTop.
 const useLenisScroll = (containerRef, { paused = false } = {}) => {
   const lenisRef = useRef(null);
+  // The raw signed velocity behind --scroll-tilt's own clamped figure,
+  // handed out as a real framer motion value rather than a second CSS
+  // custom property — .home's grid-track skew reads velocity as one flat
+  // number for the whole grid; a motion value lets individual notes each
+  // run their own spring off the same live signal (see Note.jsx's own
+  // scroll-lag, sized by each note's real mass) without a re-render on
+  // every scroll tick, the same no-render-per-frame property CSS vars have.
+  const scrollVelocity = useMotionValue(0);
 
   useEffect(() => {
     const wrapper = containerRef.current;
@@ -57,6 +66,7 @@ const useLenisScroll = (containerRef, { paused = false } = {}) => {
       ScrollTrigger.update();
       const tilt = Math.max(-2.4, Math.min(2.4, e.velocity * 0.6));
       wrapper.style.setProperty("--scroll-tilt", tilt.toFixed(3));
+      scrollVelocity.set(e.velocity);
     };
     lenis.on("scroll", handleScroll);
 
@@ -84,7 +94,7 @@ const useLenisScroll = (containerRef, { paused = false } = {}) => {
     else lenisRef.current?.start();
   }, [paused]);
 
-  return lenisRef;
+  return { lenisRef, scrollVelocity };
 };
 
 export default useLenisScroll;

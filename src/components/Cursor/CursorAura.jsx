@@ -71,7 +71,7 @@ void main() {
   a += ring;
 
   // Click ripples: a real 2D wave packet per click rather than one expanding
-  // band. `wavefront` is signed distance from the actual leading edge of
+  // band. wavefront is signed distance from the actual leading edge of
   // the disturbance (c·t out from the click, c the phase speed) — a sine
   // wave in that coordinate, windowed by a Gaussian centered on the front,
   // gives a genuine wavelet with a couple of trailing rings behind its

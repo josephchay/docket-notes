@@ -28,6 +28,7 @@ const Note = ({
   delay,
   note,
   searchQuery,
+  scrollVelocity,
   spawnOrigin,
   clearSpawn,
   selectMode,
@@ -83,6 +84,22 @@ const Note = ({
   // capped well short of anything that would feel sluggish rather than
   // just weightier.
   const noteMass = 1 + Math.min(1.4, ((note.title?.length ?? 0) + note.text.length) / 900);
+
+  // The whole grid already skews as one rigid sheet off Lenis's own scroll
+  // velocity (see .notes' own skewY in NoteList.css, driven by the
+  // --scroll-tilt custom property useLenisScroll.jsx writes) — every card
+  // moving in perfect lockstep. This is the same live velocity signal (see
+  // useLenisScroll's own scrollVelocity motion value), but sprung through
+  // this card's own noteMass above rather than applied flat: a heavier
+  // note genuinely resists sudden rotational acceleration more than a
+  // light one for the same "torque," so a wordier card now visibly lags a
+  // beat behind a short one as the desk is flung past it, instead of every
+  // card reading as one undifferentiated slab. Lands on skewX specifically
+  // — the outer card's own `rotate` already belongs to the move-string
+  // lean (noteTilt below), and this needs a channel that's entirely its
+  // own rather than fighting that for the same CSS property.
+  const scrollLag = useSpring(scrollVelocity, { stiffness: 140, damping: 18, mass: noteMass });
+  const scrollSkew = useTransform(scrollLag, (v) => Math.max(-3.5, Math.min(3.5, v * 0.45)));
 
   const titleRef = useRef(null);
   const textRef = useRef(null);
@@ -442,6 +459,7 @@ const Note = ({
         x: noteLeanX,
         y: noteLeanY,
         rotate: noteTilt,
+        skewX: scrollSkew,
         zIndex: isPulling ? 40 : spawning ? 30 : 1,
         position: "relative",
       }}

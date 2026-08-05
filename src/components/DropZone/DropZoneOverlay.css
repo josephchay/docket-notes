@@ -45,8 +45,21 @@
   opacity: .22;
 }
 
-.drop-zone-blob {
+/* The position-driving node (see DropZoneOverlay.jsx — a plain ref, written
+   to every tick by the mutual-repulsion physics there) — position:absolute
+   here is what the flex centering on .drop-zone-pool actually keys off of,
+   same as this rule did before the physics/scale split. */
+.drop-zone-blob-wrap {
   position: absolute;
+  will-change: transform;
+}
+
+/* The scale-pulsing node, fully declarative (framer's own animate prop) —
+   kept as its own nested element specifically so it never has to share one
+   transform with the imperative position write above. */
+.drop-zone-blob {
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   will-change: transform;
 }

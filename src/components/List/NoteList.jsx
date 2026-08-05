@@ -115,6 +115,7 @@ const NoteList = ({
   hasNotes,
   focusMode,
   searchQuery,
+  scrollVelocity,
   clearFilters,
   deskCleared,
   addNote,
@@ -624,6 +625,7 @@ const NoteList = ({
                       delay={ (index % Math.max(1, numPerRow) + 1) * 0.16 }
                       note={ item }
                       searchQuery={ searchQuery }
+                      scrollVelocity={ scrollVelocity }
                       spawnOrigin={ spawn && spawn.id === item.id ? spawn : null }
                       clearSpawn={ clearSpawn }
                       selectMode={ selectMode }

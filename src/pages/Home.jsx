@@ -1093,7 +1093,7 @@ const Home = () => {
   // Smooth inertia scroll on the desk itself — paused whenever .receded's
   // own overflow:hidden lock is active (the focus editor open) so Lenis
   // never fights it. See useLenisScroll.jsx.
-  const lenisRef = useLenisScroll(homeRef, { paused: !!editingNote });
+  const { lenisRef, scrollVelocity } = useLenisScroll(homeRef, { paused: !!editingNote });
 
   // Prefers Lenis's own smooth scrollTo (so the same inertia easing carries
   // the jump) once it's live; falls back to the native smooth-scroll this
@@ -1322,6 +1322,7 @@ const Home = () => {
           pileView={ pileView }
           togglePileView={ togglePileView }
           searchQuery={ notesSortText }
+          scrollVelocity={ scrollVelocity }
         />
       </div>
       <AnimatePresence>

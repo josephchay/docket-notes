@@ -11,6 +11,18 @@ const VIAL_H = 56;
 const SURFACE_COUNT = 5;
 const SURFACE_RADIUS = 9;
 
+// A real damped 1D wave equation across the vial's width — the grid spacing
+// between the metaballs above doubling as the spatial step. Speed is slow
+// (a small, cohesive body of ink, not open water); the Courant number
+// (WAVE_SPEED·dt/WAVE_DX) stays under 0.1 even at 60fps and under 0.25 even
+// at the WAVE_DT_MAX floor, two-plus orders of magnitude under the
+// stability limit of 1 an explicit central-difference stepper needs — this
+// can't ring itself into numerical instability regardless of frame timing.
+const WAVE_DX = VIAL_W / (SURFACE_COUNT - 1);
+const WAVE_SPEED = 50;     // px/s
+const WAVE_DAMPING = 2.5;  // 1/s — settles within roughly a second
+const WAVE_DT_MAX = 0.05;  // clamps the physics step so a stalled/backgrounded frame can't feed the stepper a huge dt
+
 const VERT = `
   void main() {
     gl_Position = vec4(position, 1.0);
@@ -72,6 +84,16 @@ const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduce
   const uniformsRef = useRef(null);
   const pulseRef = useRef({ value: 1 });
   const pulseTlRef = useRef(null);
+  // The wave field's own state — three buffers rotated each step (current,
+  // previous, and a scratch slot for the next one) rather than allocated
+  // fresh every frame. waveImpulseRef is how the ratio/celebration effect
+  // below hands a milestone crossing to the physics step in the render
+  // effect — set there, consumed and zeroed the next time tick() runs.
+  const waveCurrRef = useRef(null);
+  const wavePrevRef = useRef(null);
+  const waveNextRef = useRef(null);
+  const waveImpulseRef = useRef(0);
+  const waveLastRef = useRef(0);
   const prevRatioRef = useRef(ratio);
   const prevCelebrationKeyRef = useRef(celebration?.key ?? null);
   const colorRef = useRef(color);
@@ -103,6 +125,12 @@ const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduce
       pulseTlRef.current = gsap.timeline()
         .to(pulseRef.current, { value: 1.4, duration: .14, ease: "power2.in" })
         .to(pulseRef.current, { value: 1, duration: .9, ease: "elastic.out(1.1, .42)" });
+
+      // A real impulse into the wave field (see WAVE_* above and the physics
+      // step in the render effect below) on top of the radius pulse — the
+      // surface actually gets struck and ripples outward/reflects off the
+      // vial walls, rather than every metaball just swelling in place.
+      waveImpulseRef.current = 5;
     }
     prevRatioRef.current = ratio;
     prevCelebrationKeyRef.current = celebration?.key ?? prevCelebrationKeyRef.current;
@@ -141,6 +169,11 @@ const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduce
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
     scene.add(quad);
 
+    waveCurrRef.current = new Float32Array(SURFACE_COUNT);
+    wavePrevRef.current = new Float32Array(SURFACE_COUNT);
+    waveNextRef.current = new Float32Array(SURFACE_COUNT);
+    waveLastRef.current = performance.now();
+
     const clock = new THREE.Clock();
     let raf = null;
 
@@ -152,14 +185,59 @@ const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduce
       const baseY = VIAL_H - 4 - currentRef.current * (VIAL_H - 10);
       uniforms.uBaseY.value = baseY;
 
+      // The wave field's own physics step — a milestone impulse (if one
+      // landed since the last frame) struck in first, then one explicit
+      // central-difference step of the damped wave equation
+      // (∂²u/∂t² = c²∂²u/∂x² − γ∂u/∂t) propagates and damps it. Reflecting
+      // (Neumann) walls at both ends, since a real liquid surface doesn't
+      // just vanish at the glass — it bounces.
+      const waveNow = performance.now();
+      const waveDt = Math.min(WAVE_DT_MAX, (waveNow - waveLastRef.current) / 1000);
+      waveLastRef.current = waveNow;
+
+      const curr = waveCurrRef.current;
+      const prev = wavePrevRef.current;
+
+      if (waveImpulseRef.current !== 0) {
+        const mid = (SURFACE_COUNT - 1) / 2;
+        for (let i = 0; i < SURFACE_COUNT; i++) {
+          const offset = i - mid;
+          curr[i] += waveImpulseRef.current * Math.exp(-(offset * offset) / 2);
+        }
+        waveImpulseRef.current = 0;
+      }
+
+      if (waveDt > 0) {
+        const r2 = ((WAVE_SPEED * waveDt) / WAVE_DX) ** 2;
+        const dampTerm = WAVE_DAMPING * waveDt;
+        const next = waveNextRef.current;
+
+        for (let i = 0; i < SURFACE_COUNT; i++) {
+          const left = i === 0 ? curr[1] : curr[i - 1];
+          const right = i === SURFACE_COUNT - 1 ? curr[SURFACE_COUNT - 2] : curr[i + 1];
+          const laplacian = left - 2 * curr[i] + right;
+          next[i] = (2 - dampTerm) * curr[i] - (1 - dampTerm) * prev[i] + r2 * laplacian;
+        }
+
+        // Rotate the three buffers rather than allocating fresh arrays every
+        // frame — the buffer that was `prev` is stale now and becomes next
+        // frame's scratch space.
+        waveCurrRef.current = next;
+        wavePrevRef.current = curr;
+        waveNextRef.current = prev;
+      }
+
       const pulse = pulseRef.current.value;
+      const heights = waveCurrRef.current;
       for (let i = 0; i < SURFACE_COUNT; i++) {
         const x = (i / (SURFACE_COUNT - 1)) * VIAL_W;
-        // The idle wobble is purely decorative continuous motion, unlike
-        // the fill level itself (which tracks a real value) or the
-        // milestone pulse (a bounded, occasional flourish) — the only
-        // piece reduced motion actually needs to stop here.
-        const y = reduceMotionRef.current ? baseY : baseY + Math.sin(t * (1.1 + i * .23) + i * 1.7) * 2.4;
+        // A small ambient wobble layered on top at render time only (never
+        // fed back into the physics buffers above) so the surface still
+        // reads as gently alive between milestones, the same continuous
+        // idle character this always had — the real wave-equation motion
+        // now carries the milestone impulses instead.
+        const ambient = reduceMotionRef.current ? 0 : Math.sin(t * (1.1 + i * .23) + i * 1.7) * 0.9;
+        const y = baseY + heights[i] + ambient;
         uniforms.uBalls.value[i].set(x, y, SURFACE_RADIUS * pulse);
       }
 
@@ -171,7 +249,8 @@ const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduce
         if (raf) cancelAnimationFrame(raf);
         raf = null;
       } else if (!raf) {
-        clock.getDelta();
+        clock.getDelta(); // drop the paused-time gap rather than jumping the drift on return
+        waveLastRef.current = performance.now(); // same reasoning, for the wave stepper's own clock
         tick();
       }
     };

@@ -146,8 +146,58 @@ const NotePile = ({ notes, onOpenNote, onExit }) => {
 
     let raf = requestAnimationFrame(tick);
 
+    // A gentle cohesion between same-colored pieces — the same 1/r pull
+    // AmbientField.jsx's dust motes repel each other with, run in reverse
+    // and gated to same color, rather than a new force law invented just
+    // for this. Applied as a small, hard-capped velocity nudge each tick
+    // rather than through Matter.Body.applyForce: matter-js's own force
+    // integration scales by each body's mass and the engine's internal
+    // gravity.scale, neither of which this can pin down without actually
+    // running it, so setVelocity keeps the nudge exactly the magnitude
+    // written here regardless of that scaling. Skipped above a piece count
+    // where an O(n²) pass every tick would start costing real frame time —
+    // a decorative flourish is allowed to just not run at that point rather
+    // than risk the pile's own frame rate for it.
+    const COHESION_RANGE = 160;
+    const COHESION_STRENGTH = 0.012;
+    const COHESION_MAX_NUDGE = 0.35;
+    const COHESION_MAX_PIECES = 80;
+
+    const applyCohesion = () => {
+      const pieces = Object.values(bodiesRef.current);
+      if (pieces.length > COHESION_MAX_PIECES) return;
+
+      for (let i = 0; i < pieces.length; i++) {
+        const a = pieces[i];
+        if (a.el.classList.contains("dragging")) continue;
+        // A piece that's essentially stopped doesn't go looking for a
+        // same-color neighbor to creep toward — only pieces still actually
+        // settling pull on others, so a pile at rest stays at rest rather
+        // than slowly re-sorting itself forever.
+        if (Math.hypot(a.body.velocity.x, a.body.velocity.y) < 0.05) continue;
+
+        for (let j = i + 1; j < pieces.length; j++) {
+          const b = pieces[j];
+          if (a.color !== b.color || b.el.classList.contains("dragging")) continue;
+
+          const dx = b.body.position.x - a.body.position.x;
+          const dy = b.body.position.y - a.body.position.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 1 || dist > COHESION_RANGE) continue;
+
+          const pull = Math.min(COHESION_MAX_NUDGE, COHESION_STRENGTH * (COHESION_RANGE / dist));
+          const nx = (dx / dist) * pull;
+          const ny = (dy / dist) * pull;
+
+          Matter.Body.setVelocity(a.body, { x: a.body.velocity.x + nx, y: a.body.velocity.y + ny });
+          Matter.Body.setVelocity(b.body, { x: b.body.velocity.x - nx, y: b.body.velocity.y - ny });
+        }
+      }
+    };
+
     function tick() {
       raf = requestAnimationFrame(tick);
+      applyCohesion();
       Matter.Engine.update(engine, 1000 / 60);
 
       const dt = 1 / 60;
@@ -228,7 +278,7 @@ const NotePile = ({ notes, onOpenNote, onExit }) => {
       // above pulls it toward its resting shape the same way a real
       // landing does, so a fresh toss reads as one continuous piece of
       // physics rather than "drop, then separately animate in."
-      bodiesRef.current[note.id] = { body, el, squash: -.55, squashVel: 0 };
+      bodiesRef.current[note.id] = { body, el, squash: -.55, squashVel: 0, color: note.color };
       el.style.opacity = "1";
     }, index * DROP_STAGGER_MS));
 
