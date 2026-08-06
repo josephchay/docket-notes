@@ -1,4 +1,4 @@
-.audio-pulse-field-layer {
+.fluid-visualizer-layer {
   position: fixed;
   inset: 0;
   z-index: 950;
@@ -7,21 +7,21 @@
   justify-content: center;
 }
 
-.audio-pulse-field-backdrop {
+.fluid-visualizer-backdrop {
   position: absolute;
   inset: 0;
   background-color: rgba(25, 25, 25, 0.28);
 }
 
-:root[data-theme="dark"] .audio-pulse-field-backdrop {
+:root[data-theme="dark"] .fluid-visualizer-backdrop {
   background-color: rgba(0, 0, 0, 0.5);
 }
 
 /* border-radius is animated by framer during the drop-to-sheet morph, so it
    is deliberately not set here. */
-.audio-pulse-field-panel {
+.fluid-visualizer-panel {
   position: relative;
-  width: min(520px, 94vw);
+  width: min(560px, 94vw);
   overflow: hidden;
   background-color: var(--page-bg-color);
   border: 1px solid var(--page-line-color);
@@ -31,14 +31,14 @@
   outline: none;
 }
 
-.audio-pulse-field-header {
+.fluid-visualizer-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 16px 18px 0;
 }
 
-.audio-pulse-field-header h3 {
+.fluid-visualizer-header h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 700;
@@ -46,7 +46,7 @@
   transition: color 0.4s ease-in-out;
 }
 
-.audio-pulse-field-close {
+.fluid-visualizer-close {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -62,17 +62,17 @@
   transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
 }
 
-.audio-pulse-field-hint {
+.fluid-visualizer-hint {
   margin: 4px 18px 0;
   font-size: 13px;
   color: var(--black-more-transclucent-color);
   transition: color 0.4s ease-in-out;
 }
 
-.audio-pulse-field-stage {
+.fluid-visualizer-panel-stage {
   position: relative;
   margin: 12px 18px 18px;
-  height: min(480px, 80vw);
+  height: min(360px, 66vw);
   border-radius: 14px;
   overflow: hidden;
   background-color: var(--page-surface-color);

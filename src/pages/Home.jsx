@@ -28,6 +28,7 @@ import {
   FaMeteor,
   FaDroplet,
   FaWaveSquare,
+  FaWater,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -71,7 +72,8 @@ import QuickDock from "../components/Dock/QuickDock";
 import AmbientField from "../components/Ambient/AmbientField";
 import GravityFieldPanel, { GRAVITY_FIELD_EVENT } from "../components/Particles/GravityFieldPanel";
 import FluidFieldPanel, { FLUID_FIELD_EVENT } from "../components/Particles/FluidFieldPanel";
-import AudioPulseFieldPanel, { AUDIO_PULSE_FIELD_EVENT } from "../components/Particles/AudioPulseFieldPanel";
+import AudioWaveStringPanel, { AUDIO_WAVE_STRING_EVENT } from "../components/Particles/AudioWaveStringPanel";
+import FluidVisualizerPanel, { FLUID_VISUALIZER_EVENT } from "../components/Particles/FluidVisualizerPanel";
 import useLenisScroll from "../hooks/useLenisScroll";
 
 import quotes from "../assets/data/quotes.json";
@@ -1226,10 +1228,16 @@ const Home = () => {
       perform: () => window.dispatchEvent(new CustomEvent(FLUID_FIELD_EVENT)),
     },
     {
-      key: "audio-pulse-field",
-      label: "Show the audio pulse field",
+      key: "audio-wave-string",
+      label: "Show the wavy line",
       icon: <FaWaveSquare />,
-      perform: () => window.dispatchEvent(new CustomEvent(AUDIO_PULSE_FIELD_EVENT)),
+      perform: () => window.dispatchEvent(new CustomEvent(AUDIO_WAVE_STRING_EVENT)),
+    },
+    {
+      key: "fluid-visualizer",
+      label: "Show the fluid visualizer",
+      icon: <FaWater />,
+      perform: () => window.dispatchEvent(new CustomEvent(FLUID_VISUALIZER_EVENT)),
     },
     {
       key: "trash",
@@ -1398,7 +1406,8 @@ const Home = () => {
       />
       <GravityFieldPanel reduceMotion={ reduceMotion } />
       <FluidFieldPanel reduceMotion={ reduceMotion } />
-      <AudioPulseFieldPanel reduceMotion={ reduceMotion } />
+      <AudioWaveStringPanel reduceMotion={ reduceMotion } />
+      <FluidVisualizerPanel reduceMotion={ reduceMotion } />
       <TrashPanel
         entries={ deletedNotes }
         onRestore={ restoreNote }

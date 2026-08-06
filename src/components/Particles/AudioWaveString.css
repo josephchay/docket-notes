@@ -1,0 +1,125 @@
+.audio-wave-string {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.audio-wave-svg {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  /* A raw pointer-driven drag surface (see AudioWaveString.jsx's own
+     pointerdown/pointermove handlers), the same reasoning ParticleCuboid's
+     own canvas already gets touch-action:none for — without this, a touch
+     drag meant to pluck the string would also try to scroll the page. */
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.audio-wave-baseline {
+  /* A faint rest-position reference — the string's own y=0, for visual
+     grounding, not part of the physics itself. Non-uniform scaling from
+     preserveAspectRatio="none" (see the svg's own attribute) means a
+     stroke-width set here renders slightly differently along x vs y — an
+     accepted, purely cosmetic quirk already present in InsightsPanel's own
+     trend chart, which uses the same non-uniform-scaling convention. */
+  stroke: var(--black-more-transclucent-color);
+  stroke-width: 0.3;
+  stroke-dasharray: 1.4 1.4;
+}
+
+.audio-wave-path {
+  fill: none;
+  stroke: var(--page-ink-color);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.4s ease-in-out;
+}
+
+.audio-wave-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px dashed var(--page-line-color);
+  border-radius: 999px;
+  background-color: var(--page-bg-color);
+  color: var(--black-more-transclucent-color);
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none; /* the svg beneath it already covers the same area and stays the interactive surface; this is just a hint */
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.audio-wave-transport {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px 2px;
+}
+
+.audio-wave-play,
+.audio-wave-mute {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.audio-wave-play {
+  width: 38px;
+  height: 38px;
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
+}
+
+.audio-wave-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--black-more-transclucent-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.audio-wave-seek {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--page-ink-color);
+}
+
+.audio-wave-choose {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  max-width: 140px;
+  padding: 7px 12px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}

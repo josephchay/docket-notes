@@ -22,6 +22,8 @@
     - Insights, Trash, Sprint, Settings — a one-line useFocusTrap(panelRef, open) each, plus tabIndex={-1} and outline: none on their panel roots.
     - Command Palette — adapted with { focusOnOpen: false }, since its search input already has autoFocus (core to a command palette's "start typing immediately" UX), which the hook's usual focus-the-panel-root step would otherwise fight a frame later.
 
+- Temporary music 
+
 ### Changed
 
 - History Panel

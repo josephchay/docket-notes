@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
 import { resolveCssColor } from "../History/HistoryAmbient";
+import { poly6Coeff, poly6, spikyGradCoeff, spikyGrad, viscLapCoeff, viscLap, particleMassFor } from "../../utils/sph";
 
 import "./FluidField.css";
 
@@ -28,15 +29,11 @@ const GRAVITY = 30;       // sim units/s², -y
 const GRID = 10;          // 10×10 initial block
 const SPACING = 1.15;
 const PARTICLE_COUNT = GRID * GRID;
-// The standard real-time-SPH heuristic for particle mass: give each
-// particle the mass a spacing×spacing patch of rest-density fluid would
-// carry, so a well-packed neighborhood's density estimate starts out close
-// to REST_DENSITY. This is a heuristic, not an identity — the *actual*
-// resulting density also depends on the kernel's own smoothing profile and
-// how many neighbors fall within h, which is exactly the part of SPH
-// tuning no amount of hand-derivation replaces the need to actually look
-// at (see the note in the panel wrapper).
-const PARTICLE_MASS = REST_DENSITY * SPACING * SPACING;
+// See utils/sph.js's own particleMassFor for the reasoning (the standard
+// real-time-SPH mass heuristic — a heuristic, not an identity; see the note
+// in the panel wrapper about what this file's own tuning can't fully
+// hand-verify beyond that).
+const PARTICLE_MASS = particleMassFor(REST_DENSITY, SPACING);
 
 const SMOOTHING_RADIUS = 1.6 * SPACING; // h — kernel support radius
 const SUBSTEPS = 3;
@@ -52,32 +49,10 @@ const DOMAIN_H = 22;
 const CURSOR_RADIUS = 3.2;
 const CURSOR_STRENGTH = 900;
 
-// 2D poly6 kernel (density estimation): normalization derived from
-// ∫₀^h σ(h²-r²)³ · 2πr dr = 1. Substituting u = h²-r² turns the integral
-// into ∫₀^{h²} u³ du / 2 = h⁸/8, giving σ·2π·h⁸/8 = 1 → σ = 4/(πh⁸) — the
-// 2D figure (distinct from the more commonly quoted 3D constant, 315/64π,
-// since this is a flat simulation, not a slice through a 3D one).
-const poly6Coeff = (h) => 4 / (Math.PI * h ** 8);
-const poly6 = (r, h, coeff) => (r >= h ? 0 : coeff * (h * h - r * r) ** 3);
-
-// 2D spiky kernel gradient (pressure force — spiky rather than poly6
-// specifically because poly6's own gradient vanishes at r→0, which lets
-// particles pile up with no separating force right where it matters most).
-// The kernel itself normalizes to σ = 10/(πh⁵) by the same disk-integral
-// method above (∫₀^h σ(h-r)³·2πr dr = σ·πh⁵/10 = 1); differentiating
-// (h-r)³ brings down a factor of 3, giving the gradient's own constant,
-// 3·10/(πh⁵) = 30/(πh⁵).
-const spikyGradCoeff = (h) => 30 / (Math.PI * h ** 5);
-const spikyGrad = (r, h, coeff) => (r >= h || r <= 0 ? 0 : -coeff * (h - r) * (h - r));
-
-// 2D viscosity-kernel Laplacian: 40/(πh⁵)·(h-r). Taken from the standard
-// real-time-SPH literature (it appears consistently across independent
-// reference implementations of Müller's scheme) rather than re-derived
-// from scratch in this pass — unlike the two kernels above, this one is
-// reused on the strength of convergent published sources, not an
-// independent derivation.
-const viscLapCoeff = (h) => 40 / (Math.PI * h ** 5);
-const viscLap = (r, h, coeff) => (r >= h ? 0 : coeff * (h - r));
+// poly6/spikyGrad/viscLap kernels now live in utils/sph.js (see that file
+// for the verified normalization derivations) — imported above rather than
+// declared here, once FluidVisualizer.jsx needed the exact same math and a
+// second independently-drifting copy stopped being acceptable.
 
 const VERT = `
   void main() {

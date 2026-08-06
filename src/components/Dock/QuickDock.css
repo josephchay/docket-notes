@@ -81,16 +81,3 @@
   color: var(--page-ink-color);
   transition: color 0.4s ease-in-out;
 }
-
-.quick-dock-wave-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.quick-dock-divider {
-  width: 1px;
-  height: 26px;
-  background-color: var(--page-line-color);
-  transition: background-color 0.4s ease-in-out;
-}
