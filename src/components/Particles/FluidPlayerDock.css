@@ -1,0 +1,18 @@
+/* The persistent bottom bar — bottom:148px clears the sprint capsule's own
+   tallest point (bottom:96px, ~40px tall, top edge ~136px) by a clean 12px,
+   regardless of whether that capsule happens to be showing, without moving
+   or coordinating with it or the quick dock beneath it (bottom:26px). */
+.fluid-player-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 148px;
+  transform: translateX(-50%);
+  z-index: 590;
+  width: min(640px, 92vw);
+  height: 100px;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 20px 44px -16px rgba(25, 25, 25, 0.4);
+  transition: border-color 0.4s ease-in-out;
+}

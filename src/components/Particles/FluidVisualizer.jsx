@@ -34,18 +34,19 @@ const SUBSTEPS = 3;
 const VELOCITY_CLAMP = 40;
 const BOUNDARY_RESTITUTION = 0.45;
 const PARTICLE_MASS = particleMassFor(REST_DENSITY, SPACING);
-
-// A wide, short "pool" rather than FluidField's tall dam-break box — most
-// of the domain's height stays open above the resting fluid so audio-driven
-// splashes have real room to arc up into before gravity pulls them back.
-const NX = 26;
-const NY = 5;
-const PARTICLE_COUNT = NX * NY;
-const DOMAIN_W = 34;
-const DOMAIN_H = 20;
-const POOL_MARGIN_X = (DOMAIN_W - (NX - 1) * SPACING) / 2;
 const POOL_BASE_Y = 0.6;
 
+// Genuine physics constants (density, stiffness, viscosity, gravity,
+// spacing, smoothing radius, substeps) stay fixed module-level values,
+// exactly as verified — only the pool's own SIZE and SHAPE (how many
+// particles, how wide/tall a domain they sit in) vary by usage, as props
+// with defaults reproducing FluidVisualizerPanel.jsx's existing modal
+// exactly (gridCols=26, gridRows=5, domainW=34, domainH=20 — the original
+// module constants, unchanged in value, just no longer hard-coded). The
+// stability analysis this session already did (Courant number, damping
+// bound) depends only on SPACING/SMOOTHING_RADIUS/dt/SUBSTEPS above — none
+// of which this varies — so a wider/shallower pool for a different usage
+// carries the exact same guarantees, not a fresh unverified tuning.
 const CURSOR_RADIUS = 3.2;
 const CURSOR_STRENGTH = 900;
 
@@ -62,10 +63,6 @@ const AUDIO_FFT_SIZE = 2048;
 const MIN_BIN = 2;
 const MAX_BIN = 500;
 const INJECTOR_COUNT = 18;
-// Only particles still near the floor feel a geyser — a real underwater
-// jet acts on the body of fluid it's actually submerged in, not on
-// droplets already airborne from an earlier splash.
-const INJECTOR_ACTIVATION_HEIGHT = 3.4;
 // Tuning, not physics — same honest caveat as FluidField.jsx's own: exactly
 // how energetic a given spectrum magnitude ends up looking depends on how
 // it interacts with STIFFNESS/VISCOSITY/GRAVITY together, which isn't
@@ -86,14 +83,19 @@ const VERT = `
 // physically apt rendering choice for an implicit density field, not
 // merely a reused convenience) — genuinely fitting doubly so here, since
 // SPH already represents this fluid as an implicit density field in the
-// first place.
-const FRAG = `
+// first place. A function rather than a module-level template literal now
+// — GLSL requires the uBalls[]/uBallColors[] array sizes to be compile-time
+// constants, and since particle count is now resolved per-instance (from
+// the gridCols×gridRows props) rather than one fixed module constant, the
+// shader source itself has to be built per-instance too, inside the mount
+// effect below, from whatever count that instance actually resolves to.
+const buildFragShader = (particleCount) => `
   precision highp float;
 
   uniform vec2 uResolution;
   uniform float uDpr;
-  uniform vec3 uBalls[${ PARTICLE_COUNT }];
-  uniform vec3 uBallColors[${ PARTICLE_COUNT }];
+  uniform vec3 uBalls[${ particleCount }];
+  uniform vec3 uBallColors[${ particleCount }];
   uniform vec3 uRim;
   uniform vec3 uBg;
 
@@ -103,7 +105,7 @@ const FRAG = `
 
     float field = 0.0;
     vec3 colorSum = vec3(0.0);
-    for (int i = 0; i < ${ PARTICLE_COUNT }; i++) {
+    for (int i = 0; i < ${ particleCount }; i++) {
       vec3 b = uBalls[i];
       vec2 d = p - b.xy;
       float contribution = exp(-dot(d, d) / (b.z * b.z));
@@ -128,7 +130,25 @@ const formatTime = (t) => {
   return `${ m }:${ s }`;
 };
 
-const FluidVisualizer = ({ reduceMotion = false }) => {
+// domainW/domainH/gridCols/gridRows/activationHeight default to exactly the
+// values FluidVisualizerPanel.jsx's modal always used before these became
+// props (34, 20, 26, 5, 3.4) — that call site is unchanged and passes none
+// of them, so it gets byte-for-byte the same pool it always has.
+// controlsPosition="below" reproduces the modal's own stacked layout
+// (canvas above, transport row below); "overlay" — used by the persistent
+// bottom dock — centers the transport as one pill floating on the canvas
+// instead, and skips the separate empty-state hint (the overlay pill's own
+// "Choose a song" button already covers that, and the two would otherwise
+// sit on top of each other, both independently centered in the same space).
+const FluidVisualizer = ({
+  reduceMotion = false,
+  domainW = 34,
+  domainH = 20,
+  gridCols = 26,
+  gridRows = 5,
+  activationHeight = 3.4,
+  controlsPosition = "below",
+}) => {
   const canvasRef = useRef(null);
   const audioRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -207,6 +227,12 @@ const FluidVisualizer = ({ reduceMotion = false }) => {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     renderer.setPixelRatio(dpr);
 
+    // Resolved once per mount from this instance's own props — see the
+    // component's own comment above for why these (not the underlying
+    // physics constants) are what's configurable.
+    const particleCount = gridCols * gridRows;
+    const poolMarginX = (domainW - (gridCols - 1) * SPACING) / 2;
+
     const scene = new THREE.Scene();
     const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
@@ -223,8 +249,8 @@ const FluidVisualizer = ({ reduceMotion = false }) => {
     const uniforms = {
       uResolution: { value: new THREE.Vector2(dims.w, dims.h) },
       uDpr: { value: dpr },
-      uBalls: { value: Array.from({ length: PARTICLE_COUNT }, () => new THREE.Vector3()) },
-      uBallColors: { value: Array.from({ length: PARTICLE_COUNT }, () => new THREE.Color()) },
+      uBalls: { value: Array.from({ length: particleCount }, () => new THREE.Vector3()) },
+      uBallColors: { value: Array.from({ length: particleCount }, () => new THREE.Color()) },
       uRim: { value: new THREE.Color("#fffeff") },
       uBg: { value: new THREE.Color("#fffeff") },
     };
@@ -232,7 +258,7 @@ const FluidVisualizer = ({ reduceMotion = false }) => {
     const material = new THREE.ShaderMaterial({
       uniforms,
       vertexShader: VERT,
-      fragmentShader: FRAG,
+      fragmentShader: buildFragShader(particleCount),
       transparent: false,
       depthTest: false,
       depthWrite: false,
@@ -257,10 +283,10 @@ const FluidVisualizer = ({ reduceMotion = false }) => {
 
     // The resting pool: a wide, shallow rectangle near the domain floor.
     const particles = [];
-    for (let ix = 0; ix < NX; ix++) {
-      for (let iy = 0; iy < NY; iy++) {
+    for (let ix = 0; ix < gridCols; ix++) {
+      for (let iy = 0; iy < gridRows; iy++) {
         particles.push({
-          pos: new THREE.Vector2(POOL_MARGIN_X + ix * SPACING, POOL_BASE_Y + iy * SPACING),
+          pos: new THREE.Vector2(poolMarginX + ix * SPACING, POOL_BASE_Y + iy * SPACING),
           vel: new THREE.Vector2(0, 0),
           density: REST_DENSITY,
           pressure: 0,
@@ -358,8 +384,8 @@ const FluidVisualizer = ({ reduceMotion = false }) => {
         // here — bandMagnitude is always a real, safely-readable array
         // (see its own declaration above), just all zeros until
         // ensureAudioGraph() has run and tick() starts populating it.
-        if (p.pos.y < INJECTOR_ACTIVATION_HEIGHT) {
-          const bandIndex = Math.max(0, Math.min(INJECTOR_COUNT - 1, Math.floor((p.pos.x / DOMAIN_W) * INJECTOR_COUNT)));
+        if (p.pos.y < activationHeight) {
+          const bandIndex = Math.max(0, Math.min(INJECTOR_COUNT - 1, Math.floor((p.pos.x / domainW) * INJECTOR_COUNT)));
           ay += bandMagnitude[bandIndex] * JET_FORCE_SCALE;
         }
 
@@ -373,9 +399,9 @@ const FluidVisualizer = ({ reduceMotion = false }) => {
         p.pos.y += p.vel.y * dt;
 
         if (p.pos.x < 0) { p.pos.x = 0; p.vel.x = -p.vel.x * BOUNDARY_RESTITUTION; }
-        else if (p.pos.x > DOMAIN_W) { p.pos.x = DOMAIN_W; p.vel.x = -p.vel.x * BOUNDARY_RESTITUTION; }
+        else if (p.pos.x > domainW) { p.pos.x = domainW; p.vel.x = -p.vel.x * BOUNDARY_RESTITUTION; }
         if (p.pos.y < 0) { p.pos.y = 0; p.vel.y = -p.vel.y * BOUNDARY_RESTITUTION; }
-        else if (p.pos.y > DOMAIN_H) { p.pos.y = DOMAIN_H; p.vel.y = -p.vel.y * BOUNDARY_RESTITUTION; }
+        else if (p.pos.y > domainH) { p.pos.y = domainH; p.vel.y = -p.vel.y * BOUNDARY_RESTITUTION; }
       }
     };
 
@@ -386,7 +412,7 @@ const FluidVisualizer = ({ reduceMotion = false }) => {
       const rect = canvas.getBoundingClientRect();
       const nx = (e.clientX - rect.left) / rect.width;
       const ny = (e.clientY - rect.top) / rect.height;
-      return { x: nx * DOMAIN_W, y: (1 - ny) * DOMAIN_H };
+      return { x: nx * domainW, y: (1 - ny) * domainH };
     };
 
     const handlePointerMove = (e) => {
@@ -430,8 +456,8 @@ const FluidVisualizer = ({ reduceMotion = false }) => {
         for (let s = 0; s < SUBSTEPS; s++) step(subDt);
       }
 
-      const scaleX = dims.w / DOMAIN_W;
-      const scaleY = dims.h / DOMAIN_H;
+      const scaleX = dims.w / domainW;
+      const scaleY = dims.h / domainH;
       const renderScale = Math.min(scaleX, scaleY);
       const renderRadius = SMOOTHING_RADIUS * 0.9 * renderScale;
 
@@ -444,7 +470,7 @@ const FluidVisualizer = ({ reduceMotion = false }) => {
         // Color follows each particle's own current injector band — the
         // same spatial mapping driving the physics also drives what's
         // shown, rather than a separate decorative gradient laid on top.
-        const bandIndex = Math.max(0, Math.min(INJECTOR_COUNT - 1, Math.floor((p.x / DOMAIN_W) * INJECTOR_COUNT)));
+        const bandIndex = Math.max(0, Math.min(INJECTOR_COUNT - 1, Math.floor((p.x / domainW) * INJECTOR_COUNT)));
         const paletteT = (bandIndex / (INJECTOR_COUNT - 1)) * (palette.length - 1);
         const lo = Math.floor(paletteT), hi = Math.min(palette.length - 1, lo + 1);
         uniforms.uBallColors.value[i].copy(palette[lo]).lerp(palette[hi], paletteT - lo);
@@ -553,8 +579,10 @@ const FluidVisualizer = ({ reduceMotion = false }) => {
     setCurrentTime(value);
   };
 
+  const overlay = controlsPosition === "overlay";
+
   return (
-    <div className="fluid-visualizer">
+    <div className={ `fluid-visualizer ${ overlay ? "fluid-visualizer-overlay-layout" : "" }` }>
       <audio ref={ audioRef } preload="metadata" />
       <input
         ref={ fileInputRef }
@@ -567,7 +595,11 @@ const FluidVisualizer = ({ reduceMotion = false }) => {
       <div className="fluid-visualizer-canvas-wrap">
         <canvas ref={ canvasRef } className="fluid-visualizer-canvas" aria-hidden="true" />
         {
-          !trackName && (
+          // Skipped in overlay mode — the overlay transport pill below
+          // always renders its own "Choose a song" button, front and
+          // center; a second, separately-centered hint in the same space
+          // would just sit on top of it.
+          !trackName && !overlay && (
             <button type="button" className="fluid-visualizer-empty" onClick={ handleChooseFile }>
               <FaMusic />
               Choose a song to fill the pool
@@ -576,7 +608,7 @@ const FluidVisualizer = ({ reduceMotion = false }) => {
         }
       </div>
 
-      <div className="fluid-visualizer-transport">
+      <div className={ `fluid-visualizer-transport ${ overlay ? "overlay" : "" }` }>
         <motion.button
           type="button"
           className="fluid-visualizer-play"

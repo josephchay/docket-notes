@@ -74,6 +74,7 @@ import GravityFieldPanel, { GRAVITY_FIELD_EVENT } from "../components/Particles/
 import FluidFieldPanel, { FLUID_FIELD_EVENT } from "../components/Particles/FluidFieldPanel";
 import AudioWaveStringPanel, { AUDIO_WAVE_STRING_EVENT } from "../components/Particles/AudioWaveStringPanel";
 import FluidVisualizerPanel, { FLUID_VISUALIZER_EVENT } from "../components/Particles/FluidVisualizerPanel";
+import FluidPlayerDock from "../components/Particles/FluidPlayerDock";
 import useLenisScroll from "../hooks/useLenisScroll";
 
 import quotes from "../assets/data/quotes.json";
@@ -1395,6 +1396,11 @@ const Home = () => {
           )
         }
       </AnimatePresence>
+      {/* <AnimatePresence>
+        {
+          !focusMode && <FluidPlayerDock key="fluidPlayerDock" reduceMotion={ reduceMotion } />
+        }
+      </AnimatePresence> */}
       <InsightsPanel
         totalCount={ notes.length }
         colorCounts={ colorCounts }

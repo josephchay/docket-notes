@@ -95,3 +95,43 @@
   text-overflow: ellipsis;
   transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
 }
+
+/* Overlay layout — used by the persistent bottom dock (see Home.jsx's own
+   FluidPlayerDock), not the modal panel. The canvas-wrap grows to fill the
+   entire component (no separate row reserved below it for the transport),
+   and the transport itself becomes one floating pill centered on top of
+   the fluid, rather than a full-width row stacked underneath it. */
+.fluid-visualizer-overlay-layout {
+  position: relative;
+}
+
+.fluid-visualizer-overlay-layout .fluid-visualizer-canvas-wrap {
+  flex: 1;
+}
+
+.fluid-visualizer-overlay-layout .fluid-visualizer-transport.overlay {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 8px 14px;
+  border-radius: 999px;
+  /* Solid, not translucent — matches QuickDock's own pill chrome (a solid
+     background-color + border + shadow, not a glassmorphic/blurred
+     overlay), so a control pill floating on the fluid reads as the same
+     kind of "chrome sitting on top of the desk" every other fixed UI piece
+     in this app already is, rather than a new visual language of its own. */
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 14px 30px -10px rgba(25, 25, 25, 0.4);
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+}
+
+/* The seek bar's own flex:1 above assumes a row stretching to fill a full-
+   width container — inside the centered, content-sized overlay pill above,
+   that would either collapse to nothing or blow out unpredictably, so it
+   gets a fixed width here instead. */
+.fluid-visualizer-overlay-layout .fluid-visualizer-seek {
+  flex: none;
+  width: 140px;
+}
