@@ -24,6 +24,7 @@
 
 - Temporary music 
 - Cloth field animation effect in Command Ink
+- Added initial Note constellation feature
 
 ### Changed
 

@@ -30,6 +30,7 @@ import {
   FaWaveSquare,
   FaWater,
   FaFlag,
+  FaCircleNodes,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -77,6 +78,7 @@ import AudioWaveStringPanel, { AUDIO_WAVE_STRING_EVENT } from "../components/Par
 import FluidVisualizerPanel, { FLUID_VISUALIZER_EVENT } from "../components/Particles/FluidVisualizerPanel";
 import FluidPlayerDock from "../components/Particles/FluidPlayerDock";
 import ClothPanel, { CLOTH_EVENT } from "../components/Particles/ClothPanel";
+import NoteConstellationPanel, { NOTE_CONSTELLATION_EVENT } from "../components/Constellation/NoteConstellationPanel";
 import useLenisScroll from "../hooks/useLenisScroll";
 
 import quotes from "../assets/data/quotes.json";
@@ -1249,6 +1251,12 @@ const Home = () => {
       perform: () => window.dispatchEvent(new CustomEvent(CLOTH_EVENT)),
     },
     {
+      key: "note-constellation",
+      label: "Map your notes",
+      icon: <FaCircleNodes />,
+      perform: () => window.dispatchEvent(new CustomEvent(NOTE_CONSTELLATION_EVENT)),
+    },
+    {
       key: "trash",
       label: deletedNotes.length > 0 ? `Open the trash · ${ deletedNotes.length }` : "Open the trash",
       icon: <FaTrashCan />,
@@ -1423,6 +1431,7 @@ const Home = () => {
       <AudioWaveStringPanel reduceMotion={ reduceMotion } />
       <FluidVisualizerPanel reduceMotion={ reduceMotion } />
       <ClothPanel reduceMotion={ reduceMotion } />
+      <NoteConstellationPanel notes={ notes } openEditor={ setEditingNoteId } reduceMotion={ reduceMotion } />
       <TrashPanel
         entries={ deletedNotes }
         onRestore={ restoreNote }
