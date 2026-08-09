@@ -19,14 +19,26 @@
 }
 
 .note-constellation-edge {
+  fill: none;
   stroke: var(--page-line-color);
   stroke-width: 1.5px;
+  stroke-linecap: round;
   opacity: .4;
   transition: opacity .25s ease-in-out, stroke-width .25s ease-in-out;
 }
 
 .note-constellation-edge.dimmed {
   opacity: .08;
+}
+
+/* A shift-clicked shortest path — see NoteConstellation.jsx's own
+   findShortestPath. Bold and colored rather than just "not dimmed", since
+   this is a deliberately-set result worth reading as distinct from the
+   graph's own resting state, not merely the opposite of dim. */
+.note-constellation-edge.on-path {
+  stroke: var(--blue-color);
+  stroke-width: 3px;
+  opacity: .9;
 }
 
 .note-constellation-node {
@@ -46,6 +58,37 @@
   stroke: var(--page-bg-color);
   stroke-width: 2px;
   filter: drop-shadow(0 3px 8px rgba(25, 25, 25, 0.22));
+}
+
+.note-constellation-node.on-path .note-constellation-blob {
+  stroke: var(--blue-color);
+  stroke-width: 3px;
+}
+
+/* The two shift-clicked anchors themselves — a ring behind the blob
+   (rather than restyling the blob's own stroke further, which on-path
+   already uses) so an anchor still reads as distinct from an ordinary
+   waypoint the path merely passes through. */
+.note-constellation-anchor-ring {
+  fill: none;
+  stroke: var(--blue-color);
+  stroke-width: 2px;
+  stroke-dasharray: 4 4;
+  opacity: .8;
+  animation: note-constellation-anchor-spin 6s linear infinite;
+}
+
+/* A plain CSS @keyframes loop has no way to see this app's own reduceMotion
+   state on its own (that's a JS prop, combining the OS-level preference
+   with an in-app manual toggle in Settings — a bare prefers-reduced-motion
+   media query here would miss that second source entirely) — so
+   NoteConstellation.jsx adds this class itself instead of relying on one. */
+.note-constellation-anchor-ring.static {
+  animation: none;
+}
+
+@keyframes note-constellation-anchor-spin {
+  to { transform: rotate(360deg); }
 }
 
 .note-constellation-label {
@@ -134,4 +177,42 @@
   background-color: var(--page-surface-color);
   border-radius: 6px;
   padding: 2px 6px;
+}
+
+/* Feedback for the shift-click path-anchor gesture — see
+   NoteConstellation.jsx's own pathStatus. Fixed to the top center of the
+   stage rather than following anything, since it's reporting on the graph
+   as a whole (or on how to use the feature at all), not on one node. */
+.note-constellation-path-status {
+  position: absolute;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--page-ink-color);
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 10px 24px -10px rgba(25, 25, 25, 0.3);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.note-constellation-path-status.subtle {
+  opacity: .55;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.note-constellation-path-status.found {
+  color: var(--blue-color);
+  border-color: var(--blue-color);
+}
+
+.note-constellation-path-status.warn {
+  color: var(--red-color);
+  border-color: var(--red-color);
 }

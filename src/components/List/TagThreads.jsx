@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { NOTE_COLORS } from "../../constants/colors";
-import { smoothPath } from "../../utils/svgPath";
+import { catenaryPath } from "../../utils/catenary";
 
 import "./TagThreads.css";
 
@@ -42,44 +42,8 @@ const MAX_SAG = 70;
 // perturbing a single point, so the whole curve pulses coherently instead
 // of one corner wobbling on its own.
 const threadPath = ({ x1, y1, x2, y2 }, t, index) => {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const dist = Math.hypot(dx, dy);
-
-  // Overlapping/near-overlapping centers have no meaningful chord to build
-  // a local frame from — a plain line covers that instant without risking
-  // a division by (near) zero in the catenary math below.
-  if (dist < 1) return `M ${ x1 } ${ y1 } L ${ x2 } ${ y2 }`;
-
-  const theta = Math.atan2(dy, dx);
-  const cosT = Math.cos(theta);
-  const sinT = Math.sin(theta);
-
   const wobble = t === 0 ? 1 : 1 + Math.sin(t * 1.6 + index * 1.7) * 0.06;
-  const a = (dist / CATENARY_K) * wobble;
-  const half = dist / 2;
-  const coshHalf = Math.cosh(half / a);
-
-  // A hard cap on the midpoint sag, same spirit as the old Math.min(46, …)
-  // — scaling the whole curve down rather than clamping it flat keeps the
-  // catenary's actual shape (steep near center, flattening toward the
-  // ends) intact even when a very long span would otherwise droop further
-  // than reads well on the desk.
-  const naturalSag = a * (coshHalf - 1);
-  const sagScale = naturalSag > MAX_SAG ? MAX_SAG / naturalSag : 1;
-
-  const points = [];
-  for (let i = 0; i <= CATENARY_SAMPLES; i++) {
-    const localX = (i / CATENARY_SAMPLES) * dist;
-    const localY = (a * coshHalf - a * Math.cosh((localX - half) / a)) * sagScale;
-
-    points.push({
-      x: x1 + localX * cosT - localY * sinT,
-      y: y1 + localX * sinT + localY * cosT,
-    });
-  }
-
-  return smoothPath(points);
+  return catenaryPath(x1, y1, x2, y2, { k: CATENARY_K, samples: CATENARY_SAMPLES, maxSag: MAX_SAG, wobble });
 };
 
 // The gooey ink capillaries that bloom between a hovered note and every

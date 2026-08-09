@@ -7,6 +7,7 @@ import {
   FaCompress,
   FaWandMagicSparkles,
   FaHourglassHalf,
+  FaCircleNodes,
   FaMoon,
   FaSun,
 } from "react-icons/fa6";
@@ -14,6 +15,7 @@ import {
 import { NOTE_COLORS } from "../../constants/colors";
 import { COMMAND_EVENT } from "../Command/CommandPalette";
 import { SPRINT_EVENT } from "../Sprint/SprintPanel";
+import { NOTE_CONSTELLATION_EVENT } from "../Constellation/NoteConstellationPanel";
 import useInkPulse from "../../hooks/useInkPulse";
 import useMagnetic from "../../hooks/useMagnetic";
 import { iconSpin } from "../Motion";
@@ -82,6 +84,12 @@ const QuickDock = ({
       },
     },
     { key: "shuffle", label: "Shuffle the desk", icon: <FaShuffle />, onRun: () => shuffleNotes?.() },
+    {
+      key: "constellation",
+      label: "Map your notes",
+      icon: <FaCircleNodes />,
+      onRun: () => window.dispatchEvent(new CustomEvent(NOTE_CONSTELLATION_EVENT)),
+    },
     {
       key: "focus",
       label: focusMode ? "Exit focus mode" : "Enter focus mode",

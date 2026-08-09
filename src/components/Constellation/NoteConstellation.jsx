@@ -6,6 +6,7 @@ import { FaStar } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { blobPath, createBlobMorph } from "../../utils/blob";
+import { catenaryPath } from "../../utils/catenary";
 import { Quadtree } from "../../utils/quadtree";
 import { SNAPPY } from "../Motion";
 import { constellationMachine, DIVE_DURATION_MS } from "./ConstellationState";
@@ -84,6 +85,32 @@ const NODE_RADIUS_BASE = 13;
 const NODE_RADIUS_PER_EDGE = 2;
 const NODE_RADIUS_MAX = 26;
 
+// Edges as real hanging threads (utils/catenary.js — the exact same math
+// TagThreads.jsx's own hover connectors use) rather than straight lines,
+// sag driven by each edge's own live tension rather than a fixed constant
+// — a physically honest readout of the simulation's own state, not
+// decoration laid on top of it. Modeled as a thread with a fixed "rest
+// length" of k·EDGE_REST_LENGTH_FACTOR (a little longer than the FR
+// layout's own ideal spacing k, so even a resting edge still carries some
+// visible slack): tension is how much of that rest length the edge's
+// actual current distance is already using up, 0 (endpoints on top of
+// each other, all slack) to 1 (stretched taut or beyond). See
+// utils/catenary.js's own comment for why a *bigger* k value is what
+// makes a catenary sag *harder* — counter-intuitive from the name, but
+// the real physical relationship.
+const EDGE_REST_LENGTH_FACTOR = 1.15;
+const EDGE_K_SLACK = 2.2; // low tension → sags hard
+const EDGE_K_TAUT = 0.55; // high tension → pulls toward straight
+const EDGE_CATENARY_SAMPLES = 10;
+const EDGE_MAX_SAG = 42; // pixels — caps how far even a fully slack edge can droop
+// The displayed catenary k lags its own target by this fraction each
+// frame (a simple exponential smoothing, not a real second-order spring)
+// rather than snapping to whatever the current distance implies —
+// exactly enough of a catch-up delay for an edge's own sag to read as
+// carrying a little weight of its own, without a full damped-oscillator's
+// worth of state and tuning to get there.
+const EDGE_SAG_SMOOTHING = 0.12;
+
 // Blob shapes — see utils/blob.js's own blobPath for the actual Catmull-Rom
 // construction (the same one every dot-to-sheet panel's own reveal already
 // uses via useBlobClipMorph). Both shapes share one box size per node (see
@@ -132,6 +159,58 @@ const truncateTitle = (title) => {
   return text.length > 20 ? `${ text.slice(0, 19) }…` : text;
 };
 
+// A normalized, order-independent key for a pair of note ids — used to
+// check whether a given rendered edge is one of the specific consecutive
+// pairs a shortest path actually walks (see pathEdgeIds below), not just
+// "connects two notes that both happen to be somewhere on the path" — two
+// path-member notes can easily share an edge that the path itself never
+// used.
+const pairKey = (x, y) => (x < y ? `${ x }|${ y }` : `${ y }|${ x }`);
+
+// Breadth-first search — the standard, correct algorithm for shortest path
+// in an unweighted graph (every edge costs exactly one hop; BFS explores
+// in strictly increasing hop-distance order from the start, so the first
+// time it reaches `endId` is provably via the fewest possible edges,
+// unlike a plain DFS which offers no such guarantee). `queue` is walked
+// with a plain head index rather than `Array.prototype.shift()` — shift()
+// is O(n) per call (it has to renumber every remaining element), which
+// would make this whole search O(n²) instead of the O(n + e) BFS is
+// supposed to be; an index pointer costs nothing extra to read and avoids
+// that entirely.
+const findShortestPath = (edges, startId, endId) => {
+  if (startId === endId) return [startId];
+
+  const adjacency = new Map();
+  edges.forEach((edge) => {
+    if (!adjacency.has(edge.a)) adjacency.set(edge.a, []);
+    if (!adjacency.has(edge.b)) adjacency.set(edge.b, []);
+    adjacency.get(edge.a).push(edge.b);
+    adjacency.get(edge.b).push(edge.a);
+  });
+
+  const visited = new Set([startId]);
+  const prev = new Map();
+  const queue = [startId];
+
+  for (let head = 0; head < queue.length; head++) {
+    const current = queue[head];
+    if (current === endId) {
+      const path = [];
+      for (let node = endId; node !== undefined; node = prev.get(node)) path.unshift(node);
+      return path;
+    }
+
+    for (const neighbor of adjacency.get(current) || []) {
+      if (visited.has(neighbor)) continue;
+      visited.add(neighbor);
+      prev.set(neighbor, current);
+      queue.push(neighbor);
+    }
+  }
+
+  return null; // no path — startId and endId sit in different connected components
+};
+
 const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }) => {
   const svgRef = useRef(null);
   const worldGroupRef = useRef(null);
@@ -146,6 +225,12 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   const [hoveredId, setHoveredId] = useState(null);
   const [phase, setPhase] = useState("idle");
   const [selectedId, setSelectedId] = useState(null);
+  // Up to two note ids, set by shift-clicking a node (see handleDown
+  // further down) — deliberately a different gesture from a plain click,
+  // which still opens the note exactly as it always has. A third
+  // shift-click rolls the older anchor out rather than growing past two,
+  // since a "path" only ever means something between exactly two notes.
+  const [pathAnchors, setPathAnchors] = useState([]);
   // A stable service instance for this component's whole lifetime — same
   // useState-initializer convention SprintPanel.jsx's own interpret() call
   // already uses, so it isn't recreated every render.
@@ -159,6 +244,14 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   reduceMotionRef.current = reduceMotion;
   const hoveredIdRef = useRef(hoveredId);
   hoveredIdRef.current = hoveredId;
+
+  const togglePathAnchor = (id) => {
+    setPathAnchors((prev) => {
+      if (prev.includes(id)) return prev.filter((anchorId) => anchorId !== id);
+      if (prev.length >= 2) return [prev[1], id];
+      return [...prev, id];
+    });
+  };
 
   // See ConstellationState.js's own header comment for why onSelectNote is
   // only ever called from here, once the machine reaches "done" — never
@@ -194,6 +287,25 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     });
     return map;
   }, [graph.edges]);
+
+  // Real BFS (see findShortestPath's own comment) over the current tag
+  // graph — only recomputed when the two anchors or the edge set actually
+  // change, not every physics frame; the path itself is geometry-free (a
+  // sequence of note ids), so it stays correct regardless of how the
+  // layout keeps moving underneath it.
+  const shortestPath = useMemo(() => {
+    if (pathAnchors.length !== 2) return null;
+    return findShortestPath(graph.edges, pathAnchors[0], pathAnchors[1]);
+  }, [pathAnchors, graph.edges]);
+
+  const pathNodeIds = useMemo(() => (shortestPath ? new Set(shortestPath) : null), [shortestPath]);
+
+  const pathEdgeIds = useMemo(() => {
+    if (!shortestPath) return null;
+    const set = new Set();
+    for (let i = 0; i < shortestPath.length - 1; i++) set.add(pairKey(shortestPath[i], shortestPath[i + 1]));
+    return set;
+  }, [shortestPath]);
 
   const hoveredNote = useMemo(
     () => (hoveredId ? graph.nodes.find((note) => note.id === hoveredId) || null : null),
@@ -258,7 +370,19 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         const tagsB = noteList[j].tags || [];
         if (tagsB.length === 0) continue;
         const shared = tagsA.filter((t) => tagsB.includes(t)).length;
-        if (shared > 0) edgeList.push({ id: `${ noteList[i].id }:${ noteList[j].id }`, a: noteList[i].id, b: noteList[j].id, weight: shared });
+        if (shared > 0) {
+          edgeList.push({
+            id: `${ noteList[i].id }:${ noteList[j].id }`,
+            a: noteList[i].id,
+            b: noteList[j].id,
+            weight: shared,
+            // Starts at the slack/taut midpoint and settles toward its
+            // real target over the first few frames via the same
+            // EDGE_SAG_SMOOTHING lag every subsequent frame uses — no
+            // special-cased "first frame" logic needed.
+            displayK: (EDGE_K_SLACK + EDGE_K_TAUT) / 2,
+          });
+        }
       }
     }
 
@@ -484,6 +608,17 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       const node = byId.get(id);
       if (!node) return;
 
+      // Shift-click sets/clears a path anchor instead of grabbing or
+      // selecting the node — a deliberately different gesture from a
+      // plain click, which still opens the note exactly as it always has.
+      // setPathAnchors is a stable setState function (React guarantees its
+      // identity never changes), safe to call directly from this
+      // [active]-only effect the same way `service` already is.
+      if (e.shiftKey) {
+        togglePathAnchor(id);
+        return;
+      }
+
       if (!reduceMotionRef.current) node.dragging = true;
       const { x, y } = domainFromEvent(e);
       drag.id = id;
@@ -674,10 +809,25 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         if (!el) return;
         const a = byId.get(edge.a);
         const b = byId.get(edge.b);
-        el.setAttribute("x1", a.x * scaleX);
-        el.setAttribute("y1", a.y * scaleY);
-        el.setAttribute("x2", b.x * scaleX);
-        el.setAttribute("y2", b.y * scaleY);
+
+        // Tension in domain space (where k itself is defined) — how much
+        // of the edge's own rest length its actual current distance is
+        // already using up, 0 (all slack) to 1 (taut or beyond; anything
+        // stretched past rest length just stays fully taut, the same way
+        // a real inextensible thread would rather than sagging negatively).
+        const restLength = k * EDGE_REST_LENGTH_FACTOR;
+        const dist = Math.hypot(b.x - a.x, b.y - a.y);
+        const tension = Math.min(1, dist / restLength);
+        const targetK = EDGE_K_SLACK - (EDGE_K_SLACK - EDGE_K_TAUT) * tension;
+        edge.displayK += (targetK - edge.displayK) * EDGE_SAG_SMOOTHING;
+
+        const x1 = a.x * scaleX, y1 = a.y * scaleY;
+        const x2 = b.x * scaleX, y2 = b.y * scaleY;
+        el.setAttribute("d", catenaryPath(x1, y1, x2, y2, {
+          k: edge.displayK,
+          samples: EDGE_CATENARY_SAMPLES,
+          maxSag: EDGE_MAX_SAG,
+        }));
       });
 
       // The hover card follows its node every frame, since the graph keeps
@@ -764,6 +914,27 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     };
   }, [phase, selectedId]);
 
+  // Feedback for the shift-click path-anchor gesture — genuinely useful
+  // (confirming a path was found, and how long it is, is the actual payoff
+  // of the feature) rather than decoration, and the one thing that makes
+  // a gesture this undiscoverable (shift-click isn't hinted at anywhere
+  // else in this app) legible once someone stumbles onto it.
+  let pathStatus = null;
+  if (pathAnchors.length === 1) {
+    pathStatus = { text: "Shift-click a second note to trace the path", tone: "" };
+  } else if (pathAnchors.length === 2) {
+    pathStatus = shortestPath
+      ? {
+        text: shortestPath.length === 2
+          ? "Directly connected"
+          : `Path found — ${ shortestPath.length } notes, ${ shortestPath.length - 1 } hops`,
+        tone: "found",
+      }
+      : { text: "No path between these notes", tone: "warn" };
+  } else if (graph.edges.length > 0) {
+    pathStatus = { text: "Shift-click two notes to trace a path between them", tone: "subtle" };
+  }
+
   return (
     <>
       <svg ref={ svgRef } className="note-constellation-svg" aria-hidden="true">
@@ -776,12 +947,17 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           <g className="note-constellation-edges">
             {
               graph.edges.map((edge, i) => {
-                const dimmed = hoveredId && edge.a !== hoveredId && edge.b !== hoveredId;
+                // An active path takes visual priority over a plain hover —
+                // a deliberately-set path is a stronger statement than a
+                // transient pointer position, and the two never need to
+                // disagree about what's dimmed at the same time.
+                const onPath = pathEdgeIds?.has(pairKey(edge.a, edge.b)) ?? false;
+                const dimmed = pathEdgeIds ? !onPath : (hoveredId && edge.a !== hoveredId && edge.b !== hoveredId);
                 return (
-                  <line
+                  <path
                     key={ edge.id }
                     ref={ (el) => { edgeElRefs.current[i] = el; } }
-                    className={ `note-constellation-edge ${ dimmed ? "dimmed" : "" }` }
+                    className={ `note-constellation-edge ${ dimmed ? "dimmed" : "" } ${ onPath ? "on-path" : "" }` }
                   />
                 );
               })
@@ -792,7 +968,9 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               graph.nodes.map((note) => {
                 const degree = degreeById.get(note.id) || 0;
                 const radius = Math.min(NODE_RADIUS_MAX, NODE_RADIUS_BASE + degree * NODE_RADIUS_PER_EDGE);
-                const dimmed = connectedIds && !connectedIds.has(note.id);
+                const onPath = pathNodeIds?.has(note.id) ?? false;
+                const isAnchor = pathAnchors.includes(note.id);
+                const dimmed = pathNodeIds ? !onPath : (connectedIds && !connectedIds.has(note.id));
                 const color = NOTE_COLORS[note.color] || "var(--page-ink-color)";
                 const shapes = getShapes(note.id, radius);
 
@@ -801,10 +979,18 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                     key={ note.id }
                     data-note-id={ note.id }
                     ref={ (el) => { nodeElRefs.current[note.id] = el; } }
-                    className={ `note-constellation-node ${ dimmed ? "dimmed" : "" }` }
+                    className={ `note-constellation-node ${ dimmed ? "dimmed" : "" } ${ onPath ? "on-path" : "" } ${ isAnchor ? "anchor" : "" }` }
                     onPointerEnter={ () => { setHoveredId(note.id); morphControllerRef.current?.enter(note.id); } }
                     onPointerLeave={ () => { setHoveredId((c) => (c === note.id ? null : c)); morphControllerRef.current?.leave(note.id); } }
                   >
+                    {
+                      isAnchor && (
+                        <circle
+                          className={ `note-constellation-anchor-ring ${ reduceMotion ? "static" : "" }` }
+                          r={ radius + 6 }
+                        />
+                      )
+                    }
                     <path
                       ref={ (el) => { blobPathElRefs.current[note.id] = el; } }
                       className="note-constellation-blob"
@@ -848,6 +1034,22 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                   )
                 }
               </div>
+            </motion.div>
+          )
+        }
+      </AnimatePresence>
+      <AnimatePresence mode="wait">
+        {
+          pathStatus && (
+            <motion.div
+              key={ pathStatus.text }
+              className={ `note-constellation-path-status ${ pathStatus.tone }` }
+              initial={{ opacity: 0, y: -8, scale: .92 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: .92, transition: { duration: .15 } }}
+              transition={ SNAPPY }
+            >
+              { pathStatus.text }
             </motion.div>
           )
         }
