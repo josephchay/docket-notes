@@ -154,6 +154,28 @@ const PAN_MOMENTUM_DAMPING = 0.92; // per-frame velocity retention once coasting
 const PAN_MOMENTUM_STOP = 4; // px/s — below this, momentum just stops rather than drifting imperceptibly forever
 const VIEW_RESET_DURATION = 0.6;
 
+// The elastic pan boundary — a real damped spring (semi-implicit Euler,
+// the same "v = (v + a·dt)·damping" scheme every physics loop in this file
+// already uses, just applied to the camera instead of a node), not a hard
+// clamp. "Ideal" is whatever camera position would perfectly center the
+// graph's own content in the current viewport at the current zoom — camera
+// (0,0,1) works out to exactly that at zoom 1 by construction (scaleX/Y
+// are defined so the domain always spans the full viewport there), so this
+// needs no separate "what does centered even mean" case for the common
+// case. BOUNDARY_FREE_RANGE is how far (as a fraction of the viewport's
+// own larger dimension) the camera can drift from ideal with zero
+// resistance — real direct-manipulation panning shouldn't fight back
+// mid-drag, so the spring only ever engages once a pan drag has actually
+// released (or after a wheel-zoom leaves the camera stranded out of
+// range), the same "free while dragging, corrects after" rubber-band most
+// scrollable UIs already use. BOUNDARY_STIFFNESS combined with the same
+// PAN_MOMENTUM_DAMPING the coast above already uses leaves this
+// underdamped enough to visibly overshoot back past the boundary once
+// before settling — the actual "elastic" of it, not just a smooth glide
+// home.
+const BOUNDARY_FREE_RANGE = 0.55;
+const BOUNDARY_STIFFNESS = 6;
+
 const truncateTitle = (title) => {
   const text = (title || "Untitled").trim() || "Untitled";
   return text.length > 20 ? `${ text.slice(0, 19) }…` : text;
@@ -561,6 +583,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // worldGroupRef's own transform every frame; vx/vy are the pan's own
     // momentum, decayed in tick() below once a pan drag releases.
     const camera = { x: 0, y: 0, zoom: 1, vx: 0, vy: 0 };
+    // True only while handleDblClick's own GSAP reset tween is actively
+    // driving camera.x/y/zoom directly — the momentum/boundary-spring
+    // block in tick() below has to stand down for that whole window, or
+    // both would be fighting over the same properties every frame.
+    let cameraAnimating = false;
 
     // Drag state lives here rather than per-node — only one node is ever
     // grabbed at a time, and this needs to track the raw pixel distance
@@ -593,7 +620,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         // Empty space — pan, not a node grab. Panning itself isn't gated
         // on reduced motion (it's direct manipulation, the same as
         // scrolling a page); only its own post-release momentum coast is
-        // (see handleUp below).
+        // (see handleUp below). Grabbing the camera directly always wins
+        // over any in-flight reset tween — kill it rather than let the two
+        // fight over camera.x/y for the rest of this drag.
+        gsap.killTweensOf(camera);
+        cameraAnimating = false;
         panDrag.active = true;
         panDrag.lastClientX = e.clientX;
         panDrag.lastClientY = e.clientY;
@@ -720,6 +751,9 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // after.
     const handleWheel = (e) => {
       e.preventDefault();
+      gsap.killTweensOf(camera);
+      cameraAnimating = false;
+
       const rect = svg.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
@@ -739,15 +773,24 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // pan/zoom-UI convention, not something this needed to invent.
     const handleDblClick = (e) => {
       if (e.target.closest("[data-note-id]")) return;
+      gsap.killTweensOf(camera);
       camera.vx = 0;
       camera.vy = 0;
 
       const target = { x: 0, y: 0, zoom: 1 };
       if (reduceMotionRef.current) {
+        cameraAnimating = false;
         Object.assign(camera, target);
         return;
       }
-      gsap.to(camera, { ...target, duration: VIEW_RESET_DURATION, ease: "power3.out", overwrite: "auto" });
+      cameraAnimating = true;
+      gsap.to(camera, {
+        ...target,
+        duration: VIEW_RESET_DURATION,
+        ease: "power3.out",
+        overwrite: "auto",
+        onComplete: () => { cameraAnimating = false; },
+      });
     };
 
     svg.addEventListener("pointerdown", handleDown);
@@ -771,30 +814,56 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         for (let s = 0; s < SUBSTEPS; s++) step(subDt);
       }
 
-      // The pan's own momentum — only ever active once a pan drag has
-      // released with some velocity still on it (reduced motion already
-      // zeroed it at release, see handleUp, so this naturally never runs
-      // there); decays exponentially each frame until it drops below
-      // PAN_MOMENTUM_STOP, at which point it's snapped to exactly zero
-      // rather than left drifting by some imperceptible fraction of a
-      // pixel forever.
-      if (!panDrag.active && (camera.vx !== 0 || camera.vy !== 0)) {
-        camera.x += camera.vx * dt;
-        camera.y += camera.vy * dt;
-        camera.vx *= PAN_MOMENTUM_DAMPING;
-        camera.vy *= PAN_MOMENTUM_DAMPING;
-        if (Math.hypot(camera.vx, camera.vy) < PAN_MOMENTUM_STOP) {
-          camera.vx = 0;
-          camera.vy = 0;
+      const rect = svg.getBoundingClientRect();
+      const scaleX = rect.width / DOMAIN_W;
+      const scaleY = rect.height / DOMAIN_H;
+
+      // The pan's own momentum plus the elastic boundary spring (see the
+      // BOUNDARY_FREE_RANGE module comment for the full reasoning) —
+      // active once a pan drag has released (reduced motion already
+      // zeroed the velocity at release, see handleUp, so this naturally
+      // never runs there) and no reset tween currently owns the camera.
+      if (!panDrag.active && !cameraAnimating) {
+        // "Ideal" = whatever camera position centers the graph's own
+        // content in the current viewport at the current zoom.
+        const idealX = rect.width / 2 - (DOMAIN_W / 2) * scaleX * camera.zoom;
+        const idealY = rect.height / 2 - (DOMAIN_H / 2) * scaleY * camera.zoom;
+        const driftX = camera.x - idealX;
+        const driftY = camera.y - idealY;
+        const driftDist = Math.hypot(driftX, driftY);
+        const freeRange = Math.max(rect.width, rect.height) * BOUNDARY_FREE_RANGE;
+        const outOfRange = driftDist > freeRange;
+
+        if (outOfRange) {
+          // The nearest point still inside the free range, not all the way
+          // back to dead-center — the spring pulls back to the boundary's
+          // own edge, the same way a real rubber band only resists past
+          // its own slack, not all the way to its anchor.
+          const targetX = idealX + (driftX / driftDist) * freeRange;
+          const targetY = idealY + (driftY / driftDist) * freeRange;
+          camera.vx += -(camera.x - targetX) * BOUNDARY_STIFFNESS * dt;
+          camera.vy += -(camera.y - targetY) * BOUNDARY_STIFFNESS * dt;
+        }
+
+        if (outOfRange || camera.vx !== 0 || camera.vy !== 0) {
+          camera.x += camera.vx * dt;
+          camera.y += camera.vy * dt;
+          camera.vx *= PAN_MOMENTUM_DAMPING;
+          camera.vy *= PAN_MOMENTUM_DAMPING;
+          // Only ever snapped fully to rest inside the free range — outside
+          // it, the spring above still has real pulling-back left to do
+          // even at a momentarily small velocity (e.g. right at the peak
+          // of an overshoot), and zeroing it there would strand the camera
+          // outside the boundary instead of letting it finish settling.
+          if (!outOfRange && Math.hypot(camera.vx, camera.vy) < PAN_MOMENTUM_STOP) {
+            camera.vx = 0;
+            camera.vy = 0;
+          }
         }
       }
       if (worldGroupRef.current) {
         worldGroupRef.current.setAttribute("transform", `translate(${ camera.x },${ camera.y }) scale(${ camera.zoom })`);
       }
-
-      const rect = svg.getBoundingClientRect();
-      const scaleX = rect.width / DOMAIN_W;
-      const scaleY = rect.height / DOMAIN_H;
 
       byId.forEach((node, id) => {
         const el = nodeElRefs.current[id];
