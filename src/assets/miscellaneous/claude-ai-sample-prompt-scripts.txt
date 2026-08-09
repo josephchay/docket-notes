@@ -1,10 +1,12 @@
 [Template Categories Samples]
 
-Sample animation packages: animejs, xstate, gsap, webgl, threejs, framer motion, three, matter js, flubber, lenis, and other animation libraries or packages.
+sample animation packages: animejs, xstate, gsap, webgl, threejs, framer motion, three, matter js, flubber, lenis, and other animation libraries or packages.
 
-Sample animation effects: morphical, starchy, fluid, bouncy, jelly, elastic, stretchy, weightier, liquid, distortion, shaders, easing, springs, 
+sample animation effects: morphical, starchy, fluid, bouncy, jelly, elastic, stretchy, weightier, liquid, distortion, shaders, easing, springs, 
 
-Sample systems: physics, mathematics, innovative, 
+sample systems: physics, mathematics, innovative, 
+
+sample styles: Awwwards, interactive
 
 -----------------------
 
