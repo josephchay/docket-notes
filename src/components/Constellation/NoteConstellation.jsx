@@ -6,6 +6,7 @@ import { FaStar } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { blobPath, createBlobMorph } from "../../utils/blob";
+import { Quadtree } from "../../utils/quadtree";
 import { SNAPPY } from "../Motion";
 import { constellationMachine, DIVE_DURATION_MS } from "./ConstellationState";
 
@@ -40,10 +41,30 @@ import "./NoteConstellation.css";
 // that spaces n nodes evenly across the given area — which is also why
 // this needs no per-note-count tuning as the desk grows or shrinks; k
 // simply shrinks to keep the same area comfortably packed.
+//
+// Repulsion (the all-pairs half — attraction is edge-pairs-only, already
+// far cheaper) now runs through utils/quadtree.js's own Barnes-Hut
+// approximation rather than a direct O(n²) double loop: every substep, the
+// current positions get bucketed into a fresh quadtree, and each node's
+// own repulsion total is accumulated by walking that tree rather than
+// visiting every other node individually — see BARNES_HUT_THETA below for
+// the accuracy/speed tradeoff that walk makes. The physics themselves are
+// unchanged (this approximates the exact same fr(d) = k²/d sum, not a
+// different force), and at the note counts a personal desk realistically
+// reaches, the two are close enough in raw runtime that the honest reason
+// to still do this is complexity, not a measured bottleneck — O(n log n)
+// is what keeps this from becoming one as a desk's own collection grows
+// well past what anyone would actually sit and watch an O(n²) version of
+// this struggle with.
 const DOMAIN_W = 160;
 const DOMAIN_H = 100;
 const FR_CONSTANT = 1;
 const MIN_DIST = 3; // softening floor, domain units — avoids the 1/d singularity as two nodes approach
+// Barnes-Hut's own accuracy/speed knob (see Quadtree.accumulateForce's own
+// comment for the full reasoning) — 0.8 rather than the 0.5 more common in
+// scientific N-body work, since this only ever needs to look structurally
+// right, not carry a precise force value anywhere.
+const BARNES_HUT_THETA = 0.8;
 const CENTER_STRENGTH = 0.015; // weak pull toward the domain center, keeps untagged/disconnected notes from drifting to infinity
 const DAMPING = 0.9; // per-substep velocity retention
 const VELOCITY_CLAMP = 70;
@@ -224,29 +245,52 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
 
     const k = FR_CONSTANT * Math.sqrt((DOMAIN_W * DOMAIN_H) / Math.max(1, noteList.length));
 
-    // One substep — the two Fruchterman-Reingold force formulas from the
-    // file header, applied all-pairs for repulsion (O(n²) — fine at the
-    // note counts a personal desk realistically reaches; a spatial grid
-    // like utils/sphGrid.js's would only start paying for itself well
-    // beyond that) and edge-pairs-only for attraction, then a weak center
-    // pull and damped-velocity integration.
+    // One substep — repulsion (see the file header for the Barnes-Hut
+    // reasoning) and edge-pairs-only attraction, then a weak center pull
+    // and damped-velocity integration.
     const step = (dt) => {
       byId.forEach((node) => { node.fx = 0; node.fy = 0; });
 
-      const ids = Array.from(byId.keys());
-      for (let i = 0; i < ids.length; i++) {
-        const a = byId.get(ids[i]);
-        for (let j = i + 1; j < ids.length; j++) {
-          const b = byId.get(ids[j]);
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const dist = Math.max(MIN_DIST, Math.hypot(dx, dy));
-          const force = (k * k) / dist;
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
-          a.fx -= fx; a.fy -= fy;
-          b.fx += fx; b.fy += fy;
-        }
+      // A fresh quadtree every substep, since every node's position moved
+      // last substep — sized to the graph's own current extent (padded a
+      // little) rather than the fixed DOMAIN_W×DOMAIN_H, since a flung or
+      // dragged node can briefly sit outside that nominal domain and the
+      // tree's own root box needs to actually contain every point.
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      byId.forEach((node) => {
+        if (node.x < minX) minX = node.x;
+        if (node.x > maxX) maxX = node.x;
+        if (node.y < minY) minY = node.y;
+        if (node.y > maxY) maxY = node.y;
+      });
+      const pad = 5;
+      const extent = Math.max(maxX - minX, maxY - minY, 1) + pad * 2;
+      const treeOriginX = (minX + maxX) / 2 - extent / 2;
+      const treeOriginY = (minY + maxY) / 2 - extent / 2;
+
+      const tree = new Quadtree(treeOriginX, treeOriginY, extent);
+      const points = [];
+      byId.forEach((node) => {
+        const point = { x: node.x, y: node.y };
+        points.push({ point, node });
+        tree.insert(point);
+      });
+      tree.finalize();
+
+      // The exact same fr(d) = k²/d formula the old all-pairs loop used —
+      // dx/dy point from the query toward the other mass (Quadtree's own
+      // convention), so the force itself is negated to point away, which
+      // is what makes this repulsive.
+      const repel = (dx, dy, dist, weight) => {
+        const d = Math.max(MIN_DIST, dist);
+        const magnitude = (k * k * weight) / d;
+        return { fx: -(dx / d) * magnitude, fy: -(dy / d) * magnitude };
+      };
+
+      for (const { point, node } of points) {
+        const { fx, fy } = tree.accumulateForce(point.x, point.y, point, BARNES_HUT_THETA, repel);
+        node.fx += fx;
+        node.fy += fy;
       }
 
       for (const edge of edgeList) {
