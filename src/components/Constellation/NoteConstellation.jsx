@@ -107,6 +107,26 @@ const HOVER_MORPH_DURATION = 0.45;
 const BLOOM_DURATION = 0.85;
 const BLOOM_STAGGER = 0.028;
 
+// The camera — a plain translate+scale on a wrapping <g> (see
+// worldGroupRef below), separate from the physics/layout itself, which
+// stays in the same fixed domain space regardless of how the viewport is
+// currently framing it. Panning tracks the pointer 1:1 while actively
+// dragging (direct manipulation shouldn't lag), then hands off to a real
+// velocity-decay coast on release — the same exponential-damping idea
+// FoamPool's own drag already uses, just applied to the view instead of a
+// particle. Wheel-zoom is anchored to the cursor (the same point on the
+// graph stays under the pointer as the zoom changes) and applied directly
+// per wheel event rather than eased — real wheel/trackpad input already
+// arrives as a sequence of many small deltas during an actual gesture, so
+// there's no separate smoothing layer to add on top without just fighting
+// the input's own natural granularity.
+const MIN_ZOOM = 0.4;
+const MAX_ZOOM = 3.5;
+const WHEEL_SENSITIVITY = 0.0018;
+const PAN_MOMENTUM_DAMPING = 0.92; // per-frame velocity retention once coasting
+const PAN_MOMENTUM_STOP = 4; // px/s — below this, momentum just stops rather than drifting imperceptibly forever
+const VIEW_RESET_DURATION = 0.6;
+
 const truncateTitle = (title) => {
   const text = (title || "Untitled").trim() || "Untitled";
   return text.length > 20 ? `${ text.slice(0, 19) }…` : text;
@@ -114,6 +134,7 @@ const truncateTitle = (title) => {
 
 const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }) => {
   const svgRef = useRef(null);
+  const worldGroupRef = useRef(null);
   const nodeElRefs = useRef({});
   const edgeElRefs = useRef([]);
   const blobPathElRefs = useRef({});
@@ -393,13 +414,29 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       leave: (id) => morphTo(id, 0),
     };
 
+    // Screen pixels within the SVG's own box → domain space, inverting the
+    // camera's own translate+scale first (see the MIN_ZOOM/MAX_ZOOM
+    // comment above) — without that inversion, dragging a node while
+    // panned or zoomed would grab the wrong point entirely, since a given
+    // screen position no longer corresponds to the same domain coordinate
+    // once the camera has moved away from its default identity transform.
     const domainFromEvent = (e) => {
       const rect = svg.getBoundingClientRect();
+      const localX = e.clientX - rect.left;
+      const localY = e.clientY - rect.top;
+      const worldPixelX = (localX - camera.x) / camera.zoom;
+      const worldPixelY = (localY - camera.y) / camera.zoom;
       return {
-        x: ((e.clientX - rect.left) / rect.width) * DOMAIN_W,
-        y: ((e.clientY - rect.top) / rect.height) * DOMAIN_H,
+        x: (worldPixelX / rect.width) * DOMAIN_W,
+        y: (worldPixelY / rect.height) * DOMAIN_H,
       };
     };
+
+    // The camera itself — see the MIN_ZOOM/MAX_ZOOM module comment for the
+    // full reasoning. x/y/zoom are what actually gets written to
+    // worldGroupRef's own transform every frame; vx/vy are the pan's own
+    // momentum, decayed in tick() below once a pan drag releases.
+    const camera = { x: 0, y: 0, zoom: 1, vx: 0, vy: 0 };
 
     // Drag state lives here rather than per-node — only one node is ever
     // grabbed at a time, and this needs to track the raw pixel distance
@@ -407,6 +444,14 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // HistoryConstellation.jsx both already use) separately from the
     // domain-space velocity a release hands back to the node.
     const drag = { id: null, lastClientX: 0, lastClientY: 0, lastDomainX: 0, lastDomainY: 0, lastT: 0, pixelDistance: 0, vx: 0, vy: 0 };
+
+    // A drag that starts on empty space (no [data-note-id] under the
+    // pointer) pans the camera instead of grabbing a node — tracked
+    // separately from `drag` above since the two are mutually exclusive
+    // per gesture but need different state (a node drag hands off a
+    // domain-space velocity to physics; a pan hands off a screen-space
+    // velocity to the camera's own momentum).
+    const panDrag = { active: false, lastClientX: 0, lastClientY: 0, lastT: 0 };
 
     // The physics-displacing part of a drag (node.dragging = true, and
     // handleMove below actually repositioning it) is disabled under
@@ -419,7 +464,22 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // handleUp below can tell a stationary click from a drag attempt.
     const handleDown = (e) => {
       const target = e.target.closest("[data-note-id]");
-      if (!target) return;
+
+      if (!target) {
+        // Empty space — pan, not a node grab. Panning itself isn't gated
+        // on reduced motion (it's direct manipulation, the same as
+        // scrolling a page); only its own post-release momentum coast is
+        // (see handleUp below).
+        panDrag.active = true;
+        panDrag.lastClientX = e.clientX;
+        panDrag.lastClientY = e.clientY;
+        panDrag.lastT = performance.now();
+        camera.vx = 0;
+        camera.vy = 0;
+        svg.style.cursor = "grabbing";
+        return;
+      }
+
       const id = target.getAttribute("data-note-id");
       const node = byId.get(id);
       if (!node) return;
@@ -438,6 +498,27 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     };
 
     const handleMove = (e) => {
+      if (panDrag.active) {
+        const now = performance.now();
+        const dtSec = Math.max(0.001, (now - panDrag.lastT) / 1000);
+        const dx = e.clientX - panDrag.lastClientX;
+        const dy = e.clientY - panDrag.lastClientY;
+
+        camera.x += dx;
+        camera.y += dy;
+        // Implied velocity from this move alone, same "just read the
+        // latest instantaneous rate" approach the node drag below already
+        // uses — only the very last of these survives to become the
+        // release's own momentum.
+        camera.vx = dx / dtSec;
+        camera.vy = dy / dtSec;
+
+        panDrag.lastClientX = e.clientX;
+        panDrag.lastClientY = e.clientY;
+        panDrag.lastT = now;
+        return;
+      }
+
       if (!drag.id) return;
       const node = byId.get(drag.id);
       if (!node) return;
@@ -466,6 +547,18 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     };
 
     const handleUp = () => {
+      if (panDrag.active) {
+        panDrag.active = false;
+        svg.style.cursor = "";
+        // The coast itself is what reduced motion asks this app not to
+        // introduce on its own — the pan drag that already happened was
+        // the visitor's own direct input, not autonomous motion, but
+        // continuing to glide afterward is exactly the kind of inertial
+        // scrolling prefers-reduced-motion is meant to suppress.
+        if (reduceMotionRef.current) { camera.vx = 0; camera.vy = 0; }
+        return;
+      }
+
       if (!drag.id) return;
       const node = byId.get(drag.id);
       if (node) {
@@ -484,9 +577,49 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       drag.id = null;
     };
 
+    // Wheel-zoom, anchored to the cursor — see the MIN_ZOOM/MAX_ZOOM
+    // module comment for why this is applied directly per event rather
+    // than eased. Standard "keep the point under the cursor fixed" math:
+    // find that point in world space before the zoom changes, then solve
+    // for whatever camera.x/y keeps it under the same screen position
+    // after.
+    const handleWheel = (e) => {
+      e.preventDefault();
+      const rect = svg.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const worldX = (mouseX - camera.x) / camera.zoom;
+      const worldY = (mouseY - camera.y) / camera.zoom;
+
+      const zoomFactor = Math.exp(-e.deltaY * WHEEL_SENSITIVITY);
+      const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.zoom * zoomFactor));
+
+      camera.x = mouseX - worldX * nextZoom;
+      camera.y = mouseY - worldY * nextZoom;
+      camera.zoom = nextZoom;
+    };
+
+    // Double-clicking empty space resets the view — a small, standard
+    // pan/zoom-UI convention, not something this needed to invent.
+    const handleDblClick = (e) => {
+      if (e.target.closest("[data-note-id]")) return;
+      camera.vx = 0;
+      camera.vy = 0;
+
+      const target = { x: 0, y: 0, zoom: 1 };
+      if (reduceMotionRef.current) {
+        Object.assign(camera, target);
+        return;
+      }
+      gsap.to(camera, { ...target, duration: VIEW_RESET_DURATION, ease: "power3.out", overwrite: "auto" });
+    };
+
     svg.addEventListener("pointerdown", handleDown);
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    svg.addEventListener("wheel", handleWheel, { passive: false });
+    svg.addEventListener("dblclick", handleDblClick);
 
     let lastTime = performance.now();
     let raf = null;
@@ -501,6 +634,27 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       if (!reduceMotionRef.current) {
         const subDt = dt / SUBSTEPS;
         for (let s = 0; s < SUBSTEPS; s++) step(subDt);
+      }
+
+      // The pan's own momentum — only ever active once a pan drag has
+      // released with some velocity still on it (reduced motion already
+      // zeroed it at release, see handleUp, so this naturally never runs
+      // there); decays exponentially each frame until it drops below
+      // PAN_MOMENTUM_STOP, at which point it's snapped to exactly zero
+      // rather than left drifting by some imperceptible fraction of a
+      // pixel forever.
+      if (!panDrag.active && (camera.vx !== 0 || camera.vy !== 0)) {
+        camera.x += camera.vx * dt;
+        camera.y += camera.vy * dt;
+        camera.vx *= PAN_MOMENTUM_DAMPING;
+        camera.vy *= PAN_MOMENTUM_DAMPING;
+        if (Math.hypot(camera.vx, camera.vy) < PAN_MOMENTUM_STOP) {
+          camera.vx = 0;
+          camera.vy = 0;
+        }
+      }
+      if (worldGroupRef.current) {
+        worldGroupRef.current.setAttribute("transform", `translate(${ camera.x },${ camera.y }) scale(${ camera.zoom })`);
       }
 
       const rect = svg.getBoundingClientRect();
@@ -528,13 +682,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
 
       // The hover card follows its node every frame, since the graph keeps
       // moving underneath it — clamped to the stage's own bounds the same
-      // way HistoryConstellation.jsx's own hover label already is.
+      // way HistoryConstellation.jsx's own hover label already is. The
+      // card itself lives outside worldGroupRef (it's a plain positioned
+      // div, not SVG content the camera transform already applies to), so
+      // its own screen position has to fold that transform in by hand —
+      // world-pixel position first, then the same translate+scale the
+      // camera applies to everything else in the graph.
       if (hoveredIdRef.current) {
         const node = byId.get(hoveredIdRef.current);
         const card = cardElRef.current;
         if (node && card) {
-          const px = Math.min(Math.max(node.x * scaleX, 90), rect.width - 90);
-          const py = Math.max(node.y * scaleY, 70);
+          const screenX = camera.x + node.x * scaleX * camera.zoom;
+          const screenY = camera.y + node.y * scaleY * camera.zoom;
+          const px = Math.min(Math.max(screenX, 90), rect.width - 90);
+          const py = Math.max(screenY, 70);
           card.style.transform = `translate(${ px }px, ${ py }px) translate(-50%, -125%)`;
         }
       }
@@ -559,7 +720,10 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       svg.removeEventListener("pointerdown", handleDown);
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      svg.removeEventListener("wheel", handleWheel);
+      svg.removeEventListener("dblclick", handleDblClick);
       gsap.killTweensOf(Array.from(byId.values()));
+      gsap.killTweensOf(camera);
       blobMorphers.forEach(({ drive }) => gsap.killTweensOf(drive));
       morphControllerRef.current = null;
     };
@@ -603,50 +767,57 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   return (
     <>
       <svg ref={ svgRef } className="note-constellation-svg" aria-hidden="true">
-        <g className="note-constellation-edges">
-          {
-            graph.edges.map((edge, i) => {
-              const dimmed = hoveredId && edge.a !== hoveredId && edge.b !== hoveredId;
-              return (
-                <line
-                  key={ edge.id }
-                  ref={ (el) => { edgeElRefs.current[i] = el; } }
-                  className={ `note-constellation-edge ${ dimmed ? "dimmed" : "" }` }
-                />
-              );
-            })
-          }
-        </g>
-        <g className="note-constellation-nodes">
-          {
-            graph.nodes.map((note) => {
-              const degree = degreeById.get(note.id) || 0;
-              const radius = Math.min(NODE_RADIUS_MAX, NODE_RADIUS_BASE + degree * NODE_RADIUS_PER_EDGE);
-              const dimmed = connectedIds && !connectedIds.has(note.id);
-              const color = NOTE_COLORS[note.color] || "var(--page-ink-color)";
-              const shapes = getShapes(note.id, radius);
-
-              return (
-                <g
-                  key={ note.id }
-                  data-note-id={ note.id }
-                  ref={ (el) => { nodeElRefs.current[note.id] = el; } }
-                  className={ `note-constellation-node ${ dimmed ? "dimmed" : "" }` }
-                  onPointerEnter={ () => { setHoveredId(note.id); morphControllerRef.current?.enter(note.id); } }
-                  onPointerLeave={ () => { setHoveredId((c) => (c === note.id ? null : c)); morphControllerRef.current?.leave(note.id); } }
-                >
-                  <path
-                    ref={ (el) => { blobPathElRefs.current[note.id] = el; } }
-                    className="note-constellation-blob"
-                    transform={ `translate(${ shapes.offset },${ shapes.offset })` }
-                    d={ shapes.rest }
-                    fill={ color }
+        {/* Everything the camera pans/zooms lives in this one wrapping
+            group — see the MIN_ZOOM/MAX_ZOOM module comment. The physics
+            layout itself (every child's own position below) stays in the
+            same fixed domain space regardless of what this group's own
+            transform currently is. */}
+        <g ref={ worldGroupRef } className="note-constellation-world">
+          <g className="note-constellation-edges">
+            {
+              graph.edges.map((edge, i) => {
+                const dimmed = hoveredId && edge.a !== hoveredId && edge.b !== hoveredId;
+                return (
+                  <line
+                    key={ edge.id }
+                    ref={ (el) => { edgeElRefs.current[i] = el; } }
+                    className={ `note-constellation-edge ${ dimmed ? "dimmed" : "" }` }
                   />
-                  <text className="note-constellation-label" y={ radius + 16 }>{ truncateTitle(note.title) }</text>
-                </g>
-              );
-            })
-          }
+                );
+              })
+            }
+          </g>
+          <g className="note-constellation-nodes">
+            {
+              graph.nodes.map((note) => {
+                const degree = degreeById.get(note.id) || 0;
+                const radius = Math.min(NODE_RADIUS_MAX, NODE_RADIUS_BASE + degree * NODE_RADIUS_PER_EDGE);
+                const dimmed = connectedIds && !connectedIds.has(note.id);
+                const color = NOTE_COLORS[note.color] || "var(--page-ink-color)";
+                const shapes = getShapes(note.id, radius);
+
+                return (
+                  <g
+                    key={ note.id }
+                    data-note-id={ note.id }
+                    ref={ (el) => { nodeElRefs.current[note.id] = el; } }
+                    className={ `note-constellation-node ${ dimmed ? "dimmed" : "" }` }
+                    onPointerEnter={ () => { setHoveredId(note.id); morphControllerRef.current?.enter(note.id); } }
+                    onPointerLeave={ () => { setHoveredId((c) => (c === note.id ? null : c)); morphControllerRef.current?.leave(note.id); } }
+                  >
+                    <path
+                      ref={ (el) => { blobPathElRefs.current[note.id] = el; } }
+                      className="note-constellation-blob"
+                      transform={ `translate(${ shapes.offset },${ shapes.offset })` }
+                      d={ shapes.rest }
+                      fill={ color }
+                    />
+                    <text className="note-constellation-label" y={ radius + 16 }>{ truncateTitle(note.title) }</text>
+                  </g>
+                );
+              })
+            }
+          </g>
         </g>
       </svg>
       <AnimatePresence>

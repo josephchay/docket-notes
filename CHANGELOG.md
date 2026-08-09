@@ -25,6 +25,9 @@
 - Temporary music 
 - Cloth field animation effect in Command Ink
 - Added initial Note constellation feature
+- View Panning for the Note constellation
+- Double clicking to the Note constellation to reset the view
+- wheel-zoom for Note constellation
 
 ### Changed
 

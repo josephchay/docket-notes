@@ -4,6 +4,14 @@
   width: 100%;
   height: 100%;
   overflow: visible;
+  /* Panning empty space is a real interaction now (see NoteConstellation.jsx's
+     own camera) — cursor:grabbing is written imperatively straight onto
+     this element for the duration of an actual pan drag, taking over from
+     this default; individual nodes carry their own more specific cursor
+     rule, which wins over this one whenever the pointer is actually over
+     one. */
+  cursor: grab;
+  touch-action: none;
 }
 
 .note-constellation-edges {
