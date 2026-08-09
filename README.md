@@ -1,5 +1,7 @@
 # Let there be (Docket) ~ Designed, Prompted, and Coded with Claude AI
 
+![image](https://github.com/user-attachments/assets/085917ef-1291-4255-9ffc-30c3e926d92c)
+![image](https://github.com/user-attachments/assets/378d0075-b560-4fab-a5b8-e65986419f7c)
 ![image](https://github.com/user-attachments/assets/152f9046-dd56-4665-baf2-efdefbc465b7)
 ![image](https://github.com/user-attachments/assets/967049da-61de-4733-b9c8-d84c23895de9)
 ![image](https://github.com/user-attachments/assets/92df0668-f7c0-448a-ac05-906fd61f3022)
@@ -14,7 +16,6 @@
 ![image](https://github.com/user-attachments/assets/3a2e2d64-2be8-432f-bb61-072b3d9140ba)
 ![image](https://github.com/user-attachments/assets/3c498f7b-41cd-495b-a8e4-fe7ce6aa3e19)
 ![image](https://github.com/user-attachments/assets/9eb70bb2-999f-4521-9528-da3eb1f4bf28)
-![image](https://github.com/user-attachments/assets/378d0075-b560-4fab-a5b8-e65986419f7c)
 
 ## Sites
 
@@ -37,6 +38,7 @@ Session Storage and local storage is being used temporarily.
 ## TODO
 
 1. Some or all notes during delete animation the note became shrinked-square like the note shape itself since <a href="https://github.com/josephchay/docket-notes/tree/71dbccb3d8b35017268a152894c92bc2065bcac1" target="_blank">71dbccb3d8b35017268a152894c92bc2065bcac1</a>, instead of circle instead like in commit: <a href="https://github.com/josephchay/docket-notes/tree/6d44f9e460ce52f49906022e3bc3965baf9c896c" target="_blank">6d44f9e460ce52f49906022e3bc3965baf9c896c</a>
+- Sound cues (enabled/disabled in Settings panel) only play for some interactables
 
 ## Acknowledgements
 

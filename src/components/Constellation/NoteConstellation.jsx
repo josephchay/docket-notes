@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import gsap from "gsap";
+import { interpret } from "xstate";
+import { FaStar } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
+import { blobPath, createBlobMorph } from "../../utils/blob";
+import { SNAPPY } from "../Motion";
+import { constellationMachine, DIVE_DURATION_MS } from "./ConstellationState";
 
 import "./NoteConstellation.css";
 
@@ -56,6 +63,29 @@ const NODE_RADIUS_BASE = 13;
 const NODE_RADIUS_PER_EDGE = 2;
 const NODE_RADIUS_MAX = 26;
 
+// Blob shapes — see utils/blob.js's own blobPath for the actual Catmull-Rom
+// construction (the same one every dot-to-sheet panel's own reveal already
+// uses via useBlobClipMorph). Both shapes share one box size per node (see
+// getShapes below) — deliberately NOT a bigger box for the hover shape,
+// since flubber's interpolate() matches raw path coordinates between two
+// shapes, and two boxes of different sizes don't share a center; growing
+// on hover is instead a plain uniform scale (hoverScale, composed into the
+// same transform the tick loop already writes), while the morph itself
+// only ever changes the silhouette's own wobble.
+const BLOB_POINTS_REST = 8;
+const BLOB_IRREGULARITY_REST = 0.28;
+const BLOB_POINTS_HOVER = 10;
+const BLOB_IRREGULARITY_HOVER = 0.46;
+const HOVER_SCALE_BOOST = 0.32; // a fully-hovered node grows to 1.32× its resting size
+const HOVER_MORPH_DURATION = 0.45;
+
+// Bloom-in on open — GSAP staggered elastic entrance, the same technique
+// HistoryConstellation.jsx's own uReveal sweep uses, just driving a
+// per-node scale here instead of a shared shader uniform (this is DOM/SVG,
+// not WebGL, so there's no single uniform to sweep).
+const BLOOM_DURATION = 0.85;
+const BLOOM_STAGGER = 0.028;
+
 const truncateTitle = (title) => {
   const text = (title || "Untitled").trim() || "Untitled";
   return text.length > 20 ? `${ text.slice(0, 19) }…` : text;
@@ -65,8 +95,19 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   const svgRef = useRef(null);
   const nodeElRefs = useRef({});
   const edgeElRefs = useRef([]);
+  const blobPathElRefs = useRef({});
+  const cardElRef = useRef(null);
+  const shapeCacheRef = useRef(new Map());
+  const morphControllerRef = useRef(null);
+
   const [graph, setGraph] = useState({ nodes: [], edges: [] });
   const [hoveredId, setHoveredId] = useState(null);
+  const [phase, setPhase] = useState("idle");
+  const [selectedId, setSelectedId] = useState(null);
+  // A stable service instance for this component's whole lifetime — same
+  // useState-initializer convention SprintPanel.jsx's own interpret() call
+  // already uses, so it isn't recreated every render.
+  const [service] = useState(() => interpret(constellationMachine));
 
   const notesRef = useRef(notes);
   notesRef.current = notes;
@@ -74,6 +115,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   onSelectRef.current = onSelectNote;
   const reduceMotionRef = useRef(reduceMotion);
   reduceMotionRef.current = reduceMotion;
+  const hoveredIdRef = useRef(hoveredId);
+  hoveredIdRef.current = hoveredId;
+
+  // See ConstellationState.js's own header comment for why onSelectNote is
+  // only ever called from here, once the machine reaches "done" — never
+  // directly from the pointerup handler further down.
+  useEffect(() => {
+    service.onTransition((state) => {
+      setPhase(String(state.value));
+      setSelectedId(state.context.selectedId);
+      if (state.value === "done") onSelectRef.current?.(state.context.selectedId);
+    }).start();
+    return () => service.stop();
+  }, [service]);
 
   // Every note connected to (or, via itself, matching) the hovered one —
   // recomputed only on hover change, not every physics frame, since it
@@ -97,6 +152,29 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     });
     return map;
   }, [graph.edges]);
+
+  const hoveredNote = useMemo(
+    () => (hoveredId ? graph.nodes.find((note) => note.id === hoveredId) || null : null),
+    [hoveredId, graph.nodes]
+  );
+
+  // Cached per-note, keyed on radius too — regenerated only when a note's
+  // own degree actually changes (which only happens when the panel reopens
+  // and rebuilds the whole graph), not on every render.
+  const getShapes = (id, radius) => {
+    const cached = shapeCacheRef.current.get(id);
+    if (cached && cached.radius === radius) return cached;
+
+    const size = radius * 2;
+    const entry = {
+      radius,
+      offset: -radius,
+      rest: blobPath(size, size, BLOB_POINTS_REST, BLOB_IRREGULARITY_REST),
+      hover: blobPath(size, size, BLOB_POINTS_HOVER, BLOB_IRREGULARITY_HOVER),
+    };
+    shapeCacheRef.current.set(id, entry);
+    return entry;
+  };
 
   useEffect(() => {
     const noteList = notesRef.current;
@@ -125,6 +203,8 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         fx: 0,
         fy: 0,
         dragging: false,
+        revealScale: reduceMotionRef.current ? 1 : 0,
+        hoverScale: 1,
       });
     });
 
@@ -205,7 +285,69 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
 
     if (reduceMotionRef.current) {
       for (let i = 0; i < SETTLE_ITERATIONS; i++) step(SETTLE_DT);
+    } else {
+      // GSAP staggered bloom — tweens each node's own revealScale from 0→1
+      // with an elastic overshoot; the tick loop below folds it into the
+      // transform it already writes every frame, so this needs no special
+      // rendering path of its own.
+      gsap.to(Array.from(byId.values()), {
+        revealScale: 1,
+        duration: BLOOM_DURATION,
+        ease: "elastic.out(1, 0.55)",
+        stagger: { each: BLOOM_STAGGER, from: "random" },
+      });
     }
+
+    // Hover-blob morphing — a real flubber shape interpolation between each
+    // node's resting and hover silhouettes (see the file header on why both
+    // share one box size), built lazily the first time a given node is
+    // actually hovered rather than upfront for all of them, since most
+    // nodes on a large desk are never hovered in a given session.
+    const blobMorphers = new Map();
+    const getMorpher = (id) => {
+      let entry = blobMorphers.get(id);
+      if (entry) return entry;
+
+      const pathEl = blobPathElRefs.current[id];
+      const shapes = shapeCacheRef.current.get(id);
+      if (!pathEl || !shapes) return null;
+
+      const morph = createBlobMorph(pathEl, [shapes.rest, shapes.hover]);
+      morph.set(0);
+      entry = { morph, drive: { t: 0 } };
+      blobMorphers.set(id, entry);
+      return entry;
+    };
+
+    const morphTo = (id, target) => {
+      const entry = getMorpher(id);
+      if (!entry) return;
+      const node = byId.get(id);
+
+      const apply = (t) => {
+        entry.morph.set(t);
+        if (node) node.hoverScale = 1 + t * HOVER_SCALE_BOOST;
+      };
+
+      if (reduceMotionRef.current) {
+        entry.drive.t = target;
+        apply(target);
+        return;
+      }
+
+      gsap.to(entry.drive, {
+        t: target,
+        duration: HOVER_MORPH_DURATION,
+        ease: "elastic.out(1, .55)",
+        overwrite: "auto",
+        onUpdate: () => apply(entry.drive.t),
+      });
+    };
+
+    morphControllerRef.current = {
+      enter: (id) => morphTo(id, 1),
+      leave: (id) => morphTo(id, 0),
+    };
 
     const domainFromEvent = (e) => {
       const rect = svg.getBoundingClientRect();
@@ -222,20 +364,23 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // domain-space velocity a release hands back to the node.
     const drag = { id: null, lastClientX: 0, lastClientY: 0, lastDomainX: 0, lastDomainY: 0, lastT: 0, pixelDistance: 0, vx: 0, vy: 0 };
 
-    // Disabled outright under reduced motion — same choice ClothField.jsx
-    // makes and for the same reason: a grabbed node doesn't just move
-    // itself, it displaces everything the repulsion force still feels it
-    // pushing against, which is exactly the kind of cascading motion
-    // reduced motion asks this app not to introduce on its own.
+    // The physics-displacing part of a drag (node.dragging = true, and
+    // handleMove below actually repositioning it) is disabled under
+    // reduced motion — same choice ClothField.jsx makes and for the same
+    // reason: a grabbed node doesn't just move itself, it displaces
+    // everything the repulsion force still feels it pushing against, which
+    // is exactly the kind of cascading motion reduced motion asks this app
+    // not to introduce on its own. Click-to-select still has to work
+    // though — this still tracks pixelDistance either way, purely so
+    // handleUp below can tell a stationary click from a drag attempt.
     const handleDown = (e) => {
-      if (reduceMotionRef.current) return;
       const target = e.target.closest("[data-note-id]");
       if (!target) return;
       const id = target.getAttribute("data-note-id");
       const node = byId.get(id);
       if (!node) return;
 
-      node.dragging = true;
+      if (!reduceMotionRef.current) node.dragging = true;
       const { x, y } = domainFromEvent(e);
       drag.id = id;
       drag.pixelDistance = 0;
@@ -256,6 +401,8 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       drag.pixelDistance += Math.abs(e.clientX - drag.lastClientX) + Math.abs(e.clientY - drag.lastClientY);
       drag.lastClientX = e.clientX;
       drag.lastClientY = e.clientY;
+
+      if (reduceMotionRef.current) return;
 
       const now = performance.now();
       const dt = Math.max(0.001, (now - drag.lastT) / 1000);
@@ -285,7 +432,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         node.vx = drag.vx;
         node.vy = drag.vy;
       }
-      if (drag.pixelDistance < 6) onSelectRef.current?.(drag.id);
+      // A confirmed click (not a drag) hands off to the xstate machine
+      // rather than calling onSelectNote directly — see
+      // ConstellationState.js for why the actual callback only ever fires
+      // once the "diving" flourish this triggers has finished playing.
+      if (drag.pixelDistance < 6) service.send({ type: "SELECT", id: drag.id });
       drag.id = null;
     };
 
@@ -314,7 +465,10 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
 
       byId.forEach((node, id) => {
         const el = nodeElRefs.current[id];
-        if (el) el.setAttribute("transform", `translate(${ node.x * scaleX },${ node.y * scaleY })`);
+        if (el) {
+          const scale = (node.revealScale ?? 1) * (node.hoverScale ?? 1);
+          el.setAttribute("transform", `translate(${ node.x * scaleX },${ node.y * scaleY }) scale(${ scale })`);
+        }
       });
 
       edgeList.forEach((edge, i) => {
@@ -327,6 +481,19 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         el.setAttribute("x2", b.x * scaleX);
         el.setAttribute("y2", b.y * scaleY);
       });
+
+      // The hover card follows its node every frame, since the graph keeps
+      // moving underneath it — clamped to the stage's own bounds the same
+      // way HistoryConstellation.jsx's own hover label already is.
+      if (hoveredIdRef.current) {
+        const node = byId.get(hoveredIdRef.current);
+        const card = cardElRef.current;
+        if (node && card) {
+          const px = Math.min(Math.max(node.x * scaleX, 90), rect.width - 90);
+          const py = Math.max(node.y * scaleY, 70);
+          card.style.transform = `translate(${ px }px, ${ py }px) translate(-50%, -125%)`;
+        }
+      }
     };
 
     const handleVisibility = () => {
@@ -348,50 +515,129 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       svg.removeEventListener("pointerdown", handleDown);
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      gsap.killTweensOf(Array.from(byId.values()));
+      blobMorphers.forEach(({ drive }) => gsap.killTweensOf(drive));
+      morphControllerRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
-  return (
-    <svg ref={ svgRef } className="note-constellation-svg" aria-hidden="true">
-      <g className="note-constellation-edges">
-        {
-          graph.edges.map((edge, i) => {
-            const dimmed = hoveredId && edge.a !== hoveredId && edge.b !== hoveredId;
-            return (
-              <line
-                key={ edge.id }
-                ref={ (el) => { edgeElRefs.current[i] = el; } }
-                className={ `note-constellation-edge ${ dimmed ? "dimmed" : "" }` }
-              />
-            );
-          })
-        }
-      </g>
-      <g className="note-constellation-nodes">
-        {
-          graph.nodes.map((note) => {
-            const degree = degreeById.get(note.id) || 0;
-            const radius = Math.min(NODE_RADIUS_MAX, NODE_RADIUS_BASE + degree * NODE_RADIUS_PER_EDGE);
-            const dimmed = connectedIds && !connectedIds.has(note.id);
-            const color = NOTE_COLORS[note.color] || "var(--page-ink-color)";
+  // The "dive into the note" flourish — zooms the whole graph toward the
+  // selected node and fades its threads, timed to finish right as
+  // ConstellationState.js's own DIVE_DURATION_MS elapses and the machine
+  // reaches "done" (which is what actually fires onSelectNote). See that
+  // file for why this lives behind a real state machine rather than a
+  // plain boolean flag.
+  useEffect(() => {
+    if (phase !== "diving" || !selectedId) return undefined;
 
-            return (
-              <g
-                key={ note.id }
-                data-note-id={ note.id }
-                ref={ (el) => { nodeElRefs.current[note.id] = el; } }
-                className={ `note-constellation-node ${ dimmed ? "dimmed" : "" }` }
-                onPointerEnter={ () => setHoveredId(note.id) }
-                onPointerLeave={ () => setHoveredId((current) => (current === note.id ? null : current)) }
-              >
-                <circle r={ radius } fill={ color } />
-                <text className="note-constellation-label" y={ radius + 14 }>{ truncateTitle(note.title) }</text>
-              </g>
-            );
-          })
+    const svg = svgRef.current;
+    const nodeEl = nodeElRefs.current[selectedId];
+    const edgesGroup = svg?.querySelector(".note-constellation-edges");
+    if (!svg || !nodeEl) return undefined;
+
+    const nodeRect = nodeEl.getBoundingClientRect();
+    const svgRect = svg.getBoundingClientRect();
+    const originX = nodeRect.left + nodeRect.width / 2 - svgRect.left;
+    const originY = nodeRect.top + nodeRect.height / 2 - svgRect.top;
+    svg.style.transformOrigin = `${ originX }px ${ originY }px`;
+
+    // A little short of the machine's own DIVE_DURATION_MS so the zoom
+    // visibly finishes (rather than getting cut mid-tween) before the
+    // panel closes and hands off to the editor.
+    const duration = DIVE_DURATION_MS / 1000 - 0.04;
+    const tweenFn = reduceMotionRef.current ? gsap.set : gsap.to;
+    tweenFn(svg, { scale: 3.2, duration, ease: "power3.in" });
+    if (edgesGroup) tweenFn(edgesGroup, { opacity: 0, duration: duration * 0.6, ease: "power1.in" });
+
+    return () => {
+      gsap.killTweensOf(svg);
+      if (edgesGroup) gsap.killTweensOf(edgesGroup);
+    };
+  }, [phase, selectedId]);
+
+  return (
+    <>
+      <svg ref={ svgRef } className="note-constellation-svg" aria-hidden="true">
+        <g className="note-constellation-edges">
+          {
+            graph.edges.map((edge, i) => {
+              const dimmed = hoveredId && edge.a !== hoveredId && edge.b !== hoveredId;
+              return (
+                <line
+                  key={ edge.id }
+                  ref={ (el) => { edgeElRefs.current[i] = el; } }
+                  className={ `note-constellation-edge ${ dimmed ? "dimmed" : "" }` }
+                />
+              );
+            })
+          }
+        </g>
+        <g className="note-constellation-nodes">
+          {
+            graph.nodes.map((note) => {
+              const degree = degreeById.get(note.id) || 0;
+              const radius = Math.min(NODE_RADIUS_MAX, NODE_RADIUS_BASE + degree * NODE_RADIUS_PER_EDGE);
+              const dimmed = connectedIds && !connectedIds.has(note.id);
+              const color = NOTE_COLORS[note.color] || "var(--page-ink-color)";
+              const shapes = getShapes(note.id, radius);
+
+              return (
+                <g
+                  key={ note.id }
+                  data-note-id={ note.id }
+                  ref={ (el) => { nodeElRefs.current[note.id] = el; } }
+                  className={ `note-constellation-node ${ dimmed ? "dimmed" : "" }` }
+                  onPointerEnter={ () => { setHoveredId(note.id); morphControllerRef.current?.enter(note.id); } }
+                  onPointerLeave={ () => { setHoveredId((c) => (c === note.id ? null : c)); morphControllerRef.current?.leave(note.id); } }
+                >
+                  <path
+                    ref={ (el) => { blobPathElRefs.current[note.id] = el; } }
+                    className="note-constellation-blob"
+                    transform={ `translate(${ shapes.offset },${ shapes.offset })` }
+                    d={ shapes.rest }
+                    fill={ color }
+                  />
+                  <text className="note-constellation-label" y={ radius + 16 }>{ truncateTitle(note.title) }</text>
+                </g>
+              );
+            })
+          }
+        </g>
+      </svg>
+      <AnimatePresence>
+        {
+          hoveredNote && phase !== "diving" && (
+            <motion.div
+              ref={ cardElRef }
+              className="note-constellation-card"
+              initial={{ opacity: 0, scale: .85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: .85, transition: { duration: .15 } }}
+              transition={ SNAPPY }
+            >
+              <span
+                className="note-constellation-card-swatch"
+                style={{ backgroundColor: NOTE_COLORS[hoveredNote.color] || "var(--page-ink-color)" }}
+              />
+              <div className="note-constellation-card-body">
+                <div className="note-constellation-card-title-row">
+                  <span className="note-constellation-card-title">{ hoveredNote.title || "Untitled" }</span>
+                  { hoveredNote.favorite && <FaStar className="note-constellation-card-favorite" /> }
+                </div>
+                {
+                  hoveredNote.tags?.length > 0 && (
+                    <div className="note-constellation-card-tags">
+                      { hoveredNote.tags.map((tag) => <span key={ tag } className="note-constellation-card-tag">#{ tag }</span>) }
+                    </div>
+                  )
+                }
+              </div>
+            </motion.div>
+          )
         }
-      </g>
-    </svg>
+      </AnimatePresence>
+    </>
   );
 };
 

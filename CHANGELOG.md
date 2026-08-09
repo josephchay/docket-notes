@@ -41,6 +41,7 @@
     - Undo then make a new edit → "1 stashed branch" appears; Restore jumps back with the old redo branch intact, and that restore itself undoes with Ctrl+Z.
 
 - Audit (Reviewed) on Settings, LiquidMeter, ScrollProgress, ErrorBoundary/ErrorSpill, and the CursorAura wiring for the same classes of gaps found in History (theme-reactivity, cleanup, mobile). Found and fixed one real, concrete issue: SettingsToggle.jsx's anime.js tween had no cleanup on unmount, unlike useOdometer.js's identical anime.js pattern which correctly pauses. Verified LiquidMeter's GSAP pulse timeline was already correctly cleaned up, and didn't find further issues worth flagging as genuine gaps rather than pre-existing, out-of-scope behavior.
+- Updated animation for Note constellation feature
 
 ### Fixed
 
