@@ -29,6 +29,7 @@ import {
   FaDroplet,
   FaWaveSquare,
   FaWater,
+  FaFlag,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -75,6 +76,7 @@ import FluidFieldPanel, { FLUID_FIELD_EVENT } from "../components/Particles/Flui
 import AudioWaveStringPanel, { AUDIO_WAVE_STRING_EVENT } from "../components/Particles/AudioWaveStringPanel";
 import FluidVisualizerPanel, { FLUID_VISUALIZER_EVENT } from "../components/Particles/FluidVisualizerPanel";
 import FluidPlayerDock from "../components/Particles/FluidPlayerDock";
+import ClothPanel, { CLOTH_EVENT } from "../components/Particles/ClothPanel";
 import useLenisScroll from "../hooks/useLenisScroll";
 
 import quotes from "../assets/data/quotes.json";
@@ -1241,6 +1243,12 @@ const Home = () => {
       perform: () => window.dispatchEvent(new CustomEvent(FLUID_VISUALIZER_EVENT)),
     },
     {
+      key: "cloth-field",
+      label: "Show the cloth field",
+      icon: <FaFlag />,
+      perform: () => window.dispatchEvent(new CustomEvent(CLOTH_EVENT)),
+    },
+    {
       key: "trash",
       label: deletedNotes.length > 0 ? `Open the trash · ${ deletedNotes.length }` : "Open the trash",
       icon: <FaTrashCan />,
@@ -1414,6 +1422,7 @@ const Home = () => {
       <FluidFieldPanel reduceMotion={ reduceMotion } />
       <AudioWaveStringPanel reduceMotion={ reduceMotion } />
       <FluidVisualizerPanel reduceMotion={ reduceMotion } />
+      <ClothPanel reduceMotion={ reduceMotion } />
       <TrashPanel
         entries={ deletedNotes }
         onRestore={ restoreNote }

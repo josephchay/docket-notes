@@ -3,6 +3,9 @@ import * as THREE from "three";
 
 import { resolveCssColor } from "../History/HistoryAmbient";
 import { poly6Coeff, poly6, spikyGradCoeff, spikyGrad, viscLapCoeff, viscLap, particleMassFor } from "../../utils/sph";
+import { UniformGrid } from "../../utils/sphGrid";
+import { FoamPool, shouldSpawnFoam } from "../../utils/sphFoam";
+import { SplatFluidRenderer } from "./SplatFluidRenderer";
 
 import "./FluidField.css";
 
@@ -26,7 +29,17 @@ const STIFFNESS = 1200;   // k in P = k·(ρ - ρ₀); sound speed c = √k, use
 const VISCOSITY = 200;
 const GRAVITY = 30;       // sim units/s², -y
 
-const GRID = 10;          // 10×10 initial block
+// 20×20 initial block (400 particles, 4× the original 10×10) — the density
+// field is now built by SplatFluidRenderer's GPU splat pass rather than a
+// per-pixel uBalls[] shader loop (see that file's own header for why the
+// old approach couldn't scale past N≈100-130), and neighbor search below
+// runs through utils/sphGrid.js's UniformGrid rather than an all-pairs
+// double loop, so this is no longer bound by either of the ceilings that
+// capped the original count. DOMAIN_W/H and the block's start position
+// scale up by the same 2× factor as GRID so the dam-break's proportions —
+// how much empty room the block has to collapse into — read identically to
+// the original 10×10/30×22 scene, just denser.
+const GRID = 20;
 const SPACING = 1.15;
 const PARTICLE_COUNT = GRID * GRID;
 // See utils/sph.js's own particleMassFor for the reasoning (the standard
@@ -40,13 +53,17 @@ const SUBSTEPS = 3;
 const VELOCITY_CLAMP = 40;
 const BOUNDARY_RESTITUTION = 0.45; // velocity kept (not lost) on a wall bounce
 
-const DOMAIN_W = 30;
-const DOMAIN_H = 22;
+const DOMAIN_W = 60;
+const DOMAIN_H = 44;
+const BLOCK_START_X = 4;
+const BLOCK_START_Y = 20;
 
 // The cursor pushes fluid it moves through, scaled by how fast it's
 // actually moving — the same "real drag responds to velocity" idea
 // CursorAura.jsx's ripples and ParticleCuboid.jsx's repulsion already use.
-const CURSOR_RADIUS = 3.2;
+// Radius doubled alongside DOMAIN_W/H/GRID above, so the cursor's reach
+// stays the same fraction of the (now larger) fluid body it always was.
+const CURSOR_RADIUS = 6.4;
 const CURSOR_STRENGTH = 900;
 
 // poly6/spikyGrad/viscLap kernels now live in utils/sph.js (see that file
@@ -54,49 +71,22 @@ const CURSOR_STRENGTH = 900;
 // declared here, once FluidVisualizer.jsx needed the exact same math and a
 // second independently-drifting copy stopped being acceptable.
 
-const VERT = `
-  void main() {
-    gl_Position = vec4(position, 1.0);
-  }
-`;
-
-// The same gaussian-metaball technique LiquidMeter.jsx/InkGoo.jsx/
-// ParticleCuboid.jsx all already use — genuinely the right rendering choice
-// here, not just a reused convenience: SPH already represents the fluid as
-// an implicit density field sampled by particles, and metaballs are
-// exactly that same idea (an implicit field, thresholded into a surface)
-// applied to rendering. A fixed particle count this modest (100) needs a
-// generous per-particle radius for the field to actually read as a
-// continuous liquid rather than a loose cloud of dots.
-const FRAG = `
-  precision highp float;
-
-  uniform vec2 uResolution;
-  uniform float uDpr;
-  uniform vec3 uBalls[${ PARTICLE_COUNT }];
-  uniform vec3 uInk;
-  uniform vec3 uRim;
-  uniform vec3 uBg;
-
-  void main() {
-    vec2 p = gl_FragCoord.xy / uDpr;
-    p.y = uResolution.y - p.y;
-
-    float field = 0.0;
-    for (int i = 0; i < ${ PARTICLE_COUNT }; i++) {
-      vec3 b = uBalls[i];
-      vec2 d = p - b.xy;
-      field += exp(-dot(d, d) / (b.z * b.z));
-    }
-
-    float body = smoothstep(0.5, 0.56, field);
-    float rim = smoothstep(0.5, 0.6, field) * (1.0 - smoothstep(0.6, 1.05, field));
-    vec3 col = mix(uInk, uRim, rim * 0.5);
-
-    if (body < 0.01) discard;
-    gl_FragColor = vec4(mix(uBg, col, body), 1.0);
-  }
-`;
+// Foam/spray: see utils/sphFoam.js for the full reasoning. A splash reads
+// as "fast and near the surface" — FOAM_SPEED_THRESHOLD is roughly half
+// VELOCITY_CLAMP (only genuinely energetic motion throws spray, not every
+// ripple), FOAM_DENSITY_RATIO of rest density is loose enough to catch the
+// collapsing block's leading edge without also firing deep in its interior.
+const FOAM_CAPACITY = 260;
+const FOAM_SPEED_THRESHOLD = VELOCITY_CLAMP * 0.5;
+const FOAM_DENSITY_RATIO = 0.85;
+const FOAM_RADIUS_MIN = 0.12;
+const FOAM_RADIUS_MAX = 0.3;
+const FOAM_LIFE_MIN = 0.35;
+const FOAM_LIFE_MAX = 0.85;
+// Multiplicative per-substep velocity decay (see FoamPool.update) — close
+// enough to 1 that a droplet still arcs visibly before settling, at 3
+// substeps/frame this still bleeds off within well under a second.
+const FOAM_DRAG = 0.985;
 
 const FluidField = ({ active, reduceMotion = false }) => {
   const canvasRef = useRef(null);
@@ -108,42 +98,34 @@ const FluidField = ({ active, reduceMotion = false }) => {
 
     const canvas = canvasRef.current;
     const parent = canvas.parentElement;
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    renderer.setPixelRatio(dpr);
 
-    const scene = new THREE.Scene();
-    const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const fluidRenderer = new SplatFluidRenderer(canvas, { foamCapacity: FOAM_CAPACITY });
+    fluidRenderer.setFieldCount(PARTICLE_COUNT);
+
+    const applyTint = () => {
+      const bg = resolveCssColor("var(--page-bg-color)");
+      const ink = resolveCssColor("var(--page-ink-color)");
+      fluidRenderer.setTint(bg, bg);
+      fluidRenderer.setFoamColor(ink);
+      // Every particle shares one flat ink color (unlike FluidVisualizer.jsx's
+      // per-particle palette), so the "blended" color the resolve pass reads
+      // back out of the field is just that same ink color again — filled once
+      // here (and again on theme change) rather than every frame in tick().
+      const inkColor = new THREE.Color(ink);
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        fluidRenderer.fieldColors[i * 3] = inkColor.r;
+        fluidRenderer.fieldColors[i * 3 + 1] = inkColor.g;
+        fluidRenderer.fieldColors[i * 3 + 2] = inkColor.b;
+      }
+    };
+    applyTint();
 
     const dims = { w: 480, h: 360 };
     const resize = () => {
       dims.w = parent.clientWidth || 480;
       dims.h = parent.clientHeight || 360;
-      renderer.setSize(dims.w, dims.h, false);
-      uniforms.uResolution.value.set(dims.w, dims.h);
+      fluidRenderer.setSize(dims.w, dims.h);
     };
-
-    const uniforms = {
-      uResolution: { value: new THREE.Vector2(dims.w, dims.h) },
-      uDpr: { value: dpr },
-      uBalls: { value: Array.from({ length: PARTICLE_COUNT }, () => new THREE.Vector3()) },
-      uInk: { value: new THREE.Color(resolveCssColor("var(--page-ink-color)")) },
-      uRim: { value: new THREE.Color(resolveCssColor("var(--page-bg-color)")) },
-      uBg: { value: new THREE.Color(resolveCssColor("var(--page-bg-color)")) },
-    };
-
-    const material = new THREE.ShaderMaterial({
-      uniforms,
-      vertexShader: VERT,
-      fragmentShader: FRAG,
-      transparent: false,
-      depthTest: false,
-      depthWrite: false,
-    });
-
-    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
-    scene.add(quad);
-
     resize();
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(parent);
@@ -158,7 +140,7 @@ const FluidField = ({ active, reduceMotion = false }) => {
     for (let ix = 0; ix < GRID; ix++) {
       for (let iy = 0; iy < GRID; iy++) {
         particles.push({
-          pos: new THREE.Vector2(2 + ix * SPACING, 10 + iy * SPACING),
+          pos: new THREE.Vector2(BLOCK_START_X + ix * SPACING, BLOCK_START_Y + iy * SPACING),
           vel: new THREE.Vector2(0, 0),
           density: REST_DENSITY,
           pressure: 0,
@@ -173,6 +155,11 @@ const FluidField = ({ active, reduceMotion = false }) => {
     const selfDensity = PARTICLE_MASS * poly6(0, SMOOTHING_RADIUS, poly6C);
 
     const delta = new THREE.Vector2();
+    // Cell size == smoothing radius h, per sphGrid.js's own contract — built
+    // fresh from current positions at the top of every substep, since the
+    // grid only narrows candidates for *this* configuration of particles.
+    const grid = new UniformGrid(DOMAIN_W, DOMAIN_H, SMOOTHING_RADIUS);
+    const foamPool = new FoamPool(FOAM_CAPACITY);
 
     // One SPH substep — two full passes over every pair within h, since
     // pressure force at every particle depends on the *already-computed*
@@ -182,20 +169,29 @@ const FluidField = ({ active, reduceMotion = false }) => {
     // pairwise forces — this is a real, structural difference in SPH, not
     // an implementation choice.
     const step = (dt) => {
-      // Pass 1 — density, then the equation of state (pressure).
+      grid.build(particles);
+
+      // Pass 1 — density, then the equation of state (pressure). Neighbor
+      // candidates now come from the grid's own 3×3-cell query rather than
+      // every other particle in the pool; the `k <= i` skip is what keeps
+      // each unordered pair counted exactly once (the same role `j = i + 1`
+      // played in the old all-pairs loop), since a cell query has no
+      // inherent ordering of its own to lean on.
       for (const p of particles) p.density = selfDensity;
 
       for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const a = particles[i], b = particles[j];
+        const a = particles[i];
+        grid.forEachNear(a.pos.x, a.pos.y, (k) => {
+          if (k <= i) return;
+          const b = particles[k];
           delta.copy(b.pos).sub(a.pos);
           const r = delta.length();
-          if (r >= SMOOTHING_RADIUS) continue;
+          if (r >= SMOOTHING_RADIUS) return;
 
           const w = poly6(r, SMOOTHING_RADIUS, poly6C);
           a.density += PARTICLE_MASS * w;
           b.density += PARTICLE_MASS * w;
-        }
+        });
       }
 
       for (const p of particles) {
@@ -212,11 +208,13 @@ const FluidField = ({ active, reduceMotion = false }) => {
       // Pass 2 — pressure + viscosity forces, now that every particle's
       // density/pressure is settled for this substep.
       for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const a = particles[i], b = particles[j];
+        const a = particles[i];
+        grid.forEachNear(a.pos.x, a.pos.y, (k) => {
+          if (k <= i) return;
+          const b = particles[k];
           delta.copy(b.pos).sub(a.pos);
           const r = delta.length();
-          if (r >= SMOOTHING_RADIUS || r <= 0.0001) continue;
+          if (r >= SMOOTHING_RADIUS || r <= 0.0001) return;
 
           const dirX = delta.x / r, dirY = delta.y / r;
 
@@ -241,7 +239,7 @@ const FluidField = ({ active, reduceMotion = false }) => {
           const vfy = (b.vel.y - a.vel.y) * viscTerm;
           a.force.x += vfx; a.force.y += vfy;
           b.force.x -= vfx; b.force.y -= vfy;
-        }
+        });
       }
 
       for (const p of particles) {
@@ -272,6 +270,16 @@ const FluidField = ({ active, reduceMotion = false }) => {
         const speed = p.vel.length();
         if (speed > VELOCITY_CLAMP) p.vel.multiplyScalar(VELOCITY_CLAMP / speed);
 
+        // A fast, under-dense particle is exactly what a real splash looks
+        // like locally (see shouldSpawnFoam's own comment) — checked with
+        // this substep's own freshly-computed density/speed, before the
+        // position update below moves it.
+        if (shouldSpawnFoam(speed, p.density, REST_DENSITY, FOAM_SPEED_THRESHOLD, FOAM_DENSITY_RATIO, Math.random)) {
+          const radius = FOAM_RADIUS_MIN + Math.random() * (FOAM_RADIUS_MAX - FOAM_RADIUS_MIN);
+          const life = FOAM_LIFE_MIN + Math.random() * (FOAM_LIFE_MAX - FOAM_LIFE_MIN);
+          foamPool.spawn(p.pos.x, p.pos.y, p.vel.x * 0.4, p.vel.y * 0.4 + 3, radius, life);
+        }
+
         p.pos.x += p.vel.x * dt;
         p.pos.y += p.vel.y * dt;
 
@@ -283,6 +291,8 @@ const FluidField = ({ active, reduceMotion = false }) => {
         if (p.pos.y < 0) { p.pos.y = 0; p.vel.y = -p.vel.y * BOUNDARY_RESTITUTION; }
         else if (p.pos.y > DOMAIN_H) { p.pos.y = DOMAIN_H; p.vel.y = -p.vel.y * BOUNDARY_RESTITUTION; }
       }
+
+      foamPool.update(dt, GRAVITY, FOAM_DRAG);
     };
 
     // Cursor state: position in sim-space plus a velocity-derived "how hard
@@ -336,15 +346,25 @@ const FluidField = ({ active, reduceMotion = false }) => {
       // non-square container never stretches the metaballs into ellipses.
       const renderScale = Math.min(scaleX, scaleY);
       const renderRadius = SMOOTHING_RADIUS * 0.9 * renderScale;
+      fluidRenderer.setPointRadius(renderRadius);
 
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i].pos;
         const px = p.x * scaleX;
         const py = dims.h - p.y * scaleY; // sim Y up → screen Y down
-        uniforms.uBalls.value[i].set(px, py, renderRadius);
+        fluidRenderer.fieldPositions[i * 3] = px;
+        fluidRenderer.fieldPositions[i * 3 + 1] = py;
       }
 
-      renderer.render(scene, quadCamera);
+      for (let i = 0; i < FOAM_CAPACITY; i++) {
+        const alive = foamPool.life[i] > 0;
+        fluidRenderer.foamPositions[i * 3] = foamPool.x[i] * scaleX;
+        fluidRenderer.foamPositions[i * 3 + 1] = dims.h - foamPool.y[i] * scaleY;
+        fluidRenderer.foamRadii[i] = foamPool.radius[i] * renderScale;
+        fluidRenderer.foamAlphas[i] = alive ? foamPool.life[i] / foamPool.maxLife[i] : 0;
+      }
+
+      fluidRenderer.render();
     };
 
     const handleVisibility = () => {
@@ -360,11 +380,7 @@ const FluidField = ({ active, reduceMotion = false }) => {
 
     tick();
 
-    const themeObserver = new MutationObserver(() => {
-      uniforms.uInk.value.set(resolveCssColor("var(--page-ink-color)"));
-      uniforms.uRim.value.set(resolveCssColor("var(--page-bg-color)"));
-      uniforms.uBg.value.set(resolveCssColor("var(--page-bg-color)"));
-    });
+    const themeObserver = new MutationObserver(applyTint);
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
     return () => {
@@ -374,9 +390,7 @@ const FluidField = ({ active, reduceMotion = false }) => {
       canvas.removeEventListener("pointerleave", handlePointerLeave);
       resizeObserver.disconnect();
       themeObserver.disconnect();
-      quad.geometry.dispose();
-      material.dispose();
-      renderer.dispose();
+      fluidRenderer.dispose();
     };
   }, [active]);
 

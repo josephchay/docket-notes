@@ -5,6 +5,10 @@ import { FaPlay, FaPause, FaMusic } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { poly6Coeff, poly6, spikyGradCoeff, spikyGrad, viscLapCoeff, viscLap, particleMassFor } from "../../utils/sph";
+import { UniformGrid } from "../../utils/sphGrid";
+import { FoamPool, shouldSpawnFoam } from "../../utils/sphFoam";
+import { WaveField } from "../../utils/waveField";
+import { SplatFluidRenderer } from "./SplatFluidRenderer";
 import { SNAPPY } from "../Motion";
 
 import "./FluidVisualizer.css";
@@ -72,56 +76,45 @@ const INJECTOR_COUNT = 18;
 // this is tuned.
 const JET_FORCE_SCALE = 5200;
 
-const VERT = `
-  void main() {
-    gl_Position = vec4(position, 1.0);
-  }
-`;
+// Foam/spray: see utils/sphFoam.js. A geyser's own leading spray is exactly
+// the "fast and under-dense" splash criterion that file's shouldSpawnFoam
+// looks for, so the same helper (and the same tuning FluidField.jsx uses)
+// covers it here with no jet-specific logic of its own.
+const FOAM_CAPACITY = 260;
+const FOAM_SPEED_THRESHOLD = VELOCITY_CLAMP * 0.5;
+const FOAM_DENSITY_RATIO = 0.85;
+const FOAM_RADIUS_MIN = 0.1;
+const FOAM_RADIUS_MAX = 0.24;
+const FOAM_LIFE_MIN = 0.3;
+const FOAM_LIFE_MAX = 0.7;
+const FOAM_DRAG = 0.985;
 
-// The same multi-color field-weighted metaball blend ParticleCuboid.jsx's
-// own shader uses (see that file's own comment on why this is the
-// physically apt rendering choice for an implicit density field, not
-// merely a reused convenience) — genuinely fitting doubly so here, since
-// SPH already represents this fluid as an implicit density field in the
-// first place. A function rather than a module-level template literal now
-// — GLSL requires the uBalls[]/uBallColors[] array sizes to be compile-time
-// constants, and since particle count is now resolved per-instance (from
-// the gridCols×gridRows props) rather than one fixed module constant, the
-// shader source itself has to be built per-instance too, inside the mount
-// effect below, from whatever count that instance actually resolves to.
-const buildFragShader = (particleCount) => `
-  precision highp float;
-
-  uniform vec2 uResolution;
-  uniform float uDpr;
-  uniform vec3 uBalls[${ particleCount }];
-  uniform vec3 uBallColors[${ particleCount }];
-  uniform vec3 uRim;
-  uniform vec3 uBg;
-
-  void main() {
-    vec2 p = gl_FragCoord.xy / uDpr;
-    p.y = uResolution.y - p.y;
-
-    float field = 0.0;
-    vec3 colorSum = vec3(0.0);
-    for (int i = 0; i < ${ particleCount }; i++) {
-      vec3 b = uBalls[i];
-      vec2 d = p - b.xy;
-      float contribution = exp(-dot(d, d) / (b.z * b.z));
-      field += contribution;
-      colorSum += uBallColors[i] * contribution;
-    }
-
-    vec3 blended = field > 0.0001 ? colorSum / field : uRim;
-    float body = smoothstep(0.5, 0.56, field);
-    float rim = smoothstep(0.5, 0.6, field) * (1.0 - smoothstep(0.6, 1.05, field));
-    vec3 col = mix(blended, uRim, rim * 0.5);
-
-    if (body < 0.01) discard;
-    gl_FragColor = vec4(mix(uBg, col, body), 1.0);
-  }
-`;
+// Surface ripples — a second, independent physics system layered on top of
+// the SPH pool itself (see utils/waveField.js for the actual technique: a
+// real discretized 2D wave equation, Eulerian, structurally unlike either
+// the SPH particles above or utils/verlet.js's point-mass mesh). Excited by
+// the cursor stirring the surface and by every foam-triggering splash (see
+// step() below), rendered by folding its own height gradient into
+// SplatFluidRenderer's existing lit-normal calculation.
+//
+// Stability, checked against waveField.js's own derived bound r =
+// waveSpeed·dt/RIPPLE_CELL ≤ 1/√2 ≈ 0.7071: this steps once per SPH
+// substep, so dt = (frame dt)/SUBSTEPS, worst case (frame dt clamped to
+// 0.05s in tick() below) 0.05/3 ≈ 0.0167s. r = 18 · 0.0167 / 1.2 ≈ 0.25 —
+// comfortably under the bound even at that worst case, with real margin to
+// spare rather than sitting right at the edge of blowing up.
+const RIPPLE_CELL = 1.2; // domain units per ripple grid cell
+const RIPPLE_WAVE_SPEED = 18;
+const RIPPLE_DAMPING = 0.985;
+// Shader-side normal-perturbation strength and per-excitation magnitudes —
+// tuning, not physics, same honest caveat as JET_FORCE_SCALE's own above:
+// exactly how visible a given ripple height reads once it's diffused across
+// the grid and folded into the lighting isn't a number that reduces to one
+// hand-checkable derivation. Worth adjusting by eye if it reads too subtle
+// or too strong once actually watched running.
+const RIPPLE_STRENGTH = 0.55;
+const CURSOR_RIPPLE_STRENGTH = 3.5;
+const SPLASH_RIPPLE_STRENGTH = 0.9;
 
 const formatTime = (t) => {
   if (!Number.isFinite(t) || t < 0) return "0:00";
@@ -130,23 +123,26 @@ const formatTime = (t) => {
   return `${ m }:${ s }`;
 };
 
-// domainW/domainH/gridCols/gridRows/activationHeight default to exactly the
-// values FluidVisualizerPanel.jsx's modal always used before these became
-// props (34, 20, 26, 5, 3.4) — that call site is unchanged and passes none
-// of them, so it gets byte-for-byte the same pool it always has.
-// controlsPosition="below" reproduces the modal's own stacked layout
-// (canvas above, transport row below); "overlay" — used by the persistent
-// bottom dock — centers the transport as one pill floating on the canvas
-// instead, and skips the separate empty-state hint (the overlay pill's own
-// "Choose a song" button already covers that, and the two would otherwise
-// sit on top of each other, both independently centered in the same space).
+// domainW/domainH/gridCols/gridRows/activationHeight defaulted to exactly
+// the values FluidVisualizerPanel.jsx's modal always used (34, 20, 26, 5,
+// 3.4) before SplatFluidRenderer replaced the old per-pixel uBalls[] loop —
+// now scaled up ~2.2× across the board (75, 44, 56, 11, 7.5), preserving
+// every proportion (pool width/domain width, pool height/domain height,
+// headroom above for splashes) so the pool reads exactly as before, just
+// denser and with real foam on its geysers. controlsPosition="below"
+// reproduces the modal's own stacked layout (canvas above, transport row
+// below); "overlay" — used by the persistent bottom dock — centers the
+// transport as one pill floating on the canvas instead, and skips the
+// separate empty-state hint (the overlay pill's own "Choose a song" button
+// already covers that, and the two would otherwise sit on top of each
+// other, both independently centered in the same space).
 const FluidVisualizer = ({
   reduceMotion = false,
-  domainW = 34,
-  domainH = 20,
-  gridCols = 26,
-  gridRows = 5,
-  activationHeight = 3.4,
+  domainW = 75,
+  domainH = 44,
+  gridCols = 56,
+  gridRows = 11,
+  activationHeight = 7.5,
   controlsPosition = "below",
 }) => {
   const canvasRef = useRef(null);
@@ -223,9 +219,6 @@ const FluidVisualizer = ({
     const canvas = canvasRef.current;
     const audioEl = audioRef.current;
     const parent = canvas.parentElement;
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    renderer.setPixelRatio(dpr);
 
     // Resolved once per mount from this instance's own props — see the
     // component's own comment above for why these (not the underlying
@@ -233,39 +226,41 @@ const FluidVisualizer = ({
     const particleCount = gridCols * gridRows;
     const poolMarginX = (domainW - (gridCols - 1) * SPACING) / 2;
 
-    const scene = new THREE.Scene();
-    const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const fluidRenderer = new SplatFluidRenderer(canvas, { foamCapacity: FOAM_CAPACITY });
+    fluidRenderer.setFieldCount(particleCount);
+    // Foam reads as white/pale spray regardless of theme or which palette
+    // color a given geyser's own body happens to be — the same "bright,
+    // roughly neutral" reasoning SplatFluidRenderer's own default uHighlight
+    // uses, real foam doesn't tint to match the water under it either.
+    fluidRenderer.setFoamColor("#fdfcf6");
+
+    // Ripple grid: cell size fixed in domain units, so the actual cols/rows
+    // adapt to whatever domainW/domainH this instance resolves to (the
+    // modal's roughly-square pool vs. the bottom dock's wide shallow strip
+    // get differently-shaped grids, same cell size and stability margin
+    // either way — see the module comment above for the CFL numbers this
+    // was checked against).
+    const rippleCols = Math.ceil(domainW / RIPPLE_CELL) + 1;
+    const rippleRows = Math.ceil(domainH / RIPPLE_CELL) + 1;
+    fluidRenderer.setRippleGrid(rippleCols, rippleRows);
+    fluidRenderer.setRippleStrength(RIPPLE_STRENGTH);
+    const waveField = new WaveField(rippleCols, rippleRows, RIPPLE_CELL, {
+      waveSpeed: RIPPLE_WAVE_SPEED,
+      damping: RIPPLE_DAMPING,
+    });
 
     const dims = { w: 480, h: 320 };
     const resize = () => {
       dims.w = parent.clientWidth || 480;
       dims.h = parent.clientHeight || 320;
-      renderer.setSize(dims.w, dims.h, false);
-      uniforms.uResolution.value.set(dims.w, dims.h);
+      fluidRenderer.setSize(dims.w, dims.h);
     };
 
     const palette = Object.values(NOTE_COLORS).map((hex) => new THREE.Color(hex));
-
-    const uniforms = {
-      uResolution: { value: new THREE.Vector2(dims.w, dims.h) },
-      uDpr: { value: dpr },
-      uBalls: { value: Array.from({ length: particleCount }, () => new THREE.Vector3()) },
-      uBallColors: { value: Array.from({ length: particleCount }, () => new THREE.Color()) },
-      uRim: { value: new THREE.Color("#fffeff") },
-      uBg: { value: new THREE.Color("#fffeff") },
-    };
-
-    const material = new THREE.ShaderMaterial({
-      uniforms,
-      vertexShader: VERT,
-      fragmentShader: buildFragShader(particleCount),
-      transparent: false,
-      depthTest: false,
-      depthWrite: false,
-    });
-
-    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
-    scene.add(quad);
+    // Reused every frame in tick() below to lerp a particle's band color
+    // before it's written into fieldColors' flat Float32Array — a single
+    // scratch object rather than allocating one per particle per frame.
+    const scratchColor = new THREE.Color();
 
     resize();
     const resizeObserver = new ResizeObserver(resize);
@@ -274,8 +269,7 @@ const FluidVisualizer = ({
     const retint = () => {
       const style = getComputedStyle(document.documentElement);
       const bg = style.getPropertyValue("--page-bg-color").trim() || "#fffeff";
-      uniforms.uRim.value.set(bg);
-      uniforms.uBg.value.set(bg);
+      fluidRenderer.setTint(bg, bg);
     };
     retint();
     const themeObserver = new MutationObserver(retint);
@@ -301,6 +295,13 @@ const FluidVisualizer = ({
     const selfDensity = PARTICLE_MASS * poly6(0, SMOOTHING_RADIUS, poly6C);
 
     const delta = new THREE.Vector2();
+    // Cell size == smoothing radius h, per sphGrid.js's own contract; built
+    // from this instance's own domainW/domainH props, same as the particle
+    // pool itself. See FluidField.jsx's own comment on the `k <= i` skip
+    // below for why that's what replaces the old `j = i + 1` all-pairs
+    // ordering once neighbors come from a cell query instead.
+    const grid = new UniformGrid(domainW, domainH, SMOOTHING_RADIUS);
+    const foamPool = new FoamPool(FOAM_CAPACITY);
 
     // One normalized (0..1) magnitude per injector band, recomputed once
     // per animation frame (not per substep — the underlying audio signal
@@ -315,19 +316,23 @@ const FluidVisualizer = ({
     const bandMagnitude = new Float32Array(INJECTOR_COUNT);
 
     const step = (dt) => {
+      grid.build(particles);
+
       for (const p of particles) p.density = selfDensity;
 
       for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const a = particles[i], b = particles[j];
+        const a = particles[i];
+        grid.forEachNear(a.pos.x, a.pos.y, (k) => {
+          if (k <= i) return;
+          const b = particles[k];
           delta.copy(b.pos).sub(a.pos);
           const r = delta.length();
-          if (r >= SMOOTHING_RADIUS) continue;
+          if (r >= SMOOTHING_RADIUS) return;
 
           const w = poly6(r, SMOOTHING_RADIUS, poly6C);
           a.density += PARTICLE_MASS * w;
           b.density += PARTICLE_MASS * w;
-        }
+        });
       }
 
       for (const p of particles) {
@@ -336,11 +341,13 @@ const FluidVisualizer = ({
       }
 
       for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const a = particles[i], b = particles[j];
+        const a = particles[i];
+        grid.forEachNear(a.pos.x, a.pos.y, (k) => {
+          if (k <= i) return;
+          const b = particles[k];
           delta.copy(b.pos).sub(a.pos);
           const r = delta.length();
-          if (r >= SMOOTHING_RADIUS || r <= 0.0001) continue;
+          if (r >= SMOOTHING_RADIUS || r <= 0.0001) return;
 
           const dirX = delta.x / r, dirY = delta.y / r;
 
@@ -357,7 +364,7 @@ const FluidVisualizer = ({
           const vfy = (b.vel.y - a.vel.y) * viscTerm;
           a.force.x += vfx; a.force.y += vfy;
           b.force.x -= vfx; b.force.y -= vfy;
-        }
+        });
       }
 
       for (const p of particles) {
@@ -395,6 +402,20 @@ const FluidVisualizer = ({
         const speed = p.vel.length();
         if (speed > VELOCITY_CLAMP) p.vel.multiplyScalar(VELOCITY_CLAMP / speed);
 
+        // A geyser's own leading edge is fast and under-dense exactly the
+        // same way a dam-break's splash front is (see FluidField.jsx's
+        // matching call) — same helper, same tuning, no jet-specific case.
+        if (shouldSpawnFoam(speed, p.density, REST_DENSITY, FOAM_SPEED_THRESHOLD, FOAM_DENSITY_RATIO, Math.random)) {
+          const radius = FOAM_RADIUS_MIN + Math.random() * (FOAM_RADIUS_MAX - FOAM_RADIUS_MIN);
+          const life = FOAM_LIFE_MIN + Math.random() * (FOAM_LIFE_MAX - FOAM_LIFE_MIN);
+          foamPool.spawn(p.pos.x, p.pos.y, p.vel.x * 0.4, p.vel.y * 0.4 + 3, radius, life);
+          // Every real splash sends a real ring across the surface — the
+          // same criterion that decided this was foam-worthy also seeds
+          // the wave field at exactly the point it happened, rather than
+          // the two systems reading as visually unrelated.
+          waveField.excite(p.pos.x, p.pos.y, SPLASH_RIPPLE_STRENGTH);
+        }
+
         p.pos.x += p.vel.x * dt;
         p.pos.y += p.vel.y * dt;
 
@@ -403,6 +424,15 @@ const FluidVisualizer = ({
         if (p.pos.y < 0) { p.pos.y = 0; p.vel.y = -p.vel.y * BOUNDARY_RESTITUTION; }
         else if (p.pos.y > domainH) { p.pos.y = domainH; p.vel.y = -p.vel.y * BOUNDARY_RESTITUTION; }
       }
+
+      // The cursor stirring the surface excites the ripple field too — once
+      // per substep here rather than once per particle above, so dragging
+      // slowly across the pool doesn't inject wildly more ripple energy
+      // just because more particles happened to be nearby.
+      if (cursor.active) waveField.excite(cursor.x, cursor.y, cursor.speedBoost * CURSOR_RIPPLE_STRENGTH * dt);
+
+      foamPool.update(dt, GRAVITY, FOAM_DRAG);
+      waveField.step(dt);
     };
 
     const cursor = { x: 0, y: 0, active: false, speedBoost: 0 };
@@ -460,12 +490,12 @@ const FluidVisualizer = ({
       const scaleY = dims.h / domainH;
       const renderScale = Math.min(scaleX, scaleY);
       const renderRadius = SMOOTHING_RADIUS * 0.9 * renderScale;
+      fluidRenderer.setPointRadius(renderRadius);
 
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i].pos;
-        const px = p.x * scaleX;
-        const py = dims.h - p.y * scaleY;
-        uniforms.uBalls.value[i].set(px, py, renderRadius);
+        fluidRenderer.fieldPositions[i * 3] = p.x * scaleX;
+        fluidRenderer.fieldPositions[i * 3 + 1] = dims.h - p.y * scaleY;
 
         // Color follows each particle's own current injector band — the
         // same spatial mapping driving the physics also drives what's
@@ -473,10 +503,28 @@ const FluidVisualizer = ({
         const bandIndex = Math.max(0, Math.min(INJECTOR_COUNT - 1, Math.floor((p.x / domainW) * INJECTOR_COUNT)));
         const paletteT = (bandIndex / (INJECTOR_COUNT - 1)) * (palette.length - 1);
         const lo = Math.floor(paletteT), hi = Math.min(palette.length - 1, lo + 1);
-        uniforms.uBallColors.value[i].copy(palette[lo]).lerp(palette[hi], paletteT - lo);
+        scratchColor.copy(palette[lo]).lerp(palette[hi], paletteT - lo);
+        fluidRenderer.fieldColors[i * 3] = scratchColor.r;
+        fluidRenderer.fieldColors[i * 3 + 1] = scratchColor.g;
+        fluidRenderer.fieldColors[i * 3 + 2] = scratchColor.b;
       }
 
-      renderer.render(scene, quadCamera);
+      for (let i = 0; i < FOAM_CAPACITY; i++) {
+        const alive = foamPool.life[i] > 0;
+        fluidRenderer.foamPositions[i * 3] = foamPool.x[i] * scaleX;
+        fluidRenderer.foamPositions[i * 3 + 1] = dims.h - foamPool.y[i] * scaleY;
+        fluidRenderer.foamRadii[i] = foamPool.radius[i] * renderScale;
+        fluidRenderer.foamAlphas[i] = alive ? foamPool.life[i] / foamPool.maxLife[i] : 0;
+      }
+
+      // A plain typed-array copy — cheap even at a couple thousand cells —
+      // rather than driving the renderer's own DataTexture buffer directly,
+      // since waveField.step() rotates which Float32Array is "current" each
+      // step (see that class's own comment on why) and a texture can't
+      // transparently follow a swapped-out buffer reference.
+      fluidRenderer.rippleData.set(waveField.height);
+
+      fluidRenderer.render();
     };
 
     const handleVisibility = () => {
@@ -518,9 +566,7 @@ const FluidVisualizer = ({
       audioEl.removeEventListener("timeupdate", handleTimeUpdate);
       resizeObserver.disconnect();
       themeObserver.disconnect();
-      quad.geometry.dispose();
-      material.dispose();
-      renderer.dispose();
+      fluidRenderer.dispose();
       audioEl.pause();
       audioEl.removeAttribute("src");
       audioEl.load();

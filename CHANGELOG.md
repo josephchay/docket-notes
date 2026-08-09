@@ -23,6 +23,7 @@
     - Command Palette — adapted with { focusOnOpen: false }, since its search input already has autoFocus (core to a command palette's "start typing immediately" UX), which the hook's usual focus-the-panel-root step would otherwise fight a frame later.
 
 - Temporary music 
+- Cloth field animation effect in Command Ink
 
 ### Changed
 

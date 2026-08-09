@@ -25,6 +25,17 @@ import "./FluidPlayerDock.css";
 // bottom) — bottom:148px leaves a clean 12px of headroom above the taller
 // of those two regardless of which happens to be showing, without needing
 // to move or coordinate with either.
+//
+// domainW/domainH/gridCols/gridRows/activationHeight all scaled up ~1.4×
+// from their original values (60/9.5/44/3/2.6) alongside FluidVisualizer.jsx's
+// own default pool, now that SplatFluidRenderer's GPU splat pass — not a
+// per-pixel uBalls[] shader loop — is what actually builds the density
+// field. domainW has to scale along with gridCols, not stay fixed: with
+// SPACING unchanged, gridCols columns need (gridCols-1)*SPACING sim units
+// of width, and leaving domainW at 60 while raising gridCols to 62 would
+// have asked for ~71 units of pool inside a 60-unit-wide domain — the
+// overflow columns spawning outside the boundary and immediately clamping
+// against the wall on the very first step.
 const FluidPlayerDock = ({ reduceMotion }) => (
   <motion.div
     className="fluid-player-dock"
@@ -35,11 +46,11 @@ const FluidPlayerDock = ({ reduceMotion }) => (
   >
     <FluidVisualizer
       reduceMotion={ reduceMotion }
-      domainW={ 60 }
-      domainH={ 9.5 }
-      gridCols={ 44 }
-      gridRows={ 3 }
-      activationHeight={ 2.6 }
+      domainW={ 85 }
+      domainH={ 13 }
+      gridCols={ 62 }
+      gridRows={ 4 }
+      activationHeight={ 3.6 }
       controlsPosition="overlay"
     />
   </motion.div>
