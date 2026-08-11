@@ -530,6 +530,58 @@
   padding: 2px 6px;
 }
 
+/* The card's structural line — thread count and home region (see
+   NoteConstellation.jsx's own hoveredMeta): the graph's two facts about
+   a note, in the quietest register on the card. */
+.note-constellation-card-meta {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--page-ink-color);
+  opacity: .45;
+}
+
+/* The empty pool — see NoteConstellation.jsx's own EMPTY_DROP_PATH. A
+   centered quiet invitation in the app's own ink; the drop breathes via
+   framer in the JSX (still under reduced motion). */
+.note-constellation-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.note-constellation-empty-drop {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 8px;
+  fill: var(--page-ink-color);
+  opacity: .85;
+}
+
+.note-constellation-empty-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+}
+
+.note-constellation-empty-sub {
+  margin: 0;
+  max-width: 320px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--page-ink-color);
+  opacity: .55;
+}
+
 /* Feedback for the shift-click path-anchor gesture — see
    NoteConstellation.jsx's own pathStatus. Fixed to the top center of the
    stage rather than following anything, since it's reporting on the graph

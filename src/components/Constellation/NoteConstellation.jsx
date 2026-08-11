@@ -1019,6 +1019,28 @@ const AIM_DT = 0.035; // …of this much simulated time each — ≈1.5s of futu
 const AIM_MIN_SPEED = 8; // domain units/s of hand speed before the oracle speaks
 const AIM_OPACITY = 0.4;
 
+// Impact shake — a collision hard enough to hear (the thud threshold)
+// also kicks the view itself: a small damped tremor added to the world
+// transform at render time only. Two incommensurate frequencies so the
+// shake never reads as a loop, amplitude capped low enough to feel like
+// the desk being knocked rather than an earthquake, and strictly
+// render-level — the camera's own math, the minimap, and every
+// unprojection keep reading the true, unshaken camera, the same honest
+// split the parallax established. Fed only outside reduced motion.
+const SHAKE_GAIN = 0.9; // px of tremor per impact unit past the thud threshold
+const SHAKE_MAX = 5; // px — the hardest knock stays a knock
+const SHAKE_DECAY = 7; // 1/s — over in a third of a second
+
+// The pointer's own wake — the bare cursor moving quickly over the pool
+// leaves a faint ripple behind it, an order under the stirring rod's
+// deliberate streak: the water is simply always there, and a hand moved
+// through it says so. Gated off during pans (the world moves, not the
+// hand), node drags (the node's own wake already speaks), and stirring
+// (the rod's wake IS this, louder).
+const POINTER_WAKE_MIN_PX = 6; // px of motion per event before the water notices
+const POINTER_WAKE_GAIN = 0.0012; // splash per px of pointer travel
+const POINTER_WAKE_MAX = 0.06; // per-event cap — a passing hand, never a paddle
+
 // The stereo pool — every positioned cue pans to where its event
 // actually sits on screen right now (through the camera, so panning the
 // view genuinely re-seats the orchestra): plucks voice from their
@@ -1098,6 +1120,12 @@ const SONAR_NODE_PULSE = 0.2; // jelly pulse on nodes the front passes
 const SONAR_SPLASH = 0.5; // the tap's own emit splash
 const SONAR_NODE_SPLASH = 0.12; // per passed node, at full energy
 const SONAR_RING_OPACITY = 0.3; // the visible front's opacity at zero range
+
+// The empty pool's lone drop (see the empty-state JSX) — one blob from
+// the same generator every node silhouette comes from, rolled once per
+// session load: the empty state speaks the exact ink language the notes
+// will arrive in.
+const EMPTY_DROP_PATH = blobPath(56, 56, 8, 0.2);
 
 const truncateTitle = (title) => {
   const text = (title || "Untitled").trim() || "Untitled";
@@ -1227,6 +1255,9 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   const minimapDotRefs = useRef({});
   const minimapViewportRef = useRef(null);
   const minimapControllerRef = useRef(null);
+  // True while a pointer is scrubbing across the minimap (see its own
+  // pointer handlers) — a plain ref, since nothing renders from it.
+  const minimapScrubRef = useRef(false);
   const hullElRefs = useRef({});
   const clusterLabelRefs = useRef({});
   const trailElRefs = useRef({});
@@ -1382,8 +1413,14 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // to sync it — the controller may run the reduced-motion settle pass
   // synchronously, and that pass has to solve under the law being switched
   // TO, not the one still sitting in the ref from the previous render.
+  // Compared against modeRef rather than the `mode` closure on purpose:
+  // the physics effect's own keydown handler (1/2/3 — see handleKey)
+  // captures this function once at mount, and the ref is the only
+  // version of "current mode" that capture can't stale. Every other
+  // reference here is already capture-safe (setState and refs are
+  // stable), which is what makes the capture legal at all.
   const switchMode = (next) => {
-    if (next === mode) return;
+    if (next === modeRef.current) return;
     playTick();
     modeRef.current = next;
     setMode(next);
@@ -1502,6 +1539,16 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     () => (hoveredId ? graph.nodes.find((note) => note.id === hoveredId) || null : null),
     [hoveredId, graph.nodes]
   );
+
+  // The hover card's structural line — how many threads this note holds
+  // and which region pool it belongs to: the two facts the graph knows
+  // about a note that the note itself doesn't say.
+  const hoveredMeta = useMemo(() => {
+    if (!hoveredNote) return null;
+    const degree = degreeById.get(hoveredNote.id) || 0;
+    const region = graph.clusters.find((cluster) => cluster.members.includes(hoveredNote.id))?.label || "";
+    return { degree, region };
+  }, [hoveredNote, degreeById, graph.clusters]);
 
   // Cached per-note, keyed on radius too — regenerated only when a note's
   // own degree actually changes (which only happens when the panel reopens
@@ -2551,6 +2598,9 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
 
     // The aim line's eased visibility (see the AIM_STEPS constant block).
     let aimAmp = 0;
+
+    // The impact shake's remaining amplitude (see the SHAKE constants).
+    const shake = { amp: 0 };
     // True only while handleDblClick's own GSAP reset tween is actively
     // driving camera.x/y/zoom directly — the momentum/boundary-spring
     // block in tick() below has to stand down for that whole window, or
@@ -2565,7 +2615,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // own pan branch already follow, so a jump started mid-reset (or a
     // second jump before the first finishes) doesn't fight a leftover tween.
     minimapControllerRef.current = {
-      jumpTo: (domainX, domainY) => {
+      // `immediate` is the scrub path (see the minimap's own pointer
+      // handlers): while actively dragging across the minimap the camera
+      // tracks 1:1 — direct manipulation shouldn't lag behind a tween —
+      // where a single click keeps the glide it always had.
+      jumpTo: (domainX, domainY, immediate = false) => {
         const rect = svg.getBoundingClientRect();
         const worldX = domainX * (rect.width / DOMAIN_W);
         const worldY = domainY * (rect.height / DOMAIN_H);
@@ -2576,7 +2630,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         camera.vx = 0;
         camera.vy = 0;
 
-        if (reduceMotionRef.current) {
+        if (immediate || reduceMotionRef.current) {
           cameraAnimating = false;
           camera.x = targetX;
           camera.y = targetY;
@@ -2780,6 +2834,23 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       }
     };
 
+    // Pinch navigation — the camera's one genuinely touch-native gesture.
+    // Every active pointer is rostered by id; the moment a second lands
+    // on open water the gesture stops being a pan and becomes a pinch:
+    // per move, the zoom scales by the finger-distance ratio anchored at
+    // the current midpoint (the exact keep-the-point-under-the-anchor
+    // solve the wheel already does, with the anchor between two fingers
+    // instead of under one wheel), and the midpoint's own travel pans.
+    // Incremental against the LAST frame's distance/midpoint rather than
+    // the gesture's start, so fingers that drift apart mid-gesture never
+    // cause a jump. Ends when either finger lifts — deliberately without
+    // handing momentum off or converting back to a pan, since a
+    // half-lifted pinch has no honest single-pointer intent to inherit.
+    // Direct manipulation, so not gated on reduced motion, same as the
+    // pan and the wheel.
+    const activePointers = new Map();
+    const pinch = { active: false, lastDist: 0, lastMidX: 0, lastMidY: 0 };
+
     // A drag that starts on empty space (no [data-note-id] under the
     // pointer) pans the camera instead of grabbing a node — tracked
     // separately from `drag` above since the two are mutually exclusive
@@ -2799,6 +2870,27 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // handleUp below can tell a stationary click from a drag attempt.
     const handleDown = (e) => {
       lastInputTime = performance.now();
+      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      // A second pointer on the stage upgrades the gesture to a pinch
+      // (see the pinch declaration above) — unless a node, thread, or
+      // the stirring rod is already claimed, whose gestures a stray
+      // second finger shouldn't hijack. Any in-flight pan hands over,
+      // its tap disarmed so lifting the pinch can't fire a sonar.
+      if (activePointers.size === 2 && !drag.id && !tow.edge && !stir.active) {
+        const [p1, p2] = Array.from(activePointers.values());
+        gsap.killTweensOf(camera);
+        cameraAnimating = false;
+        panDrag.active = false;
+        panDrag.pixelDistance = 999;
+        camera.vx = 0;
+        camera.vy = 0;
+        pinch.active = true;
+        pinch.lastDist = Math.max(1, Math.hypot(p2.x - p1.x, p2.y - p1.y));
+        pinch.lastMidX = (p1.x + p2.x) / 2;
+        pinch.lastMidY = (p1.y + p2.y) / 2;
+        return;
+      }
 
       // Right button anywhere — the stirring rod (see the STIR_RADIUS
       // constant block), node or no node under the pointer: stirring is
@@ -2824,6 +2916,12 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       const target = e.target.closest("[data-note-id]");
 
       if (!target) {
+        // A second finger while a node or thread is already held gets
+        // no gesture of its own — the pinch upgrade above already
+        // declined it, and a stray pan or tow underneath a live grip
+        // would fight it.
+        if (drag.id || tow.edge) return;
+
         const { x, y } = domainFromEvent(e);
 
         // A drag that starts ON a thread tows the thread itself (see the
@@ -2904,10 +3002,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       // An unpinned node wakes up at rest and lets the forces reclaim it
       // from wherever it was held.
       if (e.altKey) {
-        node.pinned = !node.pinned;
-        node.vx = 0;
-        node.vy = 0;
-        setPinnedIds((prev) => (node.pinned ? [...prev, id] : prev.filter((pinnedId) => pinnedId !== id)));
+        togglePin(id);
         return;
       }
 
@@ -2933,6 +3028,36 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
 
     const handleMove = (e) => {
       lastInputTime = performance.now();
+      const roster = activePointers.get(e.pointerId);
+      if (roster) {
+        roster.x = e.clientX;
+        roster.y = e.clientY;
+      }
+
+      // The pinch (see its declaration) — anchored zoom from the finger
+      // distance's ratio plus pan from the midpoint's travel, both
+      // incremental against last frame.
+      if (pinch.active) {
+        if (activePointers.size < 2) return;
+        const [p1, p2] = Array.from(activePointers.values());
+        const rect = svg.getBoundingClientRect();
+        const dist = Math.max(1, Math.hypot(p2.x - p1.x, p2.y - p1.y));
+        const midX = (p1.x + p2.x) / 2 - rect.left;
+        const midY = (p1.y + p2.y) / 2 - rect.top;
+
+        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.zoom * (dist / pinch.lastDist)));
+        const applied = nextZoom / camera.zoom;
+        camera.x = midX - (midX - camera.x) * applied;
+        camera.y = midY - (midY - camera.y) * applied;
+        camera.zoom = nextZoom;
+        camera.x += midX - (pinch.lastMidX - rect.left);
+        camera.y += midY - (pinch.lastMidY - rect.top);
+
+        pinch.lastDist = dist;
+        pinch.lastMidX = midX + rect.left;
+        pinch.lastMidY = midY + rect.top;
+        return;
+      }
       // Tracked on every move regardless of what else this gesture is
       // doing (panning, dragging a node, or nothing at all) — gated at the
       // force-application site in step() by cursorField.active, which
@@ -2956,6 +3081,15 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         cursorField.prevY = cursorField.y;
         cursorField.x = x;
         cursorField.y = y;
+
+        // The bare pointer's wake (see the POINTER_WAKE constants) — a
+        // hand moved quickly through the water says the water is there.
+        if (cursorField.hasPrev && !reduceMotionRef.current && !panDrag.active && !drag.id && !stir.active) {
+          const movePx = Math.hypot(x - cursorField.prevX, y - cursorField.prevY) * renderScale;
+          if (movePx > POINTER_WAKE_MIN_PX) {
+            ink?.splash(x, y, Math.min(POINTER_WAKE_MAX, movePx * POINTER_WAKE_GAIN));
+          }
+        }
 
         // Sweeping the cursor across a thread plucks it (see the
         // PLUCK_OMEGA constant block): the segment the cursor just moved
@@ -3119,6 +3253,15 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     };
 
     const handleUp = (e) => {
+      activePointers.delete(e.pointerId);
+
+      // Either finger lifting ends the pinch outright — see the pinch
+      // declaration for why nothing is inherited by the survivor.
+      if (pinch.active) {
+        if (activePointers.size < 2) pinch.active = false;
+        return;
+      }
+
       // The rod lifting out of the pool — residual paddle speed just
       // decays in tick() rather than being zeroed, so a vigorous final
       // swirl doesn't cut dead the instant the button releases.
@@ -3381,6 +3524,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       if (!reduceMotionRef.current) e.preventDefault();
     };
 
+    // One pin toggle for both hands (see the pinning constant block) —
+    // alt-click and the keyboard's P both land here: flag flipped on the
+    // physics side immediately, mirrored into React state for the ring
+    // visual, and an unpinned node wakes at rest for the forces to
+    // reclaim.
+    const togglePin = (id) => {
+      const node = byId.get(id);
+      if (!node) return;
+      node.pinned = !node.pinned;
+      node.vx = 0;
+      node.vy = 0;
+      setPinnedIds((prev) => (node.pinned ? [...prev, id] : prev.filter((pinnedId) => pinnedId !== id)));
+    };
+
     // Focus movement (see the FOCUS_SPRING constant block) — one funnel
     // for every way focus changes, so the hover card and silhouette morph
     // always travel with it and always release the note they leave.
@@ -3403,6 +3560,28 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       if (e.key === "Enter" && focusIdRef.current) {
         e.preventDefault();
         service.send({ type: "SELECT", id: focusIdRef.current });
+        return;
+      }
+
+      // Keyboard parity (see the FOCUS_SPRING constant block) — the
+      // mouse's bigger statements, granted to the focused note: Space
+      // launches the signal ping from it (startPing carries its own
+      // reduced-motion gate), P pins it in place, and 1/2/3 pick the
+      // layout law directly — switchMode reads modeRef precisely so this
+      // mount-time capture stays legal.
+      if (e.key === " " && focusIdRef.current) {
+        e.preventDefault();
+        startPing(focusIdRef.current);
+        return;
+      }
+      if ((e.key === "p" || e.key === "P") && focusIdRef.current) {
+        e.preventDefault();
+        togglePin(focusIdRef.current);
+        return;
+      }
+      const modePick = { 1: "web", 2: "orrery", 3: "strata" }[e.key];
+      if (modePick) {
+        switchMode(modePick);
         return;
       }
 
@@ -3483,9 +3662,22 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       if (focusIdRef.current) moveFocus(null);
     };
 
+    // A cancelled pointer (palm rejection, the OS stealing the gesture)
+    // is a lift the app never chose — disarm the pan's tap so no sonar
+    // fires from it and force the rod off (handleUp's own stir branch
+    // needs the right button, which a cancel doesn't carry), then let
+    // handleUp run the ordinary releases.
+    const handlePointerCancel = (e) => {
+      panDrag.pixelDistance = 999;
+      stir.active = false;
+      if (svg.style.cursor === "grabbing") svg.style.cursor = "";
+      handleUp(e);
+    };
+
     svg.addEventListener("pointerdown", handleDown);
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
     svg.addEventListener("contextmenu", handleContextMenu);
     svg.addEventListener("keydown", handleKey);
     svg.addEventListener("blur", handleFocusBlur);
@@ -3723,8 +3915,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           camera.y += (ty - camera.y) * DRIFT_EASE;
         }
       }
+      // The impact shake rides the transform write alone (see the SHAKE
+      // constants) — camera.x/y themselves never see it, so every
+      // unprojection and the minimap stay honest.
+      let shakeX = 0;
+      let shakeY = 0;
+      if (shake.amp > 0.05) {
+        shake.amp *= Math.exp(-SHAKE_DECAY * dt);
+        shakeX = Math.sin(simTime * 71) * shake.amp;
+        shakeY = Math.cos(simTime * 89) * shake.amp * 0.7;
+      } else {
+        shake.amp = 0;
+      }
       if (worldGroupRef.current) {
-        worldGroupRef.current.setAttribute("transform", `translate(${ camera.x },${ camera.y }) scale(${ camera.zoom })`);
+        worldGroupRef.current.setAttribute("transform", `translate(${ camera.x + shakeX },${ camera.y + shakeY }) scale(${ camera.zoom })`);
       }
 
       // The parallax head eases toward wherever the pointer currently
@@ -3735,16 +3939,21 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       parallax.y += (parallax.ty - parallax.y) * PARALLAX_EASE;
 
       // The fisheye's engagement swells toward on/off (see the FISHEYE
-      // constants) — cursor presence is part of the target, so leaving
-      // the stage relaxes the whole distortion rather than freezing it
-      // around the pointer's last known position.
-      const fisheyeTarget = magnifyRef.current && cursorField.active && !reduceMotionRef.current ? 1 : 0;
+      // constants) — a live subject is part of the target, so losing it
+      // relaxes the whole distortion rather than freezing it around a
+      // last known position. The subject is the pointer when it's in the
+      // water, else the keyboard's focus swimmer — magnify finally works
+      // for the visitor who never touches the mouse, the lens riding
+      // wherever the swimmer last settled (one frame behind its own
+      // chase, invisibly).
+      const fisheyeHasSubject = cursorField.active || !!focusIdRef.current;
+      const fisheyeTarget = magnifyRef.current && fisheyeHasSubject && !reduceMotionRef.current ? 1 : 0;
       fisheye.amp += (fisheyeTarget - fisheye.amp) * FISHEYE_EASE;
       // The focus and reach, in world-pixel space — a circle in world
       // space stays a circle on screen (the camera scales uniformly), so
       // dividing the screen-space radius by zoom is the whole conversion.
-      const fisheyeFocusX = cursorField.x * scaleX;
-      const fisheyeFocusY = cursorField.y * scaleY;
+      const fisheyeFocusX = cursorField.active ? cursorField.x * scaleX : swimmer.x;
+      const fisheyeFocusY = cursorField.active ? cursorField.y * scaleY : swimmer.y;
       const fisheyeR = FISHEYE_RADIUS / camera.zoom;
 
       byId.forEach((node, id) => {
@@ -3812,9 +4021,12 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               // A landing worth hearing squirts ink at the contact (see
               // the IMPACT_SPLASH constants) — independent of the thud's
               // own cooldowns: the pool doesn't care how recently it was
-              // last splashed.
+              // last splashed — and knocks the view itself (see the
+              // SHAKE constants), amplitude from how far past the
+              // threshold the hit actually landed.
               if (node.impact > THUD_MIN_IMPACT) {
                 ink?.splash(node.x, node.y, Math.min(IMPACT_SPLASH_MAX, node.impact * IMPACT_SPLASH_GAIN));
+                shake.amp = Math.min(SHAKE_MAX, shake.amp + (node.impact - THUD_MIN_IMPACT) * SHAKE_GAIN);
               }
 
               // The audible half of the same impact (see the THUD
@@ -4168,8 +4380,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         ink.render({
           width: rect.width,
           height: rect.height,
-          cameraX: camera.x,
-          cameraY: camera.y,
+          // The shaken camera, not the true one — the pool is world
+          // content and a knock moves the whole world together; only
+          // the unprojections (input, minimap) read the honest camera.
+          cameraX: camera.x + shakeX,
+          cameraY: camera.y + shakeY,
           zoom: camera.zoom,
           scaleX,
           scaleY,
@@ -4224,7 +4439,9 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
 
           exposureCtx.setTransform(1, 0, 0, 1, 0, 0);
           exposureCtx.clearRect(0, 0, W, H);
-          exposureCtx.setTransform(camera.zoom, 0, 0, camera.zoom, camera.x, camera.y);
+          // Shaken with the world, like the pool — see the ink.render
+          // comment above.
+          exposureCtx.setTransform(camera.zoom, 0, 0, camera.zoom, camera.x + shakeX, camera.y + shakeY);
           exposureCtx.drawImage(exposureWorld, 0, 0);
         } else if (exposureLive) {
           // Film off (or reduced motion arrived) — clear the projection
@@ -4255,7 +4472,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       // full domain → world-pixel → camera mapping; opacity rides the
       // lens's own eased engagement so it condenses and dissolves with it.
       if (lensRingRef.current) {
-        if (fisheye.amp > 0.003 && cursorField.active) {
+        if (fisheye.amp > 0.003 && fisheyeHasSubject) {
           lensRingRef.current.setAttribute("cx", camera.x + fisheyeFocusX * camera.zoom);
           lensRingRef.current.setAttribute("cy", camera.y + fisheyeFocusY * camera.zoom);
           lensRingRef.current.setAttribute("opacity", (FISHEYE_RING_OPACITY * fisheye.amp).toFixed(3));
@@ -4710,6 +4927,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       svg.removeEventListener("pointerdown", handleDown);
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
       svg.removeEventListener("contextmenu", handleContextMenu);
       svg.removeEventListener("keydown", handleKey);
       svg.removeEventListener("blur", handleFocusBlur);
@@ -4743,6 +4961,12 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // the dive is about to zoom. No-ops by construction under reduced
     // motion (the surface was never created).
     inkControllerRef.current?.splashNote(selectedId, INK_DIVE_SPLASH);
+
+    // And the note itself swells through its own hover morph on the way
+    // under — the silhouette the pointer already knows, reused as the
+    // dive's last gesture rather than a new shape invented for the exit.
+    // (Under reduced motion the morph controller applies it instantly.)
+    morphControllerRef.current?.enter(selectedId);
 
     const svg = svgRef.current;
     const inkCanvas = inkCanvasRef.current;
@@ -4852,7 +5076,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         className="note-constellation-svg"
         tabIndex={ 0 }
         role="application"
-        aria-label="Note constellation. Arrow keys move between connected notes, Enter opens the focused note, Escape releases focus."
+        aria-label="Note constellation. Arrow keys move between connected notes, Enter opens the focused note, Space pings from it, P pins it, 1 to 3 switch the layout, Escape releases focus."
       >
         {/* Everything the camera pans/zooms lives in this one wrapping
             group — see the MIN_ZOOM/MAX_ZOOM module comment. The physics
@@ -5228,10 +5452,27 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             viewBox={ `0 0 ${ DOMAIN_W } ${ DOMAIN_H }` }
             preserveAspectRatio="none"
             onPointerDown={ (e) => {
+              // Pointer capture turns the click into a scrub: moves keep
+              // arriving even once the pointer strays off the minimap,
+              // so a drag flies the camera continuously (the controller's
+              // immediate path) while a plain click keeps its glide.
+              e.currentTarget.setPointerCapture(e.pointerId);
+              minimapScrubRef.current = true;
               const rect = e.currentTarget.getBoundingClientRect();
               const x = ((e.clientX - rect.left) / rect.width) * DOMAIN_W;
               const y = ((e.clientY - rect.top) / rect.height) * DOMAIN_H;
               minimapControllerRef.current?.jumpTo(x, y);
+            } }
+            onPointerMove={ (e) => {
+              if (!minimapScrubRef.current) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const x = Math.max(0, Math.min(DOMAIN_W, ((e.clientX - rect.left) / rect.width) * DOMAIN_W));
+              const y = Math.max(0, Math.min(DOMAIN_H, ((e.clientY - rect.top) / rect.height) * DOMAIN_H));
+              minimapControllerRef.current?.jumpTo(x, y, true);
+            } }
+            onPointerUp={ (e) => {
+              minimapScrubRef.current = false;
+              e.currentTarget.releasePointerCapture?.(e.pointerId);
             } }
           >
             <rect className="note-constellation-minimap-bg" x={ 0 } y={ 0 } width={ DOMAIN_W } height={ DOMAIN_H } />
@@ -5424,6 +5665,14 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                     </div>
                   )
                 }
+                {
+                  hoveredMeta && hoveredMeta.degree > 0 && (
+                    <span className="note-constellation-card-meta">
+                      { hoveredMeta.degree === 1 ? "1 thread" : `${ hoveredMeta.degree } threads` }
+                      { hoveredMeta.region ? ` · ${ hoveredMeta.region }` : "" }
+                    </span>
+                  )
+                }
               </div>
             </motion.div>
           )
@@ -5433,6 +5682,33 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           block) — visually hidden, politely spoken: each focused note by
           name, which is the reading the swimmer's ring gives sighted
           visitors. */}
+      {
+        active && notes.length === 0 && (
+          // The empty pool — a lone drop of the same ink every future
+          // note will arrive as, breathing quietly (still, under reduced
+          // motion), with the one sentence that explains what this stage
+          // is waiting for. Not an error state: an invitation.
+          <motion.div
+            className="note-constellation-empty"
+            initial={ reduceMotion ? false : { opacity: 0, y: 10 } }
+            animate={{ opacity: 1, y: 0 }}
+            transition={ SNAPPY }
+          >
+            <motion.svg
+              viewBox="0 0 56 56"
+              className="note-constellation-empty-drop"
+              animate={ reduceMotion ? undefined : { scale: [1, 1.05, 1] } }
+              transition={ reduceMotion ? undefined : { duration: 4, repeat: Infinity, ease: "easeInOut" } }
+            >
+              <path d={ EMPTY_DROP_PATH } />
+            </motion.svg>
+            <p className="note-constellation-empty-title">The pool is empty</p>
+            <p className="note-constellation-empty-sub">
+              Pour a few notes onto the desk — every shared tag becomes a thread.
+            </p>
+          </motion.div>
+        )
+      }
       <div className="note-constellation-sr-only" aria-live="polite">
         { focusId ? ((graph.nodes.find((note) => note.id === focusId)?.title || "Untitled").trim() || "Untitled") : "" }
       </div>
