@@ -28,6 +28,19 @@
 - View Panning for the Note constellation
 - Double clicking to the Note constellation to reset the view
 - wheel-zoom for Note constellation
+- Added Spin — blobs finally rotate
+    Every node now carries real angular state (rot, omega), driven by two honest torques and rendered as a genuine rotation of its own irregular silhouette (which is exactly what makes spin legible — a perfect circle turning is invisible):
+
+    - Contact friction: when two surfaces rub past each other, the tangential slip at the contact drags both silhouettes with it (same sign both sides — friction drags, gears mesh), through 1/mass like every impulse. A glancing collision leaves both notes visibly turning; a hard fling through a crowd sets the whole lane spinning.
+    - Ambient vorticity: the curl-noise current is a velocity field, and a body suspended in flow turns with the flow's local rotation — ζ = ∂v_y/∂x − ∂v_x/∂y, measured by central differences over four extra field samples per node per frame (a deliberate spend, stated in the comment: it's what makes the idle desk read as leaves turning in eddies instead of decals sliding on glass).
+
+    One relaxation does two jobs — the angular velocity chases the local vorticity on a slow ease, which doubles as the contact kicks' ring-down. The contact dimples stay world-honest: a dent is material, it turns with the body, so the pressure field folds the current rotation into its anchor angles and re-finds whichever anchors now face the neighbor. The collision-side kick is gated against reduced motion at the source, so the settle pass can't bank up spin that would burst out if the preference ever flipped.
+
+    Long exposure — the constellation photographing itself
+
+    A new Exposure pill develops film under the graph: every frame, every note deposits a faint dot of its own color into a world-space canvas (accumulated at zoom-1 resolution, blitted each frame through the live camera transform — so the developed image pans and zooms with the world), while a slow destination-out wash fades old light on a ~20-second clock. What develops is the physics' history, star-trail style: orbits draw their ellipses and comets their conics in Orrery, a throw draws its arc, the reshuffle blooms a chrysanthemum, the ambient drift writes its eddies — and a note that sits still burns a dark pool, exactly as a long exposure treats anything that doesn't move. The wash runs every 10th frame at real strength rather than every frame at a micro-alpha, because 8-bit canvas alpha quantizes washes under 1/255 to zero and the film would never clear. Toggling on loads fresh film; a resize rewinds it (stretching an old exposure would lie about where things had been); the dive tween carries the film along with the pool; reduced motion hides the pill entirely.
+
+    To see it: npm start → switch to Orrery, toggle Exposure, and give it thirty seconds — the systems literally draw their own orbital diagrams. Then fling a note through a crowd and watch the survivors spin from the grazing contacts while the throw's arc develops on the film. Verification is yours as usual.
 
 ### Changed
 

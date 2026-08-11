@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import gsap from "gsap";
 import { interpret } from "xstate";
-import { FaArrowsRotate, FaCircleNodes, FaLayerGroup, FaMagnifyingGlass, FaShareNodes, FaStar, FaSun, FaTableCells } from "react-icons/fa6";
+import { FaArrowsRotate, FaCamera, FaCircleNodes, FaLayerGroup, FaMagnifyingGlass, FaShareNodes, FaStar, FaSun, FaTableCells } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { blobPath, closedCatmullRomPath, createBlobMorph } from "../../utils/blob";
@@ -945,6 +945,58 @@ const FOCUS_RING_PAD = 8; // px beyond the focused blob's radius
 const FOCUS_PLUCK_AMP = 5; // px of vibAmp handed to each thread the swimmer travels
 const FOCUS_MIN_ALIGNMENT = 0.25; // dot-product floor before an arrow claims a neighbor
 
+// Spin — the one rigid-body degree of freedom the blobs never had.
+// Every node now carries an angular velocity, driven by two honest
+// torques and rendered as a real rotation of its own irregular
+// silhouette (which is what makes spin legible at all — a perfect
+// circle turning is invisible):
+//   contact friction — when two surfaces rub past each other, the
+//   tangential relative velocity at the contact drags both silhouettes
+//   along with it (same sign both sides: friction drags, gears mesh),
+//   through 1/mass like every impulse here; a glancing collision leaves
+//   both notes visibly turning.
+//   ambient vorticity — the curl-noise current is a velocity field, and
+//   a small body suspended in a flow turns with the flow's own local
+//   rotation, ζ = ∂v_y/∂x − ∂v_x/∂y, measured here by central
+//   differences over four extra field samples per node per frame (a
+//   deliberate spend: it is exactly what makes the idle desk read as
+//   leaves turning in eddies rather than decals sliding on glass).
+// The angular velocity chases the local vorticity on a slow ease — which
+// doubles as the ring-down for contact kicks, one relaxation doing both
+// jobs — and the contact dimples stay world-honest by folding the
+// current rotation into their anchor angles: a dent is material, it
+// turns with the body, and the pressure field re-finds whichever anchors
+// NOW face the neighbor. Skipped wholesale under reduced motion:
+// autonomous rotation is ambient motion by definition, and the static
+// transform from the JSX simply remains.
+const SPIN_CONTACT_GAIN = 0.4; // rad/s of kick per (domain unit/s) of contact slip, at mass 1
+const SPIN_VORTICITY_GAIN = 1.1; // rad/s per unit of local curl
+const SPIN_VORTICITY_EASE = 0.03; // per-frame chase toward the flow's rotation — also the contact kicks' own decay
+const SPIN_VORTICITY_STEP = 2; // domain units — the finite-difference half-step
+const SPIN_MAX = 3.5; // rad/s — a blob turns, it never becomes a fan
+
+// Long exposure — the constellation photographing itself. A toggleable
+// film under the graph: every frame, every note deposits a faint dot of
+// its own ink at its position into a WORLD-space canvas (accumulated at
+// zoom-1 resolution, then blitted through the live camera transform, so
+// panning and zooming move the developed image exactly like everything
+// else in the world), while a slow destination-out wash fades old light
+// away. What develops is the physics' own history, star-trail style:
+// orbits draw their ellipses, comets their conics, a throw its arc, the
+// reshuffle its chrysanthemum, the ambient drift its eddies — and a note
+// that sits still burns a dark pool, exactly as a long exposure treats
+// anything that doesn't move. The fade runs every Nth frame with a
+// non-tiny alpha rather than every frame with a minuscule one, because
+// 8-bit canvas alpha quantizes washes below 1/255 to zero and the film
+// would never fully clear. Toggling on starts fresh film; a resize wipes
+// it (the world canvas must be rebuilt, and stretching an old exposure
+// would be a lie about where things had been). Hidden and inert under
+// reduced motion — a long exposure of a still scene is just a smudge.
+const EXPOSURE_DEPOSIT_ALPHA = 0.045; // per frame, per note
+const EXPOSURE_DOT_FACTOR = 0.12; // dot radius as a fraction of the node's rendered radius
+const EXPOSURE_FADE_EVERY = 10; // frames between washes…
+const EXPOSURE_FADE_ALPHA = 0.014; // …at this strength — ≈20s to darkness-free film
+
 // The aim line — while a gripped note is moving fast enough to be a
 // throw in progress, its future appears: the same force laws run AHEAD
 // in time (repulsion by the same k²/d, the active law's own springs or
@@ -1225,6 +1277,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // The aim line's path (see the AIM_STEPS constant block) — geometry
   // and fade written per frame while a throw is in progress.
   const aimPathRef = useRef(null);
+  // The long-exposure film's display canvas (see the EXPOSURE constants)
+  // — the world-space accumulation canvas lives inside the physics
+  // effect's closure; this is only where it gets blitted through the
+  // camera.
+  const exposureCanvasRef = useRef(null);
 
   const [graph, setGraph] = useState({ nodes: [], edges: [], clusters: [], orbits: [], strata: [] });
   const [hoveredId, setHoveredId] = useState(null);
@@ -1266,6 +1323,10 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // The skeleton reading (see the Kruskal block in the build effect) —
   // pure class toggling, so React state alone suffices.
   const [skeleton, setSkeleton] = useState(false);
+  // The long-exposure film (see the EXPOSURE constants) — React state
+  // for the pill and the canvas's fade class, mirrored as a ref for the
+  // tick loop's develop/blit pass.
+  const [exposure, setExposure] = useState(false);
   // A stable service instance for this component's whole lifetime — same
   // useState-initializer convention SprintPanel.jsx's own interpret() call
   // already uses, so it isn't recreated every render.
@@ -1297,6 +1358,8 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   focusIdRef.current = focusId;
   const territoriesRef = useRef(territories);
   territoriesRef.current = territories;
+  const exposureRef = useRef(exposure);
+  exposureRef.current = exposure;
 
   const togglePathAnchor = (id) => {
     setPathAnchors((prev) => {
@@ -1525,6 +1588,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         pingPulse: 0,
         // Last audible collision, in simTime (see the THUD constants).
         lastThud: -1,
+        // Rigid-body spin (see the SPIN constants) — angle and angular
+        // velocity, advanced in tick(), kicked by contact friction in
+        // step().
+        rot: 0,
+        omega: 0,
         // Resolved once here so the liquid bridges (see the BRIDGE_REACH
         // constant block) can write gradient stops without re-deriving
         // the note's color per frame.
@@ -1989,11 +2057,27 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     let inkTheme = null;
     const resolveInkColor = () =>
       getComputedStyle(document.documentElement).getPropertyValue("--page-ink-color").trim() || "#191919";
+    // The resolved ink color as a real CSS value — canvas 2D fillStyle
+    // (the long-exposure film's) can't read var() the way SVG can, so
+    // the exposure pass reads this instead; refreshed wherever inkTheme
+    // itself is.
+    let inkCssColor = resolveInkColor();
     if (!reduceMotionRef.current && inkCanvasRef.current) {
       ink = new InkSurface(inkCanvasRef.current, DOMAIN_W, DOMAIN_H);
       inkTheme = document.documentElement.getAttribute("data-theme");
-      ink.setInk(resolveInkColor());
+      ink.setInk(inkCssColor);
     }
+
+    // The long-exposure film's own state (see the EXPOSURE constants) —
+    // the world-space canvas is created (and wiped) lazily by the tick
+    // pass whenever the film turns on or the stage resizes.
+    let exposureWorld = null;
+    let exposureWctx = null;
+    let exposureCtx = null;
+    let exposureW = 0;
+    let exposureH = 0;
+    let exposureFrame = 0;
+    let exposureLive = false;
     inkControllerRef.current = {
       splashNote: (id, amount) => {
         const node = byId.get(id);
@@ -2340,6 +2424,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             // shoving from behind a pin or a pointer doesn't.
             a.impact += overlap * (aFree / total);
             b.impact += overlap * (bFree / total);
+
+            // Contact friction's spin kick (see the SPIN constants) —
+            // the tangential slip at the contact drags both silhouettes
+            // with it. Gated here rather than trusting the render gate:
+            // the reduced-motion settle pass runs this same collision
+            // code with large early overlaps, and banked-up omega would
+            // burst out spinning if the preference ever flipped off.
+            if (!reduceMotionRef.current) {
+              const slipX = -ny;
+              const slipY = nx;
+              const slip = (b.vx - a.vx) * slipX + (b.vy - a.vy) * slipY;
+              a.omega += (slip * SPIN_CONTACT_GAIN) / a.mass;
+              b.omega += (slip * SPIN_CONTACT_GAIN) / b.mass;
+            }
           }
         }
       }
@@ -2668,8 +2766,13 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       const scale = rEff / shapes.radius;
       for (let idx = 0; idx < shapes.anchors.length; idx++) {
         const { angle, wobble } = shapes.anchors[idx];
-        const anchorX = ncx + Math.cos(angle) * wobble * rEff;
-        const anchorY = ncy + Math.sin(angle) * wobble * rEff;
+        // The anchor's WORLD direction folds in the blob's own spin (see
+        // the SPIN constants) — a dent is material, it turns with the
+        // body, so the pressure field must find whichever anchors NOW
+        // face the neighbor.
+        const worldAngle = angle + node.rot;
+        const anchorX = ncx + Math.cos(worldAngle) * wobble * rEff;
+        const anchorY = ncy + Math.sin(worldAngle) * wobble * rEff;
         const pen = (otherR + DIMPLE_RANGE) - Math.hypot(anchorX - ocx, anchorY - ocy);
         if (pen <= 0) continue;
         const dentLocal = Math.min(rEff * DIMPLE_MAX, pen * DIMPLE_DEPTH) / scale;
@@ -3791,11 +3894,32 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               node.dentTargets[di] = 0;
             }
           }
+
+          // Spin (see the SPIN constants): the angular velocity chases
+          // the flow's own local rotation — ζ by central differences
+          // over the same field the drift forces read — with the chase's
+          // ease doubling as the contact kicks' ring-down, then the
+          // silhouette turns about its own center.
+          const flowR = curlNoise2((node.x + SPIN_VORTICITY_STEP) / CURRENT_SCALE, node.y / CURRENT_SCALE, simTime * CURRENT_TIME_SCALE);
+          const flowL = curlNoise2((node.x - SPIN_VORTICITY_STEP) / CURRENT_SCALE, node.y / CURRENT_SCALE, simTime * CURRENT_TIME_SCALE);
+          const flowD = curlNoise2(node.x / CURRENT_SCALE, (node.y + SPIN_VORTICITY_STEP) / CURRENT_SCALE, simTime * CURRENT_TIME_SCALE);
+          const flowU = curlNoise2(node.x / CURRENT_SCALE, (node.y - SPIN_VORTICITY_STEP) / CURRENT_SCALE, simTime * CURRENT_TIME_SCALE);
+          const vorticity = (flowR.y - flowL.y) - (flowD.x - flowU.x);
+          node.omega += (vorticity * SPIN_VORTICITY_GAIN - node.omega) * SPIN_VORTICITY_EASE;
+          node.omega = Math.max(-SPIN_MAX, Math.min(SPIN_MAX, node.omega));
+          node.rot += node.omega * dt;
+
           const shapes = shapeCacheRef.current.get(id);
           const blobEl = blobPathElRefs.current[id];
           const morphEntry = blobMorphers.get(id);
-          if (shapes && blobEl && (!morphEntry || morphEntry.drive.t <= 0.001)) {
-            blobEl.setAttribute("d", breathingBlobPath(shapes.radius, shapes.anchors, simTime, node.dents));
+          if (shapes && blobEl) {
+            blobEl.setAttribute(
+              "transform",
+              `translate(${ shapes.offset },${ shapes.offset }) rotate(${ ((node.rot * 180) / Math.PI).toFixed(2) } ${ shapes.radius } ${ shapes.radius })`
+            );
+            if (!morphEntry || morphEntry.drive.t <= 0.001) {
+              blobEl.setAttribute("d", breathingBlobPath(shapes.radius, shapes.anchors, simTime, node.dents));
+            }
           }
         }
 
@@ -4037,7 +4161,8 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         const theme = document.documentElement.getAttribute("data-theme");
         if (theme !== inkTheme) {
           inkTheme = theme;
-          ink.setInk(resolveInkColor());
+          inkCssColor = resolveInkColor();
+          ink.setInk(inkCssColor);
         }
 
         ink.render({
@@ -4049,6 +4174,65 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           scaleX,
           scaleY,
         });
+      }
+
+      // The long-exposure film (see the EXPOSURE constants) — develop,
+      // then project: deposits and the fade wash land on the world-space
+      // canvas at zoom-1 resolution, and the display canvas just shows
+      // that film through the live camera transform every frame.
+      {
+        const exposureCanvas = exposureCanvasRef.current;
+        const wantExposure = exposureRef.current && !reduceMotionRef.current && exposureCanvas;
+        if (wantExposure) {
+          const W = Math.max(1, Math.round(rect.width));
+          const H = Math.max(1, Math.round(rect.height));
+          // Fresh film on toggle-on; a resize also rewinds it — the
+          // world canvas must be rebuilt at the new extent, and
+          // stretching an old exposure would misplace where things had
+          // actually been.
+          if (!exposureLive || exposureW !== W || exposureH !== H) {
+            exposureWorld = document.createElement("canvas");
+            exposureWorld.width = W;
+            exposureWorld.height = H;
+            exposureWctx = exposureWorld.getContext("2d");
+            exposureCanvas.width = W;
+            exposureCanvas.height = H;
+            exposureCtx = exposureCanvas.getContext("2d");
+            exposureW = W;
+            exposureH = H;
+            exposureFrame = 0;
+            exposureLive = true;
+          }
+
+          exposureFrame += 1;
+          if (exposureFrame % EXPOSURE_FADE_EVERY === 0) {
+            exposureWctx.globalCompositeOperation = "destination-out";
+            exposureWctx.globalAlpha = 1;
+            exposureWctx.fillStyle = `rgba(0,0,0,${ EXPOSURE_FADE_ALPHA })`;
+            exposureWctx.fillRect(0, 0, W, H);
+            exposureWctx.globalCompositeOperation = "source-over";
+          }
+
+          exposureWctx.globalAlpha = EXPOSURE_DEPOSIT_ALPHA;
+          byId.forEach((node) => {
+            exposureWctx.fillStyle = node.colorCss.startsWith("var(") ? inkCssColor : node.colorCss;
+            exposureWctx.beginPath();
+            exposureWctx.arc(node.x * scaleX, node.y * scaleY, Math.max(1.2, node.radiusPx * EXPOSURE_DOT_FACTOR), 0, Math.PI * 2);
+            exposureWctx.fill();
+          });
+          exposureWctx.globalAlpha = 1;
+
+          exposureCtx.setTransform(1, 0, 0, 1, 0, 0);
+          exposureCtx.clearRect(0, 0, W, H);
+          exposureCtx.setTransform(camera.zoom, 0, 0, camera.zoom, camera.x, camera.y);
+          exposureCtx.drawImage(exposureWorld, 0, 0);
+        } else if (exposureLive) {
+          // Film off (or reduced motion arrived) — clear the projection
+          // so nothing stale ghosts behind the fading CSS.
+          exposureCtx?.setTransform(1, 0, 0, 1, 0, 0);
+          exposureCtx?.clearRect(0, 0, exposureW, exposureH);
+          exposureLive = false;
+        }
       }
 
       // The minimap's own viewport rectangle — the inverse of the main
@@ -4576,15 +4760,18 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // element itself, not a camera move (the camera's own math never sees
     // it), so the pool has to be scaled alongside or the ripples would
     // stay flat and detached while the whole graph plunges. Same element
-    // box, same origin, same tween.
+    // box, same origin, same tween — and the long-exposure film rides
+    // along for exactly the same reason.
     if (inkCanvas) inkCanvas.style.transformOrigin = `${ originX }px ${ originY }px`;
+    const exposureCanvas = exposureCanvasRef.current;
+    if (exposureCanvas) exposureCanvas.style.transformOrigin = `${ originX }px ${ originY }px`;
 
     // A little short of the machine's own DIVE_DURATION_MS so the zoom
     // visibly finishes (rather than getting cut mid-tween) before the
     // panel closes and hands off to the editor.
     const duration = DIVE_DURATION_MS / 1000 - 0.04;
     const tweenFn = reduceMotionRef.current ? gsap.set : gsap.to;
-    const diveTargets = inkCanvas ? [svg, inkCanvas] : svg;
+    const diveTargets = [svg, inkCanvas, exposureCanvas].filter(Boolean);
     tweenFn(diveTargets, { scale: 3.2, duration, ease: "power3.in" });
     if (edgesGroup) tweenFn(edgesGroup, { opacity: 0, duration: duration * 0.6, ease: "power1.in" });
 
@@ -4644,6 +4831,15 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           initialized under reduced motion, in which case this stays a
           blank transparent element. */}
       <canvas ref={ inkCanvasRef } className="note-constellation-ink" aria-hidden="true" />
+      {/* The long-exposure film — see the EXPOSURE constants. Between the
+          pool and the SVG in paint order: developed light sits ON the
+          water, under everything that's actually happening now. The tick
+          loop owns all pixels; this element only fades in and out. */}
+      <canvas
+        ref={ exposureCanvasRef }
+        className={ `note-constellation-exposure ${ exposure && !reduceMotion ? "visible" : "" }` }
+        aria-hidden="true"
+      />
       {/* Focusable now (see the FOCUS_SPRING constant block) — tabIndex
           puts the stage in the tab order, role="application" hands arrow
           keys to this component's own graph-walking instead of a screen
@@ -5120,6 +5316,23 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           >
             <FaShareNodes aria-hidden="true" />
             Skeleton
+          </button>
+        )
+      }
+      {
+        graph.nodes.length > 0 && phase !== "diving" && !reduceMotion && (
+          // The long-exposure toggle (see the EXPOSURE constants) —
+          // hidden entirely under reduced motion, like magnify: a long
+          // exposure of a still scene is just a smudge, not a rendition
+          // worth offering.
+          <button
+            type="button"
+            className={ `note-constellation-exposure-toggle ${ exposure ? "active" : "" }` }
+            aria-pressed={ exposure }
+            onClick={ () => { playTick(); setExposure((prev) => !prev); } }
+          >
+            <FaCamera aria-hidden="true" />
+            Exposure
           </button>
         )
       }

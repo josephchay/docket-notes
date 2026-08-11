@@ -11,6 +11,26 @@
   pointer-events: none;
 }
 
+/* The long-exposure film — see NoteConstellation.jsx's own EXPOSURE
+   constants. Same inset:0 box as the pool and the SVG so all three views
+   of the one world can't drift apart; every pixel is written by the tick
+   loop, this only owns the fade and the developed image's overall
+   restraint (well under full opacity — it's a memory, not a layer of
+   content). */
+.note-constellation-exposure {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .45s ease-in-out;
+}
+
+.note-constellation-exposure.visible {
+  opacity: .55;
+}
+
 .note-constellation-svg {
   position: absolute;
   inset: 0;
@@ -599,7 +619,8 @@
 .note-constellation-reshuffle,
 .note-constellation-magnify,
 .note-constellation-cells,
-.note-constellation-skeleton {
+.note-constellation-skeleton,
+.note-constellation-exposure-toggle {
   position: absolute;
   left: 20px;
   bottom: 20px;
@@ -623,7 +644,8 @@
 .note-constellation-reshuffle:hover,
 .note-constellation-magnify:hover,
 .note-constellation-cells:hover,
-.note-constellation-skeleton:hover {
+.note-constellation-skeleton:hover,
+.note-constellation-exposure-toggle:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 26px -10px rgba(25, 25, 25, 0.38);
 }
@@ -631,14 +653,16 @@
 .note-constellation-reshuffle:active,
 .note-constellation-magnify:active,
 .note-constellation-cells:active,
-.note-constellation-skeleton:active {
+.note-constellation-skeleton:active,
+.note-constellation-exposure-toggle:active {
   transform: translateY(0);
 }
 
 .note-constellation-reshuffle svg,
 .note-constellation-magnify svg,
 .note-constellation-cells svg,
-.note-constellation-skeleton svg {
+.note-constellation-skeleton svg,
+.note-constellation-exposure-toggle svg {
   font-size: 12px;
 }
 
@@ -670,10 +694,17 @@
 }
 
 .note-constellation-cells.active,
-.note-constellation-skeleton.active {
+.note-constellation-skeleton.active,
+.note-constellation-exposure-toggle.active {
   color: var(--page-bg-color);
   background-color: var(--page-ink-color);
   border-color: var(--page-ink-color);
+}
+
+/* The long-exposure toggle continues the column past skeleton — see
+   NoteConstellation.jsx's own EXPOSURE constants. */
+.note-constellation-exposure-toggle {
+  bottom: 196px;
 }
 
 /* The fisheye's boundary ring — the lens's exact screen-space reach, a
