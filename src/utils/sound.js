@@ -215,3 +215,36 @@ export const playHistoryAction = (key) => {
 export const playTick = () => play((context) => {
   noise(context, { duration: .04, freqFrom: 1800, freqTo: 1200, peak: .12, filterType: "bandpass", Q: 2 });
 });
+
+// A constellation thread being plucked (NoteConstellation.jsx computes the
+// frequency from the string's own current length — see its pluck-audio
+// constants for the physics). Voiced like a soft harp string in the same
+// organic register as everything above: the fundamental, a quieter octave
+// partial (a real string's second harmonic — one partial is enough to read
+// as "string" without turning into a synthesizer patch), and a tiny
+// high-passed pick transient for the finger leaving the thread. Intensity
+// (0–1, from the pluck's own amplitude) scales level and sustain the way
+// pluck energy actually does.
+export const playThreadPluck = (freq = 320, intensity = .5) => play((context) => {
+  const s = Math.min(1, Math.max(0, intensity));
+  tone(context, { freq, duration: .28 + s * .14, type: "sine", peak: .05 + s * .12 });
+  tone(context, { freq: freq * 2, duration: .16 + s * .06, type: "sine", peak: .02 + s * .05 });
+  noise(context, { duration: .018, freqFrom: 3200, freqTo: 2200, peak: .03 + s * .05, filterType: "highpass" });
+});
+
+// A droplet meeting the water — the iconic "plip". A real drip's signature
+// is a RISING chirp (the cavity the drop punches into the surface shrinks
+// as it closes, and its resonant pitch climbs with it — the actual
+// acoustics of the sound everyone knows), so this is a short upward sine
+// glide with a tiny band-passed splash grain a hair behind it. The caller
+// picks the base frequency from the drop itself (NoteConstellation.jsx's
+// dew lands smaller drops higher, exactly as a smaller cavity rings
+// higher; its snapping liquid bridges reuse the same cue an octave-ish
+// down, where it reads as a thicker, wetter pop). Deliberately quiet even
+// at full intensity — dew falls on its own schedule, and an ambient sound
+// the visitor didn't cause has to sit under everything they did.
+export const playDrip = (freq = 620, intensity = .5) => play((context) => {
+  const s = Math.min(1, Math.max(0, intensity));
+  tone(context, { freq, glideTo: freq * 1.9, duration: .07 + s * .05, type: "sine", peak: .05 + s * .1 });
+  noise(context, { duration: .05, freqFrom: 2600, freqTo: 1400, peak: .02 + s * .04, filterType: "bandpass", Q: 1.6, delay: .012 });
+});

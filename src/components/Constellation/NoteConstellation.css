@@ -1,3 +1,16 @@
+/* The liquid ink surface — see NoteConstellation.jsx's own INK_WAKE
+   constants and utils/inkSurface.js. Sits under the SVG in the DOM (and
+   so in paint order), never intercepts input; sized by the same inset:0
+   box the SVG uses, so the two views of the one shared world can't drift
+   apart. */
+.note-constellation-ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 .note-constellation-svg {
   position: absolute;
   inset: 0;
@@ -18,10 +31,54 @@
   pointer-events: none;
 }
 
+/* Cluster ink pools — see NoteConstellation.jsx's own HULL_MIN_MEMBERS
+   constant block. The blur is what turns a crisp convex hull into a
+   pooled ink stain: the hull's exact silhouette is honest geometry, but
+   its job is "these notes belong together," and a soft pool says that
+   without adding a second layer of hard outlines competing with the
+   blobs and threads that are the actual content. */
+.note-constellation-hulls {
+  pointer-events: none;
+  transition: opacity .25s ease-in-out;
+}
+
+/* Stepped back, not hidden, while a traced path is active — the pools are
+   still true, they're just not the current question. */
+.note-constellation-hulls.dimmed {
+  opacity: .3;
+}
+
+.note-constellation-hull {
+  opacity: .16;
+  filter: blur(14px);
+}
+
+/* No stroke-width here — each thread's own width is a per-edge
+   presentation attribute now, scaled by its shared-tag count (see
+   NoteConstellation.jsx's own EDGE_WIDTH constants). Deliberately an
+   attribute rather than an inline style so the .on-path stylesheet rule
+   below still outranks it while a path is traced. */
+/* Cluster region names — see NoteConstellation.jsx's own CLUSTER_LABEL
+   constants. The quiet, letterspaced register of a map's region
+   lettering: fill comes per-cluster from the pool's own plurality color
+   (set in the JSX), opacity and the constant-screen-size counter-scale
+   are written every frame by the tick loop. Behind all actual content by
+   layer order, so a name reads as printed on the water, not floating
+   over the graph. */
+.note-constellation-cluster-label {
+  text-anchor: middle;
+  dominant-baseline: middle;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  pointer-events: none;
+  user-select: none;
+}
+
 .note-constellation-edge {
   fill: none;
   stroke: var(--page-line-color);
-  stroke-width: 1.5px;
   stroke-linecap: round;
   opacity: .4;
   transition: opacity .25s ease-in-out, stroke-width .25s ease-in-out;
@@ -39,6 +96,174 @@
   stroke: var(--blue-color);
   stroke-width: 3px;
   opacity: .9;
+}
+
+/* Ink flowing along a traced path — the dash pattern (mostly ink, a short
+   gap) marched by its own offset, so the path reads as a current running
+   from the first anchor toward the second rather than a static highlight.
+   catenaryPath always draws in the edge's own stored a→b order, so edges
+   the path actually walks b→a carry flow-reverse and play the same
+   animation backwards — one continuous stream, anchor to anchor (see
+   NoteConstellation.jsx's own pathEdgeFrom). The offset moves by exactly
+   one full dash period per cycle, so the loop has no visible seam.
+   Class-gated on the app's own reduceMotion prop from the JSX (see the
+   anchor ring's static comment for why a bare media query isn't enough) —
+   a reduced-motion path is the plain solid on-path stroke above. */
+.note-constellation-edge.on-path.flowing {
+  stroke-dasharray: 12 6;
+  animation: note-constellation-flow .8s linear infinite;
+}
+
+.note-constellation-edge.on-path.flowing.flow-reverse {
+  animation-direction: reverse;
+}
+
+@keyframes note-constellation-flow {
+  to { stroke-dashoffset: -18; }
+}
+
+/* A lensed thread — the active lens tag is genuinely among this edge's own
+   shared tags. Ink-colored rather than blue on purpose: blue is the traced
+   path's voice, and the lens is a standing spotlight, not a route. */
+.note-constellation-edge.lensed {
+  stroke: var(--page-ink-color);
+  opacity: .7;
+}
+
+/* Ink comet trails — see NoteConstellation.jsx's own TRAIL_LENGTH constant
+   block. Geometry, per-node stroke width/color, and opacity are all
+   written imperatively (tick loop and JSX respectively); this only owns
+   the parts that never change per frame. */
+.note-constellation-trails {
+  pointer-events: none;
+}
+
+.note-constellation-trail {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The strata's shelf furniture — see NoteConstellation.jsx's own
+   LAYOUT_MODES block. The whole layer rides one opacity fade keyed to
+   whether strata is the active law; per-band wash weights alternate via
+   fillOpacity attributes in the JSX, and all geometry is written by the
+   tick loop. */
+.note-constellation-strata {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .45s ease-in-out;
+}
+
+.note-constellation-strata.visible {
+  opacity: 1;
+}
+
+.note-constellation-strata-band {
+  fill: var(--page-line-color);
+}
+
+/* Month lettering in the cluster region names' own map register — quiet,
+   letterspaced, printed on the ground rather than floating over it. */
+.note-constellation-strata-label {
+  text-anchor: start;
+  dominant-baseline: middle;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  fill: var(--page-ink-color);
+  opacity: .3;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The orrery's orbit guides — see NoteConstellation.jsx's own
+   LAYOUT_MODES block. The pin ring's quiet dashed register: a guide is a
+   standing promise about where a planet belongs, not content. vector-
+   effect holds the hairline at one screen pixel through both the
+   domain's non-uniform scale and the camera's zoom — the same trick the
+   minimap viewport already leans on. Comet guides run fainter and
+   sparser: a comet's path matters less than its arrival. */
+.note-constellation-orbit-guides {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .45s ease-in-out;
+}
+
+.note-constellation-orbit-guides.visible {
+  opacity: 1;
+}
+
+.note-constellation-orbit-guide {
+  fill: none;
+  stroke: var(--page-ink-color);
+  stroke-width: 1px;
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  opacity: .3;
+}
+
+.note-constellation-orbit-guide.comet {
+  opacity: .16;
+  stroke-dasharray: 1 7;
+}
+
+/* Current streamlines — see NoteConstellation.jsx's own STREAM_COUNT
+   constant block. Hairline ink filaments tracing the ambient current;
+   geometry and fade are written every frame by the tick loop, and their
+   faintness is the point — a texture in the water the eye finds, not a
+   diagram laid over it. */
+.note-constellation-streams {
+  pointer-events: none;
+}
+
+.note-constellation-stream {
+  fill: none;
+  stroke: var(--page-ink-color);
+  stroke-width: 1px;
+  stroke-linecap: round;
+}
+
+/* Sonar fronts — see NoteConstellation.jsx's own SONAR_SPEED constant
+   block. A hairline ink ring, solid where every standing annotation here
+   (pins, guides, the fisheye rim) is dashed — a wavefront is a moving
+   fact, not a marker. Geometry and fade are written every frame by the
+   tick loop; vector-effect holds the line's weight through zoom the way
+   the minimap viewport's own stroke already does. */
+.note-constellation-sonar {
+  pointer-events: none;
+}
+
+.note-constellation-sonar-ring {
+  fill: none;
+  stroke: var(--page-ink-color);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Thread dew — see NoteConstellation.jsx's own DEW_GLOBAL_RATE constant
+   block. Ink-colored and translucent: condensation is the pool's own
+   medium gathering on the rigging, not a new material. All geometry
+   (position, radius, the pendant-drop elongation) is written every frame
+   by the tick loop; this owns only what never changes. */
+.note-constellation-dew {
+  pointer-events: none;
+}
+
+.note-constellation-dew-drop {
+  fill: var(--page-ink-color);
+  opacity: .5;
+}
+
+/* Liquid bridges — see NoteConstellation.jsx's own BRIDGE_REACH constant
+   block. Fill comes per-neck from a note-color-to-note-color gradient and
+   opacity from the neck's own condensation strength, both written every
+   frame by the tick loop; no stroke on purpose — a surface-tension neck
+   has no outline of its own, it IS the two blobs' shared surface. */
+.note-constellation-bridges {
+  pointer-events: none;
 }
 
 .note-constellation-node {
@@ -89,6 +314,30 @@
 
 @keyframes note-constellation-anchor-spin {
   to { transform: rotate(360deg); }
+}
+
+/* An alt-click-pinned node's ring — see NoteConstellation.jsx's own
+   pinning constant block. Ink-colored and static where the anchor ring
+   above is blue and spinning: a pin is a standing arrangement the layout
+   solves around, not an active selection asking for attention. */
+.note-constellation-pin-ring {
+  fill: none;
+  stroke: var(--page-ink-color);
+  stroke-width: 1.5px;
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+  opacity: .6;
+}
+
+/* The favorite's orbiting ink droplet — see NoteConstellation.jsx's own
+   MOON_RADIUS constant block; position is written every frame by the tick
+   loop's Kepler math. Ink-colored with a bg-colored outline, so it stays
+   legible crossing its own note's colored blob. */
+.note-constellation-moon {
+  fill: var(--page-ink-color);
+  stroke: var(--page-bg-color);
+  stroke-width: 1px;
+  pointer-events: none;
 }
 
 .note-constellation-label {
@@ -215,4 +464,230 @@
 .note-constellation-path-status.warn {
   color: var(--red-color);
   border-color: var(--red-color);
+}
+
+/* The minimap — see NoteConstellation.jsx's own module comment on why its
+   viewBox does the domain→pixel conversion that the main view's explicit
+   scaleX/scaleY otherwise has to do by hand. Bottom-right, clear of the
+   header's close button (top-right) and the path-status pill (top-center). */
+.note-constellation-minimap {
+  /* width/height are set inline from NoteConstellation.jsx's own
+     MINIMAP_WIDTH/MINIMAP_HEIGHT constants — kept out of this stylesheet
+     so there's exactly one source of truth for the size, not two numbers
+     that could quietly drift apart. */
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  z-index: 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 10px 24px -10px rgba(25, 25, 25, 0.3);
+  cursor: pointer;
+}
+
+.note-constellation-minimap-bg {
+  fill: var(--page-surface-color);
+}
+
+.note-constellation-minimap-dot {
+  opacity: .85;
+}
+
+/* The current viewport, in the minimap's own domain-space terms — a plain
+   stroked rect written every frame (see NoteConstellation.jsx's own tick
+   loop), not something CSS positions on its own. vector-effect keeps its
+   stroke a constant 1.5 screen pixels regardless of the viewBox's own
+   scale, so it reads the same whether the minimap is showing a wide or a
+   tall graph. */
+.note-constellation-minimap-viewport {
+  fill: none;
+  stroke: var(--blue-color);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+/* The reshuffle button — see NoteConstellation.jsx's own
+   REHEAT_TEMPERATURE constant block for what it actually runs. Bottom-
+   left, mirroring the minimap's bottom-right; the same pill language as
+   the path-status readout above, since both are small chrome floating
+   over the stage rather than content in it. */
+.note-constellation-reshuffle,
+.note-constellation-magnify {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--page-line-color);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--page-ink-color);
+  background-color: var(--page-bg-color);
+  box-shadow: 0 10px 24px -10px rgba(25, 25, 25, 0.3);
+  cursor: pointer;
+  transition: transform .15s ease-in-out, box-shadow .15s ease-in-out;
+}
+
+.note-constellation-reshuffle:hover,
+.note-constellation-magnify:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px -10px rgba(25, 25, 25, 0.38);
+}
+
+.note-constellation-reshuffle:active,
+.note-constellation-magnify:active {
+  transform: translateY(0);
+}
+
+.note-constellation-reshuffle svg,
+.note-constellation-magnify svg {
+  font-size: 12px;
+}
+
+/* The fisheye toggle — see NoteConstellation.jsx's own FISHEYE constants.
+   Stacked just above the reshuffle button it otherwise shares every rule
+   with; while engaged it inverts to solid ink, the same strongest-
+   statement treatment an active tag-lens chip already gets. */
+.note-constellation-magnify {
+  bottom: 64px;
+}
+
+.note-constellation-magnify.active {
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  border-color: var(--page-ink-color);
+}
+
+/* The fisheye's boundary ring — the lens's exact screen-space reach, a
+   faint dashed ink line in the same quiet register as the pin ring;
+   position and opacity are written every frame by the tick loop. */
+.note-constellation-lens-ring {
+  fill: none;
+  stroke: var(--page-ink-color);
+  stroke-width: 1px;
+  stroke-dasharray: 3 6;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+/* The tag lens rail — see NoteConstellation.jsx's own LENS_MAX_TAGS
+   constant block. Top-left, clear of the path-status pill (top-center),
+   the minimap (bottom-right) and the reshuffle button (bottom-left);
+   the same pill language as all three, since these are chrome floating
+   over the stage, not content in it. The column scrolls rather than
+   growing past the stage on a tag-heavy desk. */
+.note-constellation-lens {
+  position: absolute;
+  left: 20px;
+  top: 84px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-height: calc(100% - 180px);
+  overflow-y: auto;
+  /* Room for the hover lift below — without it the chips' own scroll box
+     clips the 1px rise and the shadow. */
+  padding: 4px;
+  margin: -4px;
+}
+
+.note-constellation-lens-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--page-line-color);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--page-ink-color);
+  background-color: var(--page-bg-color);
+  cursor: pointer;
+  /* No transform in this list — framer writes the transform every frame,
+     and a CSS transition on it would fight those writes with its own lag. */
+  transition: box-shadow .15s ease-in-out,
+    background-color .2s ease-in-out, color .2s ease-in-out, border-color .2s ease-in-out;
+}
+
+/* Only the shadow lives here — the matching -1px lift is framer-motion's
+   whileHover in the JSX, since framer already owns this element's inline
+   transform (entrance slide, tap scale) and an inline transform always
+   beats a stylesheet one. */
+.note-constellation-lens-chip:hover {
+  box-shadow: 0 8px 18px -10px rgba(25, 25, 25, 0.35);
+}
+
+/* An active lens inverts to solid ink — the strongest statement a chip can
+   make in this app's own palette, without borrowing the path's blue. */
+.note-constellation-lens-chip.active {
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  border-color: var(--page-ink-color);
+}
+
+.note-constellation-lens-count {
+  font-size: 10px;
+  opacity: .6;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The layout law switcher — see NoteConstellation.jsx's own LAYOUT_MODES
+   block. One segmented pill at bottom center (the three laws are one
+   exclusive choice), in the same floating-chrome language as the
+   reshuffle/magnify pills it sits between; the active law inverts to
+   solid ink, the strongest-statement treatment the lens chips and the
+   magnify toggle already established. */
+.note-constellation-modes {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--page-line-color);
+  border-radius: 999px;
+  background-color: var(--page-bg-color);
+  box-shadow: 0 10px 24px -10px rgba(25, 25, 25, 0.3);
+}
+
+.note-constellation-mode-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--page-ink-color);
+  background-color: transparent;
+  cursor: pointer;
+  transition: background-color .2s ease-in-out, color .2s ease-in-out;
+}
+
+.note-constellation-mode-chip:hover {
+  background-color: var(--page-surface-color);
+}
+
+.note-constellation-mode-chip.active {
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+}
+
+.note-constellation-mode-chip svg {
+  font-size: 12px;
 }

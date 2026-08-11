@@ -65,6 +65,41 @@ export class WaveField {
     add(x0 + 1, y0 + 1, fx * fy);
   }
 
+  // Bilinear height sample at an arbitrary domain point — the read-side
+  // mirror of excite()'s bilinear splat, and for the same reason: a
+  // sampled height shouldn't visibly snap to the nearest cell any more
+  // than an excitation's origin should. Indices clamp to the grid, which
+  // simply continues the Dirichlet boundary's own "the pool ends here"
+  // answer for points asked about beyond the edge.
+  sample(x, y) {
+    const gx = Math.max(0, Math.min(this.cols - 1.001, x / this.cellSize));
+    const gy = Math.max(0, Math.min(this.rows - 1.001, y / this.cellSize));
+    const x0 = Math.floor(gx);
+    const y0 = Math.floor(gy);
+    const fx = gx - x0;
+    const fy = gy - y0;
+    const i = y0 * this.cols + x0;
+    const h = this.height;
+
+    return h[i] * (1 - fx) * (1 - fy)
+      + h[i + 1] * fx * (1 - fy)
+      + h[i + this.cols] * (1 - fx) * fy
+      + h[i + this.cols + 1] * fx * fy;
+  }
+
+  // The surface gradient ∇h at a domain point, by central differences one
+  // cell apart over the bilinear sample above — what a floating object
+  // actually feels from a wave (the slope it sits on), and therefore the
+  // read half of two-way coupling: excite() lets bodies push the water,
+  // this lets the water push back. Units: height per domain unit.
+  gradientAt(x, y) {
+    const d = this.cellSize;
+    return {
+      x: (this.sample(x + d, y) - this.sample(x - d, y)) / (2 * d),
+      y: (this.sample(x, y + d) - this.sample(x, y - d)) / (2 * d),
+    };
+  }
+
   // One leapfrog step, dt small enough to keep r = waveSpeed·dt/cellSize
   // under the 1/√2 bound derived above (the caller's responsibility — this
   // class has no way to know what dt it'll actually be called with ahead of

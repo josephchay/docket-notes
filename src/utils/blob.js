@@ -20,7 +20,7 @@ export const blobPath = (width, height, points = 9, irregularity = 0.35, rng = M
     ];
   });
 
-  return catmullRomPath(pts);
+  return closedCatmullRomPath(pts);
 };
 
 // A standard rounded rectangle, built from cubic beziers rather than arc
@@ -47,8 +47,12 @@ export const roundedRectPath = (width, height, radius) => {
 // Catmull-Rom spline through a closed ring of points, converted to a cubic
 // bezier SVG path — the standard construction for a smooth curve that
 // actually passes through every anchor, rather than merely curving toward
-// them the way a quadratic approximation would.
-const catmullRomPath = (pts) => {
+// them the way a quadratic approximation would. Exported (rather than left
+// as blobPath's private helper) once NoteConstellation.jsx's cluster hulls
+// needed the exact same closed-ring smoothing for convex hull outlines —
+// same extract-don't-duplicate reasoning utils/catenary.js records for its
+// own move out of TagThreads.jsx.
+export const closedCatmullRomPath = (pts) => {
   const n = pts.length;
   const at = (i) => pts[(i + n) % n];
 
