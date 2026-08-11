@@ -161,26 +161,21 @@ export const markTourSeen = () => {
   }
 };
 
-// Whether the cinematic load intro has ever played in this browser —
-// always localStorage (unlike the tour above), since this is a one-time-
-// ever thing rather than a once-per-session coach-mark, and deliberately
-// independent of the persist preference so it survives regardless of
-// whether the visitor has opted into remembering their notes.
 export const hasSeenIntro = () => {
-  if (!storageAvailable("localStorage")) return true;
+  if (!storageAvailable("sessionStorage")) return true;
 
   try {
-    return window.localStorage.getItem(INTRO_KEY) === "1";
+    return window.sessionStorage.getItem(INTRO_KEY) === "1";
   } catch {
     return true;
   }
 };
 
 export const markIntroSeen = () => {
-  if (!storageAvailable("localStorage")) return;
+  if (!storageAvailable("sessionStorage")) return;
 
   try {
-    window.localStorage.setItem(INTRO_KEY, "1");
+    window.sessionStorage.setItem(INTRO_KEY, "1");
   } catch {
     // Storage blocked — the intro will just play again next visit.
   }

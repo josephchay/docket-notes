@@ -530,6 +530,142 @@
   padding: 2px 6px;
 }
 
+/* The field guide's summons — bottom-right, just clear of the minimap's
+   own box (20px bottom + its ~94px height + breathing room), in the
+   same pill language as the bottom-left column it mirrors. */
+.note-constellation-guide-toggle {
+  position: absolute;
+  right: 20px;
+  bottom: 132px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--page-line-color);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--page-ink-color);
+  background-color: var(--page-bg-color);
+  box-shadow: 0 10px 24px -10px rgba(25, 25, 25, 0.3);
+  cursor: pointer;
+  transition: transform .15s ease-in-out, box-shadow .15s ease-in-out,
+    background-color .2s ease-in-out, color .2s ease-in-out, border-color .2s ease-in-out;
+}
+
+.note-constellation-guide-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px -10px rgba(25, 25, 25, 0.38);
+}
+
+.note-constellation-guide-toggle svg {
+  font-size: 12px;
+}
+
+.note-constellation-guide-toggle.active {
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  border-color: var(--page-ink-color);
+}
+
+/* The field guide itself — see NoteConstellation.jsx's GUIDE_SECTIONS.
+   A right-hand column in the hover card's own paper register, scrolling
+   inside itself on short stages; kbd chips carry the gestures, prose
+   carries what they do. */
+.note-constellation-guide {
+  position: absolute;
+  top: 84px;
+  right: 20px;
+  bottom: 178px;
+  z-index: 4;
+  width: 296px;
+  overflow-y: auto;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 18px 40px -16px rgba(25, 25, 25, 0.4);
+}
+
+.note-constellation-guide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.note-constellation-guide-title {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--page-ink-color);
+}
+
+.note-constellation-guide-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.note-constellation-guide-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.note-constellation-guide-section-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--page-ink-color);
+  opacity: .45;
+}
+
+.note-constellation-guide-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.note-constellation-guide-keys {
+  flex-shrink: 0;
+  display: flex;
+  gap: 3px;
+}
+
+.note-constellation-guide-key {
+  padding: 2px 7px;
+  border: 1px solid var(--page-line-color);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  background-color: var(--page-surface-color);
+  white-space: nowrap;
+}
+
+.note-constellation-guide-text {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--page-ink-color);
+  opacity: .75;
+}
+
 /* The card's structural line — thread count and home region (see
    NoteConstellation.jsx's own hoveredMeta): the graph's two facts about
    a note, in the quietest register on the card. */
@@ -540,10 +676,13 @@
   opacity: .45;
 }
 
-/* The empty pool — see NoteConstellation.jsx's own EMPTY_DROP_PATH. A
-   centered quiet invitation in the app's own ink; the drop breathes via
-   framer in the JSX (still under reduced motion). */
-.note-constellation-empty {
+/* The empty pool — see NoteConstellationPanel.jsx's own EMPTY_DROP_PATH
+   (the panel owns the empty case; the constellation itself never mounts
+   without notes). A centered quiet invitation in the app's own ink; the
+   drop breathes via framer in the JSX (still under reduced motion).
+   Named -empty-state to stay clear of the panel stylesheet's own older
+   .note-constellation-empty rule. */
+.note-constellation-empty-state {
   position: absolute;
   top: 50%;
   left: 50%;

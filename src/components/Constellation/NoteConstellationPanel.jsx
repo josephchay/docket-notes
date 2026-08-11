@@ -1,10 +1,20 @@
 import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { FaXmark } from "react-icons/fa6";
 
+import { blobPath } from "../../utils/blob";
 import SheetPanel from "../Sheet/SheetPanel";
+import { SNAPPY } from "../Motion";
 import NoteConstellation from "./NoteConstellation";
 
 import "./NoteConstellationPanel.css";
+
+// The empty pool's lone drop — one blob from the same generator every
+// node silhouette comes from, rolled once per session load: the empty
+// state speaks the exact ink language the notes will arrive in. Lives
+// here rather than in NoteConstellation.jsx because THIS component owns
+// the empty case — the constellation itself never mounts without notes.
+const EMPTY_DROP_PATH = blobPath(56, 56, 8, 0.2);
 
 // Same summon pattern as every other dot-to-sheet panel in this app (see
 // GRAVITY_FIELD_EVENT, FLUID_VISUALIZER_EVENT, CLOTH_EVENT) — a command
@@ -88,7 +98,30 @@ const NoteConstellationPanel = ({ notes, openEditor, reduceMotion }) => {
             // `active` alone gates whether the layout simulation runs.
             <NoteConstellation active={ open } notes={ notes } onSelectNote={ handleSelect } reduceMotion={ reduceMotion } />
           ) : (
-            <p className="note-constellation-empty">Pour a few notes first — the constellation needs something to map</p>
+            open && (
+              // Not an error state: an invitation, in the ink the notes
+              // themselves will arrive as. The drop breathes on a slow
+              // tide (still, under reduced motion).
+              <motion.div
+                className="note-constellation-empty-state"
+                initial={ reduceMotion ? false : { opacity: 0, y: 10 } }
+                animate={{ opacity: 1, y: 0 }}
+                transition={ SNAPPY }
+              >
+                <motion.svg
+                  viewBox="0 0 56 56"
+                  className="note-constellation-empty-drop"
+                  animate={ reduceMotion ? undefined : { scale: [1, 1.05, 1] } }
+                  transition={ reduceMotion ? undefined : { duration: 4, repeat: Infinity, ease: "easeInOut" } }
+                >
+                  <path d={ EMPTY_DROP_PATH } />
+                </motion.svg>
+                <p className="note-constellation-empty-title">The pool is empty</p>
+                <p className="note-constellation-empty-sub">
+                  Pour a few notes onto the desk — every shared tag becomes a thread.
+                </p>
+              </motion.div>
+            )
           )
         }
       </div>

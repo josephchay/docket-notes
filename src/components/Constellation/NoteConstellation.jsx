@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import gsap from "gsap";
 import { interpret } from "xstate";
-import { FaArrowsRotate, FaCamera, FaCircleNodes, FaLayerGroup, FaMagnifyingGlass, FaShareNodes, FaStar, FaSun, FaTableCells } from "react-icons/fa6";
+import { FaArrowsRotate, FaCamera, FaCircleNodes, FaCircleQuestion, FaLayerGroup, FaMagnifyingGlass, FaShareNodes, FaStar, FaSun, FaTableCells, FaXmark } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { blobPath, closedCatmullRomPath, createBlobMorph } from "../../utils/blob";
@@ -1121,11 +1121,49 @@ const SONAR_SPLASH = 0.5; // the tap's own emit splash
 const SONAR_NODE_SPLASH = 0.12; // per passed node, at full energy
 const SONAR_RING_OPACITY = 0.3; // the visible front's opacity at zero range
 
-// The empty pool's lone drop (see the empty-state JSX) — one blob from
-// the same generator every node silhouette comes from, rolled once per
-// session load: the empty state speaks the exact ink language the notes
-// will arrive in.
-const EMPTY_DROP_PATH = blobPath(56, 56, 8, 0.2);
+// The field guide's catalog (see the guide JSX) — every gesture this
+// stage answers to, grouped by which hands it asks for. Rows flagged
+// `motion` describe gestures that stand down under reduced motion and
+// are filtered out rather than shown as dead promises. This list is the
+// discoverability debt of everything above paid in one place: the stage
+// accumulated a musician's worth of technique, and technique nobody can
+// find is decoration.
+const GUIDE_SECTIONS = [
+  {
+    title: "One hand",
+    rows: [
+      { keys: ["Click"], text: "Open a note — the dive." },
+      { keys: ["Drag a note"], text: "Haul it — mass is real; release to fling.", motion: true },
+      { keys: ["Drag a thread"], text: "Tow both its notes by real tension.", motion: true },
+      { keys: ["Drag open water"], text: "Pan the camera." },
+      { keys: ["Right-drag"], text: "Stir the pool.", motion: true },
+      { keys: ["Tap open water"], text: "Sonar — the front strums what it crosses.", motion: true },
+      { keys: ["Shift", "Tap water"], text: "Strike the pool's own drum modes.", motion: true },
+      { keys: ["Shift", "Click note"], text: "Path anchor — two trace the shortest route." },
+      { keys: ["Alt", "Click note"], text: "Pin a note where it sits." },
+      { keys: ["Double-click"], text: "Dive to a cluster, or reset the view." },
+      { keys: ["Wheel"], text: "Zoom at the cursor." },
+    ],
+  },
+  {
+    title: "No hands",
+    rows: [
+      { keys: ["↑↓←→"], text: "Swim focus along the threads." },
+      { keys: ["Enter"], text: "Open the focused note." },
+      { keys: ["Space"], text: "Ping outward from the focused note.", motion: true },
+      { keys: ["P"], text: "Pin the focused note." },
+      { keys: ["1", "2", "3"], text: "Web · Orrery · Strata." },
+      { keys: ["?"], text: "This guide." },
+      { keys: ["Esc"], text: "Release focus, then close the panel." },
+    ],
+  },
+  {
+    title: "Two fingers",
+    rows: [
+      { keys: ["Pinch"], text: "Zoom and pan by touch." },
+    ],
+  },
+];
 
 const truncateTitle = (title) => {
   const text = (title || "Untitled").trim() || "Untitled";
@@ -1358,6 +1396,9 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // for the pill and the canvas's fade class, mirrored as a ref for the
   // tick loop's develop/blit pass.
   const [exposure, setExposure] = useState(false);
+  // The field guide (see GUIDE_SECTIONS) — mirrored as a ref for the
+  // keydown handler's own Escape layering.
+  const [guideOpen, setGuideOpen] = useState(false);
   // A stable service instance for this component's whole lifetime — same
   // useState-initializer convention SprintPanel.jsx's own interpret() call
   // already uses, so it isn't recreated every render.
@@ -1391,6 +1432,8 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   territoriesRef.current = territories;
   const exposureRef = useRef(exposure);
   exposureRef.current = exposure;
+  const guideOpenRef = useRef(guideOpen);
+  guideOpenRef.current = guideOpen;
 
   const togglePathAnchor = (id) => {
     setPathAnchors((prev) => {
@@ -3553,8 +3596,30 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     const handleKey = (e) => {
       lastInputTime = performance.now();
 
+      // Escape peels one layer at a time — guide, then focus, and only
+      // with nothing left to release does it bubble on to the panel's
+      // own window-level Escape and close the whole sheet. Without the
+      // stopPropagation here, dropping focus would ALSO slam the panel
+      // shut — both listeners fire on the same keystroke.
       if (e.key === "Escape") {
-        if (focusIdRef.current) moveFocus(null);
+        if (guideOpenRef.current) {
+          e.stopPropagation();
+          setGuideOpen(false);
+          return;
+        }
+        if (focusIdRef.current) {
+          e.stopPropagation();
+          moveFocus(null);
+        }
+        return;
+      }
+
+      // "?" summons the field guide (see GUIDE_SECTIONS) — the one key
+      // every keyboard-driven surface teaches first.
+      if (e.key === "?") {
+        e.preventDefault();
+        playTick();
+        setGuideOpen((prev) => !prev);
         return;
       }
       if (e.key === "Enter" && focusIdRef.current) {
@@ -5076,7 +5141,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         className="note-constellation-svg"
         tabIndex={ 0 }
         role="application"
-        aria-label="Note constellation. Arrow keys move between connected notes, Enter opens the focused note, Space pings from it, P pins it, 1 to 3 switch the layout, Escape releases focus."
+        aria-label="Note constellation. Arrow keys move between connected notes, Enter opens the focused note, Space pings from it, P pins it, 1 to 3 switch the layout, question mark opens the gesture guide, Escape releases focus."
       >
         {/* Everything the camera pans/zooms lives in this one wrapping
             group — see the MIN_ZOOM/MAX_ZOOM module comment. The physics
@@ -5579,6 +5644,80 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       }
       {
         graph.nodes.length > 0 && phase !== "diving" && (
+          // The field guide's summons — bottom-right, seated just above
+          // the minimap it shares the corner with; "?" reaches the same
+          // place from the keyboard.
+          <button
+            type="button"
+            className={ `note-constellation-guide-toggle ${ guideOpen ? "active" : "" }` }
+            aria-pressed={ guideOpen }
+            aria-label="Gesture guide"
+            onClick={ () => { playTick(); setGuideOpen((prev) => !prev); } }
+          >
+            <FaCircleQuestion aria-hidden="true" />
+            Guide
+          </button>
+        )
+      }
+      <AnimatePresence>
+        {
+          guideOpen && (
+            // The field guide (see GUIDE_SECTIONS) — a right-hand column
+            // in the floating-chrome card language, every gesture the
+            // stage answers to grouped by which hands it asks for.
+            // Reduced motion filters out the rows describing gestures
+            // that stand down there, rather than listing dead promises.
+            <motion.aside
+              className="note-constellation-guide"
+              role="dialog"
+              aria-label="Constellation gesture guide"
+              initial={{ opacity: 0, x: 18 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 18, transition: { duration: .15 } }}
+              transition={ SNAPPY }
+            >
+              <div className="note-constellation-guide-header">
+                <span className="note-constellation-guide-title">Field guide</span>
+                <button
+                  type="button"
+                  className="note-constellation-guide-close"
+                  aria-label="Close guide"
+                  onClick={ () => setGuideOpen(false) }
+                >
+                  <FaXmark />
+                </button>
+              </div>
+              {
+                GUIDE_SECTIONS.map((section) => {
+                  const rows = section.rows.filter((row) => !row.motion || !reduceMotion);
+                  if (rows.length === 0) return null;
+                  return (
+                    <div key={ section.title } className="note-constellation-guide-section">
+                      <span className="note-constellation-guide-section-title">{ section.title }</span>
+                      {
+                        rows.map((row) => (
+                          <div key={ row.text } className="note-constellation-guide-row">
+                            <span className="note-constellation-guide-keys">
+                              {
+                                row.keys.map((key) => (
+                                  <kbd key={ key } className="note-constellation-guide-key">{ key }</kbd>
+                                ))
+                              }
+                            </span>
+                            <span className="note-constellation-guide-text">{ row.text }</span>
+                          </div>
+                        ))
+                      }
+                    </div>
+                  );
+                })
+              }
+            </motion.aside>
+          )
+        }
+      </AnimatePresence>
+      {
+        graph.nodes.length > 0 && phase !== "diving" && (
           // The layout law switcher — see the LAYOUT_MODES block. Bottom
           // center, the one position the floating chrome hadn't claimed
           // (minimap bottom-right, reshuffle/magnify bottom-left, status
@@ -5682,33 +5821,6 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           block) — visually hidden, politely spoken: each focused note by
           name, which is the reading the swimmer's ring gives sighted
           visitors. */}
-      {
-        active && notes.length === 0 && (
-          // The empty pool — a lone drop of the same ink every future
-          // note will arrive as, breathing quietly (still, under reduced
-          // motion), with the one sentence that explains what this stage
-          // is waiting for. Not an error state: an invitation.
-          <motion.div
-            className="note-constellation-empty"
-            initial={ reduceMotion ? false : { opacity: 0, y: 10 } }
-            animate={{ opacity: 1, y: 0 }}
-            transition={ SNAPPY }
-          >
-            <motion.svg
-              viewBox="0 0 56 56"
-              className="note-constellation-empty-drop"
-              animate={ reduceMotion ? undefined : { scale: [1, 1.05, 1] } }
-              transition={ reduceMotion ? undefined : { duration: 4, repeat: Infinity, ease: "easeInOut" } }
-            >
-              <path d={ EMPTY_DROP_PATH } />
-            </motion.svg>
-            <p className="note-constellation-empty-title">The pool is empty</p>
-            <p className="note-constellation-empty-sub">
-              Pour a few notes onto the desk — every shared tag becomes a thread.
-            </p>
-          </motion.div>
-        )
-      }
       <div className="note-constellation-sr-only" aria-live="polite">
         { focusId ? ((graph.nodes.find((note) => note.id === focusId)?.title || "Untitled").trim() || "Untitled") : "" }
       </div>

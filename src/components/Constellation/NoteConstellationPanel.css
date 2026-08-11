@@ -94,15 +94,7 @@
   height: 100%;
 }
 
-.note-constellation-empty {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  padding: 0 32px;
-  text-align: center;
-  font-size: 15px;
-  color: var(--black-more-transclucent-color);
-}
+/* The empty case's styling now lives in NoteConstellation.css as
+   .note-constellation-empty-state (the breathing-drop invitation the
+   JSX here renders) — the old plain-paragraph rule that sat here is
+   gone with the paragraph itself. */
