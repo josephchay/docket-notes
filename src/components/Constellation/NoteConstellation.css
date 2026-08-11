@@ -27,6 +27,54 @@
   touch-action: none;
 }
 
+/* The stage is focusable now (see NoteConstellation.jsx's own
+   FOCUS_SPRING constant block) — the browser's default focus rectangle
+   stands down because the focus swimmer's ring IS the visible indicator,
+   richer and more honest than an outline around the whole stage. */
+.note-constellation-svg:focus,
+.note-constellation-svg:focus-visible {
+  outline: none;
+}
+
+/* The aim line — see NoteConstellation.jsx's own AIM_STEPS constant
+   block. Dotted where the sonar's moving fact is solid: a prediction is
+   a proposal, not an event. Geometry and fade are written every frame by
+   the tick loop. */
+.note-constellation-aim {
+  fill: none;
+  stroke: var(--page-ink-color);
+  stroke-width: 1.5px;
+  stroke-dasharray: 1 7;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+/* The focus swimmer's ring — a solid ink line, deliberately heavier than
+   every dashed standing annotation (pins, guides, the fisheye rim):
+   keyboard focus is a current statement, not a standing arrangement.
+   Transform, radius, and fade are written every frame by the tick loop. */
+.note-constellation-focus-ring {
+  fill: none;
+  stroke: var(--page-ink-color);
+  stroke-width: 2px;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+/* Visually hidden, screen-reader spoken — the standard clip-pattern
+   sr-only, for the focus announcement's aria-live region. */
+.note-constellation-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .note-constellation-edges {
   pointer-events: none;
 }
@@ -130,6 +178,19 @@
   opacity: .7;
 }
 
+/* The skeleton reading — see NoteConstellation.jsx's own Kruskal block.
+   With the edges group carrying .skeleton, every thread outside the
+   spanning forest recedes to a ghost and the forest itself firms up —
+   but the traced path's and lens's own statements still outrank it (the
+   :not() guards), same dimming priority discipline as everywhere else. */
+.note-constellation-edges.skeleton .note-constellation-edge:not(.mst):not(.on-path):not(.lensed) {
+  opacity: .06;
+}
+
+.note-constellation-edges.skeleton .note-constellation-edge.mst:not(.dimmed):not(.on-path):not(.lensed) {
+  opacity: .75;
+}
+
 /* Ink comet trails — see NoteConstellation.jsx's own TRAIL_LENGTH constant
    block. Geometry, per-node stroke width/color, and opacity are all
    written imperatively (tick loop and JSX respectively); this only owns
@@ -208,6 +269,27 @@
 .note-constellation-orbit-guide.comet {
   opacity: .16;
   stroke-dasharray: 1 7;
+}
+
+/* Voronoi territories — see NoteConstellation.jsx's own VORONOI constant
+   block. Crisp hairline cell walls (non-scaling, like every other
+   instrument line here) over a whisper of each note's own color; the
+   whole layer rides one fade keyed to the toggle. Straight lines by
+   construction and by principle — a bisector is a bisector. */
+.note-constellation-voronoi {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .45s ease-in-out;
+}
+
+.note-constellation-voronoi.visible {
+  opacity: 1;
+}
+
+.note-constellation-voronoi-cell {
+  stroke: var(--page-line-color);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
 }
 
 /* Current streamlines — see NoteConstellation.jsx's own STREAM_COUNT
@@ -515,7 +597,9 @@
    the path-status readout above, since both are small chrome floating
    over the stage rather than content in it. */
 .note-constellation-reshuffle,
-.note-constellation-magnify {
+.note-constellation-magnify,
+.note-constellation-cells,
+.note-constellation-skeleton {
   position: absolute;
   left: 20px;
   bottom: 20px;
@@ -537,18 +621,24 @@
 }
 
 .note-constellation-reshuffle:hover,
-.note-constellation-magnify:hover {
+.note-constellation-magnify:hover,
+.note-constellation-cells:hover,
+.note-constellation-skeleton:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 26px -10px rgba(25, 25, 25, 0.38);
 }
 
 .note-constellation-reshuffle:active,
-.note-constellation-magnify:active {
+.note-constellation-magnify:active,
+.note-constellation-cells:active,
+.note-constellation-skeleton:active {
   transform: translateY(0);
 }
 
 .note-constellation-reshuffle svg,
-.note-constellation-magnify svg {
+.note-constellation-magnify svg,
+.note-constellation-cells svg,
+.note-constellation-skeleton svg {
   font-size: 12px;
 }
 
@@ -561,6 +651,26 @@
 }
 
 .note-constellation-magnify.active {
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  border-color: var(--page-ink-color);
+}
+
+/* The mathematics pills — Voronoi territories and the spanning-forest
+   skeleton (see NoteConstellation.jsx's own VORONOI constant block and
+   Kruskal block), continuing the bottom-left column upward past magnify;
+   both invert to solid ink while engaged, the column's own established
+   strongest-statement treatment. */
+.note-constellation-cells {
+  bottom: 108px;
+}
+
+.note-constellation-skeleton {
+  bottom: 152px;
+}
+
+.note-constellation-cells.active,
+.note-constellation-skeleton.active {
   color: var(--page-bg-color);
   background-color: var(--page-ink-color);
   border-color: var(--page-ink-color);

@@ -65,6 +65,27 @@ export class WaveField {
     add(x0 + 1, y0 + 1, fx * fy);
   }
 
+  // Strike a pure eigenmode of the rectangular membrane — add
+  // A·sin(mπ·x/W)·sin(nπ·y/H) across the interior. These are the wave
+  // equation's own eigenfunctions under this grid's Dirichlet boundary
+  // (each is zero on all four walls, exactly matching the fixed edges),
+  // so the injected pattern doesn't propagate anywhere: it STANDS,
+  // oscillating in place at its own eigenfrequency ω = cπ·√((m/W)²+(n/H)²)
+  // and dying only through the damping term — a Chladni figure, the
+  // classic standing-wave pattern of a struck plate, produced here by
+  // the same solver that carries every traveling ripple rather than by
+  // any special-cased animation. excite() splats a point; this strikes
+  // the whole membrane like a bell.
+  exciteMode(m, n, amount) {
+    const { cols, rows, height } = this;
+    for (let y = 1; y < rows - 1; y++) {
+      const sy = Math.sin((n * Math.PI * y) / (rows - 1));
+      for (let x = 1; x < cols - 1; x++) {
+        height[y * cols + x] += amount * Math.sin((m * Math.PI * x) / (cols - 1)) * sy;
+      }
+    }
+  }
+
   // Bilinear height sample at an arbitrary domain point — the read-side
   // mirror of excite()'s bilinear splat, and for the same reason: a
   // sampled height shouldn't visibly snap to the nearest cell any more

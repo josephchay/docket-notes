@@ -16,16 +16,20 @@ import { smoothPath } from "./svgPath";
 // physical relationship (small a ≈ low horizontal tension relative to the
 // rope's own weight, which is exactly what a slack rope's own shape reads
 // as), not a naming choice worth second-guessing.
-// `wave` superimposes a plucked-string displacement on top of the hanging
-// shape: the fundamental standing-wave mode of a string fixed at both ends,
-// whose spatial shape is sin(π·s) along the span (zero at both endpoints,
-// maximum at the midpoint — the first term of the d'Alembert/Fourier
-// solution to the wave equation with fixed boundaries, and the mode a real
-// pluck near the middle mostly excites). The caller owns the time half of
-// the solution (the amplitude's own oscillation and decay, A·e^(−λt)·
-// sin(ωt)) and passes only the current instantaneous displacement — this
-// function stays a pure shape, same as it always was.
-export const catenaryPath = (x1, y1, x2, y2, { k, samples = 12, maxSag = 70, wobble = 1, wave = 0 } = {}) => {
+// `wave`/`wave2`/`wave3` superimpose a plucked-string displacement on top
+// of the hanging shape: the first three standing-wave modes of a string
+// fixed at both ends, spatial shapes sin(nπ·s) along the span (zero at
+// both endpoints — the leading terms of the d'Alembert/Fourier solution
+// to the wave equation with fixed boundaries). Three modes rather than
+// one because a real pluck's SHAPE depends on where the string was
+// plucked: the modal amplitudes are the Fourier coefficients of the
+// pluck's own triangle, so an end-pluck rings visibly wrigglier than a
+// mid-pluck (see NoteConstellation.jsx's pluckEdge for the coefficient
+// math). The caller owns the time half of the solution per mode (each
+// amplitude's own oscillation and decay, Aₙ·e^(−λₙt)·sin(ωₙt)) and
+// passes only the current instantaneous displacements — this function
+// stays a pure shape, same as it always was.
+export const catenaryPath = (x1, y1, x2, y2, { k, samples = 12, maxSag = 70, wobble = 1, wave = 0, wave2 = 0, wave3 = 0 } = {}) => {
   const dx = x2 - x1;
   const dy = y2 - y1;
   const dist = Math.hypot(dx, dy);
@@ -52,9 +56,12 @@ export const catenaryPath = (x1, y1, x2, y2, { k, samples = 12, maxSag = 70, wob
 
   const points = [];
   for (let i = 0; i <= samples; i++) {
-    const localX = (i / samples) * dist;
+    const s = i / samples;
+    const localX = s * dist;
     const localY = (a * coshHalf - a * Math.cosh((localX - half) / a)) * sagScale
-      + wave * Math.sin(Math.PI * (i / samples));
+      + wave * Math.sin(Math.PI * s)
+      + wave2 * Math.sin(2 * Math.PI * s)
+      + wave3 * Math.sin(3 * Math.PI * s);
 
     points.push({
       x: x1 + localX * cosT - localY * sinT,
@@ -74,7 +81,7 @@ export const catenaryPath = (x1, y1, x2, y2, { k, samples = 12, maxSag = 70, wob
 // part of the thread" should come here too. Kept a separate function
 // instead of a return-both refactor of catenaryPath so the hot path-string
 // builder doesn't grow an allocation every caller but one would ignore.
-export const catenaryBelly = (x1, y1, x2, y2, { k, maxSag = 70, wave = 0 } = {}) => {
+export const catenaryBelly = (x1, y1, x2, y2, { k, maxSag = 70, wave = 0, wave3 = 0 } = {}) => {
   const dx = x2 - x1;
   const dy = y2 - y1;
   const dist = Math.hypot(dx, dy);
@@ -88,9 +95,10 @@ export const catenaryBelly = (x1, y1, x2, y2, { k, maxSag = 70, wave = 0 } = {})
   const naturalSag = a * (coshHalf - 1);
   const sagScale = naturalSag > maxSag ? maxSag / naturalSag : 1;
 
-  // sin(π·0.5) = 1 — the midpoint rides the standing wave's full
-  // instantaneous displacement, same as the path's own center sample.
-  const localY = naturalSag * sagScale + wave;
+  // At the midpoint: sin(π/2) = 1, sin(2π/2) = 0 (mode 2 has a node
+  // there — nothing to add), sin(3π/2) = −1 — so the belly rides mode 1
+  // fully, mode 3 inverted, exactly like the path's own center sample.
+  const localY = naturalSag * sagScale + wave - wave3;
 
   return {
     x: x1 + half * Math.cos(theta) - localY * Math.sin(theta),

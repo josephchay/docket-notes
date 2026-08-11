@@ -53,7 +53,25 @@ export const setSoundEnabled = (value) => {
   enabled = !!value;
 };
 
-const tone = (context, { freq, duration = .12, type = "sine", peak = .5, delay = 0, glideTo = null }) => {
+// The last hop into the master bus, optionally through a stereo panner —
+// a cue that happens somewhere on screen can now sound like it happened
+// there (NoteConstellation.jsx passes pan from each event's own screen
+// position). Zero pan skips the panner node entirely, so every existing
+// centered cue costs exactly what it did before; browsers without
+// createStereoPanner (none current, but the guard is free) just stay
+// centered.
+const routeOut = (context, gain, pan) => {
+  if (pan && context.createStereoPanner) {
+    const panner = context.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    gain.connect(panner);
+    panner.connect(master);
+  } else {
+    gain.connect(master);
+  }
+};
+
+const tone = (context, { freq, duration = .12, type = "sine", peak = .5, delay = 0, glideTo = null, pan = 0 }) => {
   const osc = context.createOscillator();
   const gain = context.createGain();
   const t0 = context.currentTime + delay;
@@ -67,12 +85,12 @@ const tone = (context, { freq, duration = .12, type = "sine", peak = .5, delay =
   gain.gain.exponentialRampToValueAtTime(.0001, t0 + duration);
 
   osc.connect(gain);
-  gain.connect(master);
+  routeOut(context, gain, pan);
   osc.start(t0);
   osc.stop(t0 + duration + .02);
 };
 
-const noise = (context, { duration = .2, freqFrom = 1200, freqTo = 400, peak = .3, delay = 0, filterType = "bandpass", Q = .8 }) => {
+const noise = (context, { duration = .2, freqFrom = 1200, freqTo = 400, peak = .3, delay = 0, filterType = "bandpass", Q = .8, pan = 0 }) => {
   const source = context.createBufferSource();
   source.buffer = ensureNoiseBuffer(context);
 
@@ -92,7 +110,7 @@ const noise = (context, { duration = .2, freqFrom = 1200, freqTo = 400, peak = .
 
   source.connect(filter);
   filter.connect(gain);
-  gain.connect(master);
+  routeOut(context, gain, pan);
   source.start(t0);
   source.stop(t0 + duration + .02);
 };
@@ -140,10 +158,10 @@ export const playStamp = () => play((context) => {
 // louder and lower the harder it actually hit. Deliberately quieter than
 // every other cue here at strength 0, since a session can drop dozens of
 // these within a couple of seconds during the initial toss-in.
-export const playImpact = (strength = .5) => play((context) => {
+export const playImpact = (strength = .5, pan = 0) => play((context) => {
   const s = Math.min(1, Math.max(0, strength));
-  tone(context, { freq: 70 + (1 - s) * 55, duration: .08 + s * .06, type: "sine", peak: .09 + s * .16 });
-  noise(context, { duration: .025 + s * .03, freqFrom: 2600, freqTo: 1500, peak: .04 + s * .09, filterType: "highpass" });
+  tone(context, { freq: 70 + (1 - s) * 55, duration: .08 + s * .06, type: "sine", peak: .09 + s * .16, pan });
+  noise(context, { duration: .025 + s * .03, freqFrom: 2600, freqTo: 1500, peak: .04 + s * .09, filterType: "highpass", pan });
 });
 
 // A soft three-note ascending chime — celebratory, not a game jingle.
@@ -225,11 +243,20 @@ export const playTick = () => play((context) => {
 // high-passed pick transient for the finger leaving the thread. Intensity
 // (0–1, from the pluck's own amplitude) scales level and sustain the way
 // pluck energy actually does.
-export const playThreadPluck = (freq = 320, intensity = .5) => play((context) => {
+// `brightness` (0–1) is the fraction of the pluck's energy sitting in the
+// upper standing-wave modes — NoteConstellation.jsx's pluckEdge computes
+// it from where along the span the string was actually plucked, and a
+// real string plucked near its end IS brighter (more of its triangle's
+// Fourier series lands in high partials). Here it scales the octave
+// partial and gates in a third partial that a centered, fundamental-heavy
+// pluck barely carries.
+export const playThreadPluck = (freq = 320, intensity = .5, pan = 0, brightness = .35) => play((context) => {
   const s = Math.min(1, Math.max(0, intensity));
-  tone(context, { freq, duration: .28 + s * .14, type: "sine", peak: .05 + s * .12 });
-  tone(context, { freq: freq * 2, duration: .16 + s * .06, type: "sine", peak: .02 + s * .05 });
-  noise(context, { duration: .018, freqFrom: 3200, freqTo: 2200, peak: .03 + s * .05, filterType: "highpass" });
+  const b = Math.min(1, Math.max(0, brightness));
+  tone(context, { freq, duration: .28 + s * .14, type: "sine", peak: .05 + s * .12, pan });
+  tone(context, { freq: freq * 2, duration: .16 + s * .06, type: "sine", peak: (.02 + s * .05) * (.5 + b), pan });
+  tone(context, { freq: freq * 3, duration: .12 + s * .04, type: "sine", peak: (.012 + s * .03) * b, pan });
+  noise(context, { duration: .018, freqFrom: 3200, freqTo: 2200, peak: .03 + s * .05, filterType: "highpass", pan });
 });
 
 // A droplet meeting the water — the iconic "plip". A real drip's signature
@@ -243,8 +270,23 @@ export const playThreadPluck = (freq = 320, intensity = .5) => play((context) =>
 // down, where it reads as a thicker, wetter pop). Deliberately quiet even
 // at full intensity — dew falls on its own schedule, and an ambient sound
 // the visitor didn't cause has to sit under everything they did.
-export const playDrip = (freq = 620, intensity = .5) => play((context) => {
+// A struck membrane — the Chladni strike's own voice (NoteConstellation.jsx
+// passes the struck eigenmode's true relative eigenfrequency, so
+// successive strikes climb the drum's actual — famously inharmonic —
+// partial ladder; this is why drums aren't melodic, made audible). A long
+// soft fundamental, one quieter upper partial at 1.59× (the circular
+// membrane's classic first-overtone ratio — close enough for a voice; the
+// honest rectangular ratios live in the caller's fundamental), and a
+// low-passed mallet thump for the strike itself.
+export const playMembrane = (freq = 180, intensity = .6, pan = 0) => play((context) => {
   const s = Math.min(1, Math.max(0, intensity));
-  tone(context, { freq, glideTo: freq * 1.9, duration: .07 + s * .05, type: "sine", peak: .05 + s * .1 });
-  noise(context, { duration: .05, freqFrom: 2600, freqTo: 1400, peak: .02 + s * .04, filterType: "bandpass", Q: 1.6, delay: .012 });
+  tone(context, { freq, duration: .9 + s * .4, type: "sine", peak: .1 + s * .14, pan });
+  tone(context, { freq: freq * 1.59, duration: .5, type: "sine", peak: .04 + s * .05, pan });
+  noise(context, { duration: .06, freqFrom: 900, freqTo: 300, peak: .05 + s * .06, filterType: "lowpass", Q: .7, pan });
+});
+
+export const playDrip = (freq = 620, intensity = .5, pan = 0) => play((context) => {
+  const s = Math.min(1, Math.max(0, intensity));
+  tone(context, { freq, glideTo: freq * 1.9, duration: .07 + s * .05, type: "sine", peak: .05 + s * .1, pan });
+  noise(context, { duration: .05, freqFrom: 2600, freqTo: 1400, peak: .02 + s * .04, filterType: "bandpass", Q: 1.6, delay: .012, pan });
 });

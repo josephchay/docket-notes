@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import gsap from "gsap";
 import { interpret } from "xstate";
-import { FaArrowsRotate, FaCircleNodes, FaLayerGroup, FaMagnifyingGlass, FaStar, FaSun } from "react-icons/fa6";
+import { FaArrowsRotate, FaCircleNodes, FaLayerGroup, FaMagnifyingGlass, FaShareNodes, FaStar, FaSun, FaTableCells } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { blobPath, closedCatmullRomPath, createBlobMorph } from "../../utils/blob";
@@ -12,7 +12,8 @@ import { InkSurface } from "../../utils/inkSurface";
 import { metaballBridge } from "../../utils/metaball";
 import { curlNoise2 } from "../../utils/noise";
 import { Quadtree } from "../../utils/quadtree";
-import { playDrip, playImpact, playThreadPluck, playTick } from "../../utils/sound";
+import { playDrip, playImpact, playMembrane, playThreadPluck, playTick } from "../../utils/sound";
+import { voronoiCells } from "../../utils/voronoi";
 import { smoothPath } from "../../utils/svgPath";
 import { createPoint, integratePoint, satisfyConstraint } from "../../utils/verlet";
 import { SNAPPY } from "../Motion";
@@ -136,6 +137,35 @@ const breathingBlobPath = (radius, anchors, t, dents = null) =>
 const pluckFrequency = (spanPx) =>
   PLUCK_FREQ_MAX - (PLUCK_FREQ_MAX - PLUCK_FREQ_MIN) * Math.min(1, spanPx / PLUCK_SPAN_REF);
 
+// The harmonic pluck — every thread now rings in its first three
+// standing-wave modes, and WHERE it was plucked decides the mix. A string
+// plucked at fraction p of its span takes mode n with amplitude
+// ∝ sin(nπp)/n — the Fourier coefficients of the triangular shape a real
+// pluck actually leaves (the exact 1/n² law rings too politely at three
+// modes; 1/n keeps the physics' shape with a visible upper end). So a
+// mid-pluck is nearly pure fundamental (sin(2π/2) = 0 — mode 2 has a
+// node under the finger), an end-pluck genuinely wriggles, and the
+// returned brightness (the upper modes' share of the total) hands the
+// same fact to playThreadPluck's own timbre. One funnel for every
+// excitation — sweep, fling, tow, ping, sonar, keyboard — each of which
+// now reports its own honest pluck point. Phases reset together so the
+// thread departs rest as one shape, and each mode's cap scales down by
+// its own 1/n, matching the amplitudes it can honestly reach.
+const pluckEdge = (edge, amp, p = 0.5) => {
+  const pp = Math.max(0.05, Math.min(0.95, p));
+  const a1 = amp * Math.abs(Math.sin(Math.PI * pp));
+  const a2 = (amp * Math.abs(Math.sin(2 * Math.PI * pp))) / 2;
+  const a3 = (amp * Math.abs(Math.sin(3 * Math.PI * pp))) / 3;
+  edge.vibAmp = Math.min(PLUCK_MAX_AMP, edge.vibAmp + a1);
+  edge.vibAmp2 = Math.min(PLUCK_MAX_AMP / 2, edge.vibAmp2 + a2);
+  edge.vibAmp3 = Math.min(PLUCK_MAX_AMP / 3, edge.vibAmp3 + a3);
+  edge.vibPhase = 0;
+  edge.vibPhase2 = 0;
+  edge.vibPhase3 = 0;
+  const total = a1 + a2 + a3;
+  return total > 0 ? (a2 + a3) / total : 0;
+};
+
 // Collision resolution — a real distance constraint (the same "push both
 // circles apart until their surfaces no longer overlap" idea
 // utils/verlet.js's own satisfyConstraint already applies to cloth edges,
@@ -169,7 +199,11 @@ const COLLISION_PADDING = 2; // extra breathing room, domain units, beyond bare 
 const EDGE_REST_LENGTH_FACTOR = 1.15;
 const EDGE_K_SLACK = 2.2; // low tension → sags hard
 const EDGE_K_TAUT = 0.55; // high tension → pulls toward straight
-const EDGE_CATENARY_SAMPLES = 10;
+// 14 rather than the 10 the fundamental alone needed — the third
+// standing-wave mode (see pluckEdge) fits three half-waves into the span,
+// and under ~4 samples per half-wave the Catmull-Rom smoothing starts
+// inventing its own shape instead of drawing sin(3πs)'s.
+const EDGE_CATENARY_SAMPLES = 14;
 const EDGE_MAX_SAG = 42; // pixels — caps how far even a fully slack edge can droop
 // The displayed catenary k lags its own target by this fraction each
 // frame (a simple exponential smoothing, not a real second-order spring)
@@ -852,6 +886,96 @@ const STREAM_LIFE_SPAN = 4; // + up to this much, randomized
 const STREAM_OPACITY = 0.14; // at full life — a texture in the water, never a diagram
 const STREAM_STIR_GAIN = 0.5; // how much of the rod's own velocity a tracer takes
 
+// Chladni strikes — a shift-tap on open water strikes the pool like a
+// drumhead instead of tapping it: utils/waveField.js's exciteMode injects
+// a pure eigenmode of the rectangular membrane, sin(mπx/W)·sin(nπy/H),
+// which under the field's own fixed-edge boundary doesn't travel anywhere
+// — it STANDS, ringing in place as a Chladni figure until damping takes
+// it. Successive strikes climb the mode ladder below, and each one sounds
+// its own eigenfrequency through the audio gate: ω_mn ∝ √((m/W)²+(n/H)²),
+// passed as a true frequency RATIO against the (1,1) fundamental — so
+// striking up the ladder plays the rectangular drum's actual, famously
+// inharmonic partial series (the mathematical reason drums aren't
+// melodic, made audible). And because the buoyancy coupling reads the
+// pool's slope every substep, the notes physically ride the standing
+// pattern — the classic Chladni demonstration, with notes for sand.
+// Under reduced motion the surface doesn't exist, so the strike (and its
+// voice — a sound announcing an invisible event would be a lie) simply
+// never fires.
+const CHLADNI_MODES = [[1, 1], [2, 1], [2, 2], [3, 2], [3, 3]];
+const CHLADNI_AMP = 0.5; // mode amplitude per strike
+const CHLADNI_FREQ_BASE = 150; // Hz — the (1,1) fundamental's pitch
+
+// Voronoi territories — a toggleable tessellation of the desk into each
+// note's nearest-point cell (utils/voronoi.js — literal half-plane
+// clipping, the diagram's own definition executed per frame), drawn as
+// crisp hairline borders with a whisper of each note's color filling its
+// cell. This is the one honest answer to "which note owns this part of
+// the desk," recomputed live because the answer never stops moving —
+// walls slide as nodes drift, pinch as neighbors approach, and the whole
+// map re-tiles itself around a dragged note. Straight walls on purpose,
+// against everything else here being a curve: a Voronoi wall IS a
+// straight line (the perpendicular bisector), and bending it would trade
+// the mathematics away for house style.
+const VORONOI_FILL_OPACITY = 0.05;
+
+// The focus swimmer — keyboard navigation as physics. Arrow keys walk
+// the graph edge by edge: from the focused note, the neighbor whose
+// thread best matches the pressed direction wins (unit-vector dot
+// product against the arrow's own axis, with a floor so "right" never
+// lurches to a note that's essentially straight up), Enter dives into
+// the focused note through the exact same state machine a click uses,
+// Escape lets go. The focus indicator is no static outline: an ink ring
+// that SWIMS to each newly focused note on an underdamped spring,
+// squashing along its own travel direction like everything else that
+// moves here, and plucking the thread it just swam along — the same
+// ring-down, splash, and pitched voice, because traveling a thread is
+// traveling a thread whether a cursor sweep or a keystroke did it. The
+// first arrow press with nothing focused seeds at the desk's own hub
+// (highest degree, ties by id — the same crowning rule the orrery
+// uses). Focus arrival also raises the hover card and silhouette morph,
+// so keyboard visitors get every reading a pointer hover gives. Under
+// reduced motion the ring appears and moves instantly (a focus
+// indicator is accessibility, not ornament — it must exist there), and
+// the traversal plucks stand down with every other keyboard-cascaded
+// motion.
+const FOCUS_SPRING = 55; // the swimmer's chase stiffness
+const FOCUS_DAMPING = 0.86; // per-frame velocity retention — underdamped, arrives with a little life
+const FOCUS_RING_PAD = 8; // px beyond the focused blob's radius
+const FOCUS_PLUCK_AMP = 5; // px of vibAmp handed to each thread the swimmer travels
+const FOCUS_MIN_ALIGNMENT = 0.25; // dot-product floor before an arrow claims a neighbor
+
+// The aim line — while a gripped note is moving fast enough to be a
+// throw in progress, its future appears: the same force laws run AHEAD
+// in time (repulsion by the same k²/d, the active law's own springs or
+// attraction, the same damping and a = F/m) from the note's live
+// position and velocity, and the resulting trajectory draws as a faint
+// dotted filament. In the web it bends around the crowd's repulsion; in
+// the orrery it visibly curves toward capture by its own conic; in the
+// strata it arcs home to its shelf — billiards aiming, granted by
+// honest integration rather than a guess. The one admitted
+// approximation, stated rather than hidden: the rest of the world is
+// FROZEN for the lookahead (nothing else moves, orbits hold this
+// instant's phase, the pool's slope and the ambient current's clock stay
+// put, collisions don't resolve) — a prediction of the throw, not of
+// the whole desk's future, which is exactly what an aim line is for.
+// Appears only above a real working speed (a held-still note needs no
+// oracle), eases in and out rather than flickering, and never exists
+// under reduced motion since the grip itself doesn't displace there.
+const AIM_STEPS = 44; // lookahead integration steps…
+const AIM_DT = 0.035; // …of this much simulated time each — ≈1.5s of future
+const AIM_MIN_SPEED = 8; // domain units/s of hand speed before the oracle speaks
+const AIM_OPACITY = 0.4;
+
+// The stereo pool — every positioned cue pans to where its event
+// actually sits on screen right now (through the camera, so panning the
+// view genuinely re-seats the orchestra): plucks voice from their
+// thread, drips from their splash, thuds from their collision. A sonar
+// tap's arpeggio sweeps across the stereo field as its front expands —
+// which is the whole point. Width stops short of hard left/right; full
+// ±1 reads as headphone ping-pong, not a pool in front of you.
+const STEREO_WIDTH = 0.7;
+
 // Hard collisions squirt ink — the visual half of the contact thuds,
 // through the pool: a landing worth hearing is worth a splash at the
 // point of contact, and through the buoyancy coupling that splash then
@@ -1092,6 +1216,15 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // The current streamlines' filament pool (see the STREAM_COUNT
   // constant block) — geometry and fade written per frame by tick().
   const streamElRefs = useRef([]);
+  // The focus swimmer's ring (see the FOCUS_SPRING constant block) —
+  // topmost world element, chased into place every frame by tick().
+  const focusRingRef = useRef(null);
+  // The Voronoi territories' cell paths, by note id (see the VORONOI
+  // constant block) — geometry written per frame while the overlay is on.
+  const voronoiElRefs = useRef({});
+  // The aim line's path (see the AIM_STEPS constant block) — geometry
+  // and fade written per frame while a throw is in progress.
+  const aimPathRef = useRef(null);
 
   const [graph, setGraph] = useState({ nodes: [], edges: [], clusters: [], orbits: [], strata: [] });
   const [hoveredId, setHoveredId] = useState(null);
@@ -1122,6 +1255,17 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // the switcher and the mode-gated layers, mirrored as a ref for step()
   // and tick(). Persists across close/reopen like the lens and pins.
   const [mode, setMode] = useState("web");
+  // Keyboard focus (see the FOCUS_SPRING constant block) — React state
+  // for the aria-live announcement, mirrored as a ref for the keydown
+  // handler and the swimmer's tick chase.
+  const [focusId, setFocusId] = useState(null);
+  // The Voronoi territories overlay (see the VORONOI constant block) —
+  // React state for the pill and the layer's fade class, mirrored as a
+  // ref for the tick loop's per-frame tessellation.
+  const [territories, setTerritories] = useState(false);
+  // The skeleton reading (see the Kruskal block in the build effect) —
+  // pure class toggling, so React state alone suffices.
+  const [skeleton, setSkeleton] = useState(false);
   // A stable service instance for this component's whole lifetime — same
   // useState-initializer convention SprintPanel.jsx's own interpret() call
   // already uses, so it isn't recreated every render.
@@ -1149,6 +1293,10 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   magnifyRef.current = magnify;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const focusIdRef = useRef(focusId);
+  focusIdRef.current = focusId;
+  const territoriesRef = useRef(territories);
+  territoriesRef.current = territories;
 
   const togglePathAnchor = (id) => {
     setPathAnchors((prev) => {
@@ -1408,10 +1556,19 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             // EDGE_SAG_SMOOTHING lag every subsequent frame uses — no
             // special-cased "first frame" logic needed.
             displayK: (EDGE_K_SLACK + EDGE_K_TAUT) / 2,
-            // Plucked-string state (see the PLUCK_OMEGA constant block) —
-            // amplitude in px, phase in radians, both advanced in tick().
+            // Plucked-string state (see the PLUCK_OMEGA constant block
+            // and pluckEdge) — amplitude in px and phase in radians per
+            // standing-wave mode, all advanced in tick(). vibAmp stays
+            // the fundamental's own name because every threshold in this
+            // file (dew shake, sound gates, headroom caps) reads it, and
+            // the fundamental is the honest "how excited is this thread"
+            // number — the upper modes are timbre.
             vibAmp: 0,
             vibPhase: 0,
+            vibAmp2: 0,
+            vibPhase2: 0,
+            vibAmp3: 0,
+            vibPhase3: 0,
             // Dew charge, 0–1 of a full drop (see the DEW_GLOBAL_RATE
             // constant block) — seeded part-way at random so the graph's
             // first drips stagger instead of landing as one downpour.
@@ -1430,6 +1587,42 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     edgeList.forEach((edge) => {
       edge.dewRate = (DEW_GLOBAL_RATE / edgeList.length) * (0.6 + Math.random() * 0.8);
     });
+
+    // The skeleton — each cluster's maximum-weight spanning tree: Kruskal
+    // with union-find (path-halving find) over the edges sorted by
+    // shared-tag count, strongest ties first, alphabetical between ties
+    // so the same desk always keeps the same skeleton. Computed once at
+    // build since the graph is fixed per mount. Toggled on (see the
+    // Skeleton pill in the JSX), every redundant thread recedes and what
+    // remains is the strongest set of ties that still reaches every note
+    // a cluster has — the minimal honest summary the full web
+    // necessarily buries. A reading, not a filter: the physics still
+    // runs every edge (attraction doesn't care what's visible), only
+    // the ink recedes.
+    {
+      const parent = new Map();
+      noteList.forEach((note) => parent.set(note.id, note.id));
+      const find = (start) => {
+        let x = start;
+        while (parent.get(x) !== x) {
+          parent.set(x, parent.get(parent.get(x)));
+          x = parent.get(x);
+        }
+        return x;
+      };
+      [...edgeList]
+        .sort((a, b) => b.weight - a.weight || (a.id < b.id ? -1 : 1))
+        .forEach((edge) => {
+          const rootA = find(edge.a);
+          const rootB = find(edge.b);
+          if (rootA === rootB) {
+            edge.mst = false;
+            return;
+          }
+          parent.set(rootA, rootB);
+          edge.mst = true;
+        });
+    }
 
     // Each node's own rendered radius, in CSS pixels — computed locally
     // from edgeList rather than waiting on the React-level degreeById
@@ -2241,6 +2434,25 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // worldGroupRef's own transform every frame; vx/vy are the pan's own
     // momentum, decayed in tick() below once a pan drag releases.
     const camera = { x: 0, y: 0, zoom: 1, vx: 0, vy: 0 };
+
+    // Where a domain-space event currently sits in the stereo field (see
+    // the STEREO_WIDTH constant block) — the same domain → world → camera
+    // mapping every screen-space element already does, reduced to the one
+    // axis ears care about. panRectW is stamped by tick() each frame;
+    // until the first frame it stays 0 and everything voices centered.
+    let panRectW = 0;
+    const stereoPanAt = (domainX) => {
+      if (!panRectW) return 0;
+      const screenX = camera.x + domainX * (panRectW / DOMAIN_W) * camera.zoom;
+      return Math.max(-1, Math.min(1, (screenX / panRectW) * 2 - 1)) * STEREO_WIDTH;
+    };
+
+    // The focus swimmer's own body (see the FOCUS_SPRING constant block)
+    // — position, velocity, and its ring's eased visibility.
+    const swimmer = { x: 0, y: 0, vx: 0, vy: 0, opacity: 0 };
+
+    // The aim line's eased visibility (see the AIM_STEPS constant block).
+    let aimAmp = 0;
     // True only while handleDblClick's own GSAP reset tween is actively
     // driving camera.x/y/zoom directly — the momentum/boundary-spring
     // block in tick() below has to stand down for that whole window, or
@@ -2421,6 +2633,21 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       if (sonarFreeSlots.length === 0) return;
       sonars.push({ slot: sonarFreeSlots.pop(), x, y, r: 0, prevR: 0 });
       ink?.splash(x, y, SONAR_SPLASH);
+    };
+
+    // A Chladni strike (see the CHLADNI constants) — each one climbs the
+    // mode ladder and sounds that mode's true relative eigenfrequency,
+    // panned from wherever the striking tap landed (the mode fills the
+    // whole pool, but the strike happened somewhere). Gated on the
+    // surface existing — no pool, no membrane, no voice.
+    let chladniIndex = 0;
+    const strikeChladni = (x) => {
+      if (!ink) return;
+      const [m, n] = CHLADNI_MODES[chladniIndex % CHLADNI_MODES.length];
+      chladniIndex += 1;
+      ink.strikeMode(m, n, CHLADNI_AMP);
+      const freqRatio = Math.hypot(m / DOMAIN_W, n / DOMAIN_H) / Math.hypot(1 / DOMAIN_W, 1 / DOMAIN_H);
+      playMembrane(CHLADNI_FREQ_BASE * freqRatio, 0.7, stereoPanAt(x));
     };
 
     // One side of a contact dimple (see the DIMPLE constants) — runs the
@@ -2650,10 +2877,16 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               const b = byId.get(edge.b);
               if (!segmentsCross(cursorField.prevX, cursorField.prevY, x, y, a.x, a.y, b.x, b.y)) continue;
               const amp = Math.min(PLUCK_MAX_AMP - edge.vibAmp, sweepPx * PLUCK_SWEEP_GAIN);
-              edge.vibAmp += amp;
-              // Phase reset so the thread visibly departs from rest right
-              // now, rather than wherever a previous ring-down left it.
-              edge.vibPhase = 0;
+              // WHERE the sweep crossed the chord — the intersection's
+              // own parameter along a→b (the orientation ratio, exact
+              // for segments that strictly cross) — becomes the pluck
+              // point pluckEdge turns into modal amplitudes: crossing a
+              // thread near its end genuinely rings brighter than
+              // crossing its middle.
+              const oA = orient(cursorField.prevX, cursorField.prevY, x, y, a.x, a.y);
+              const oB = orient(cursorField.prevX, cursorField.prevY, x, y, b.x, b.y);
+              const crossP = oA / (oA - oB);
+              const bright = pluckEdge(edge, amp, crossP);
 
               // Resonance — the pluck's energy also reaches the string's
               // own anchors (see the PLUCK_NODE_IMPULSE constant block),
@@ -2684,7 +2917,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               // once lands as a strum. utils/sound.js's own opt-in gate
               // keeps all of this silent until sounds are turned on.
               if (amp > PLUCK_SOUND_MIN_AMP) {
-                playThreadPluck(pluckFrequency(chordLen * renderScale), amp / PLUCK_MAX_AMP);
+                playThreadPluck(pluckFrequency(chordLen * renderScale), amp / PLUCK_MAX_AMP, stereoPanAt((a.x + b.x) / 2), bright);
               }
             }
           }
@@ -2806,13 +3039,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         if (stretchPx > 1) {
           const amp = Math.min(PLUCK_MAX_AMP - edge.vibAmp, stretchPx * TOW_RELEASE_PLUCK);
           if (amp > 0) {
-            edge.vibAmp += amp;
-            edge.vibPhase = 0;
+            const a = byId.get(edge.a);
+            const b = byId.get(edge.b);
+            // The snap-back releases FROM the hand — its pluck point is
+            // the hand's own projection onto the chord, so a tow held
+            // near one end lets go bright and a centered tow lets go
+            // round, same law as every other pluck.
+            const chordX = b.x - a.x;
+            const chordY = b.y - a.y;
+            const chordLenSq = chordX * chordX + chordY * chordY || 1;
+            const handP = ((tow.x - a.x) * chordX + (tow.y - a.y) * chordY) / chordLenSq;
+            const bright = pluckEdge(edge, amp, handP);
             ink?.splash(tow.x, tow.y, amp * INK_PLUCK_GAIN * 2);
             if (amp > PLUCK_SOUND_MIN_AMP) {
-              const a = byId.get(edge.a);
-              const b = byId.get(edge.b);
-              playThreadPluck(pluckFrequency(Math.hypot(b.x - a.x, b.y - a.y) * renderScale), amp / PLUCK_MAX_AMP);
+              playThreadPluck(pluckFrequency(Math.sqrt(chordLenSq) * renderScale), amp / PLUCK_MAX_AMP, stereoPanAt(tow.x), bright);
             }
           }
         }
@@ -2830,8 +3070,14 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         if (reduceMotionRef.current) { camera.vx = 0; camera.vy = 0; }
         // A pan that never moved was a tap on open water — the sonar
         // (see the SONAR_SPEED constant block), launched from the press
-        // point rather than the release, since a tap IS its press.
-        else if (panDrag.pixelDistance < 6) emitSonar(panDrag.startDomainX, panDrag.startDomainY);
+        // point rather than the release, since a tap IS its press. A
+        // SHIFT-tap strikes the whole pool as a drumhead instead (see
+        // the CHLADNI constants) — the same modifier that asks bigger
+        // questions of nodes asks a bigger question of the water.
+        else if (panDrag.pixelDistance < 6) {
+          if (e.shiftKey) strikeChladni(panDrag.startDomainX);
+          else emitSonar(panDrag.startDomainX, panDrag.startDomainY);
+        }
         return;
       }
 
@@ -2861,8 +3107,10 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             for (const edge of edgeList) {
               if (edge.a !== drag.id && edge.b !== drag.id) continue;
               const amp = Math.min(PLUCK_MAX_AMP - edge.vibAmp, releaseSpeedPx * PLUCK_FLING_GAIN);
-              edge.vibAmp += amp;
-              edge.vibPhase = 0;
+              // A fling jerks the thread AT the flung node's own end —
+              // an end-pluck by construction, so a hard release rings
+              // bright, exactly as yanking a string's end does.
+              const bright = pluckEdge(edge, amp, edge.a === drag.id ? 0.12 : 0.88);
 
               // Resonance, fling flavor — a yanked string tugs its far
               // anchor toward the node doing the yanking, along the chord
@@ -2883,7 +3131,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               // fling rakes every thread tied to the node, which lands
               // as a chord voiced by their actual lengths.
               if (amp > PLUCK_SOUND_MIN_AMP) {
-                playThreadPluck(pluckFrequency(towardLen * renderScale), amp / PLUCK_MAX_AMP);
+                playThreadPluck(pluckFrequency(towardLen * renderScale), amp / PLUCK_MAX_AMP, stereoPanAt((node.x + far.x) / 2), bright);
               }
             }
           }
@@ -3030,10 +3278,114 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       if (!reduceMotionRef.current) e.preventDefault();
     };
 
+    // Focus movement (see the FOCUS_SPRING constant block) — one funnel
+    // for every way focus changes, so the hover card and silhouette morph
+    // always travel with it and always release the note they leave.
+    const moveFocus = (nextId) => {
+      const prev = focusIdRef.current;
+      if (prev && prev !== nextId) morphControllerRef.current?.leave(prev);
+      setFocusId(nextId);
+      setHoveredId(nextId);
+      if (nextId && nextId !== prev) morphControllerRef.current?.enter(nextId);
+    };
+
+    const ARROW_DIRS = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const handleKey = (e) => {
+      lastInputTime = performance.now();
+
+      if (e.key === "Escape") {
+        if (focusIdRef.current) moveFocus(null);
+        return;
+      }
+      if (e.key === "Enter" && focusIdRef.current) {
+        e.preventDefault();
+        service.send({ type: "SELECT", id: focusIdRef.current });
+        return;
+      }
+
+      const dir = ARROW_DIRS[e.key];
+      if (!dir) return;
+      e.preventDefault();
+
+      const currentId = focusIdRef.current && byId.has(focusIdRef.current) ? focusIdRef.current : null;
+
+      // Nothing focused yet — seed at the hub, the same crowning rule
+      // the orrery's primaries use.
+      if (!currentId) {
+        let seed = null;
+        let best = -1;
+        byId.forEach((node, id) => {
+          const degree = localDegree.get(id) || 0;
+          if (degree > best || (degree === best && (seed === null || id < seed))) {
+            best = degree;
+            seed = id;
+          }
+        });
+        if (seed) moveFocus(seed);
+        return;
+      }
+
+      // Directional pick: the neighbor whose thread best matches the
+      // arrow — unit-dot score with a floor, so an arrow with no honest
+      // candidate simply doesn't move.
+      const current = byId.get(currentId);
+      let bestId = null;
+      let bestEdge = null;
+      let bestScore = FOCUS_MIN_ALIGNMENT;
+      for (const edge of edgeList) {
+        if (edge.a !== currentId && edge.b !== currentId) continue;
+        const otherId = edge.a === currentId ? edge.b : edge.a;
+        const other = byId.get(otherId);
+        const dx = other.x - current.x;
+        const dy = other.y - current.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const score = (dx / dist) * dir[0] + (dy / dist) * dir[1];
+        if (score > bestScore) {
+          bestScore = score;
+          bestId = otherId;
+          bestEdge = edge;
+        }
+      }
+      if (!bestId) return;
+      moveFocus(bestId);
+
+      // The swimmer plucks the thread it travels — a keystroke crossing
+      // a thread is still a thread being crossed. Stands down under
+      // reduced motion with every other keyboard-cascaded motion.
+      if (bestEdge && !reduceMotionRef.current) {
+        const amp = Math.min(PLUCK_MAX_AMP - bestEdge.vibAmp, FOCUS_PLUCK_AMP);
+        if (amp > 0) {
+          // The swimmer runs the thread's whole length — centered,
+          // fundamental-heavy voicing, same as the ping's flood.
+          const bright = pluckEdge(bestEdge, amp, 0.5);
+          const a = byId.get(bestEdge.a);
+          const b = byId.get(bestEdge.b);
+          ink?.splash((a.x + b.x) / 2, (a.y + b.y) / 2, amp * INK_PLUCK_GAIN);
+          if (amp > PLUCK_SOUND_MIN_AMP) {
+            playThreadPluck(
+              pluckFrequency(Math.hypot(b.x - a.x, b.y - a.y) * renderScale),
+              amp / PLUCK_MAX_AMP,
+              stereoPanAt((a.x + b.x) / 2),
+              bright
+            );
+          }
+        }
+      }
+    };
+
+    // Leaving the stage's focus releases the swimmer — standard focus
+    // behavior, and it keeps a stale ring from floating over a graph the
+    // keyboard is no longer talking to.
+    const handleFocusBlur = () => {
+      if (focusIdRef.current) moveFocus(null);
+    };
+
     svg.addEventListener("pointerdown", handleDown);
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
     svg.addEventListener("contextmenu", handleContextMenu);
+    svg.addEventListener("keydown", handleKey);
+    svg.addEventListener("blur", handleFocusBlur);
     svg.addEventListener("wheel", handleWheel, { passive: false });
     svg.addEventListener("dblclick", handleDblClick);
     svg.addEventListener("pointerenter", handlePointerEnter);
@@ -3098,11 +3450,13 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             const b = byId.get(edge.b);
             const amp = Math.min(PLUCK_MAX_AMP - edge.vibAmp, PING_EDGE_AMP * event.factor);
             if (amp > 0) {
-              edge.vibAmp += amp;
-              edge.vibPhase = 0;
+              // The front floods the whole thread at once — no single
+              // pluck point, so it takes the centered, fundamental-heavy
+              // voicing (see pluckEdge).
+              const bright = pluckEdge(edge, amp, 0.5);
               ink?.splash((a.x + b.x) / 2, (a.y + b.y) / 2, amp * INK_PLUCK_GAIN);
               if (amp > PLUCK_SOUND_MIN_AMP) {
-                playThreadPluck(pluckFrequency(Math.hypot(b.x - a.x, b.y - a.y) * renderScale), amp / PLUCK_MAX_AMP);
+                playThreadPluck(pluckFrequency(Math.hypot(b.x - a.x, b.y - a.y) * renderScale), amp / PLUCK_MAX_AMP, stereoPanAt((a.x + b.x) / 2), bright);
               }
             }
           }
@@ -3119,6 +3473,9 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       // Read by step()'s own collision resolution — see renderScale's own
       // declaration above for why one frame of staleness there is fine.
       renderScale = Math.min(scaleX, scaleY);
+      // The stereo field's own yardstick (see stereoPanAt) — same
+      // one-frame-stale-at-worst contract as renderScale.
+      panRectW = rect.width;
 
       // Sonar fronts (see the SONAR_SPEED constant block) — each advances
       // at the wave speed, plucks every thread its annulus swept over
@@ -3164,14 +3521,22 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             if (d <= front.prevR || d > front.r) continue;
             const amp = Math.min(PLUCK_MAX_AMP - edge.vibAmp, SONAR_PLUCK_AMP * energy);
             if (amp <= 0) continue;
-            edge.vibAmp += amp;
-            edge.vibPhase = 0;
+            // The front touches a chord first at the tap's own projection
+            // onto it — that closest point is the honest pluck point, so
+            // a front grazing a thread's end rings it brighter than one
+            // meeting a thread broadside.
+            const chordX = b.x - a.x;
+            const chordY = b.y - a.y;
+            const chordLenSq = chordX * chordX + chordY * chordY || 1;
+            const frontP = ((front.x - a.x) * chordX + (front.y - a.y) * chordY) / chordLenSq;
+            const bright = pluckEdge(edge, amp, frontP);
             ink?.splash((a.x + b.x) / 2, (a.y + b.y) / 2, amp * INK_PLUCK_GAIN);
             // With sounds on, the front voices each thread as it arrives
             // — a radial arpeggio ordered by true distance from the tap,
-            // where the signal ping's chords land in hop order.
+            // swept across the stereo field by where each thread actually
+            // hangs, where the signal ping's chords land in hop order.
             if (amp > PLUCK_SOUND_MIN_AMP) {
-              playThreadPluck(pluckFrequency(Math.hypot(b.x - a.x, b.y - a.y) * renderScale), amp / PLUCK_MAX_AMP);
+              playThreadPluck(pluckFrequency(Math.sqrt(chordLenSq) * renderScale), amp / PLUCK_MAX_AMP, stereoPanAt((a.x + b.x) / 2), bright);
             }
           }
 
@@ -3361,7 +3726,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                 && simTime - lastThudTime > THUD_GLOBAL_GAP) {
                 node.lastThud = simTime;
                 lastThudTime = simTime;
-                playImpact(Math.min(1, node.impact / THUD_REF_IMPACT) * THUD_LEVEL);
+                playImpact(Math.min(1, node.impact / THUD_REF_IMPACT) * THUD_LEVEL, stereoPanAt(node.x));
               }
             }
             node.impact = 0;
@@ -3591,6 +3956,29 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         }
       }
 
+      // The Voronoi territories (see the VORONOI constant block) — the
+      // full tessellation of the desk, re-derived from scratch every
+      // frame while the overlay is on: sites are the same displayed
+      // positions the eye sees, the box is the domain's own world-pixel
+      // extent, and the walls land wherever the bisectors say. Off, the
+      // layer just fades by CSS over its last frame's geometry.
+      if (territoriesRef.current) {
+        const sites = [];
+        byId.forEach((node, nodeId) => {
+          sites.push({ id: nodeId, x: node.dispX ?? node.x * scaleX, y: node.dispY ?? node.y * scaleY });
+        });
+        const cells = voronoiCells(sites, 0, 0, rect.width, rect.height);
+        for (let ci = 0; ci < sites.length; ci++) {
+          const cellEl = voronoiElRefs.current[sites[ci].id];
+          if (!cellEl) continue;
+          const poly = cells[ci];
+          cellEl.setAttribute(
+            "d",
+            poly.length > 2 ? `M ${ poly.map((p) => `${ p[0] } ${ p[1] }`).join(" L ") } Z` : ""
+          );
+        }
+      }
+
       // The orrery's orbit guides (see the LAYOUT_MODES block) — each
       // ellipse carries its own static domain-space geometry from the
       // build (focus at the local origin, center offset −a·e down the
@@ -3709,11 +4097,15 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         const targetK = EDGE_K_SLACK - (EDGE_K_SLACK - EDGE_K_TAUT) * tension;
         edge.displayK += (targetK - edge.displayK) * EDGE_SAG_SMOOTHING;
 
-        // The pluck ring-down (see the PLUCK_OMEGA constant block): phase
-        // advances at the mode's own frequency, amplitude decays as
-        // e^(−λ·dt) — the closed-form underdamped envelope, not an eased
-        // approximation — and the instantaneous displacement hands off to
-        // catenaryPath's own sin(π·s) spatial shape.
+        // The pluck ring-down (see the PLUCK_OMEGA constant block and
+        // pluckEdge): per mode, phase advances at the mode's own
+        // frequency and amplitude decays as e^(−λₙ·dt) — the closed-form
+        // underdamped envelope, not an eased approximation. Mode n runs
+        // at n·ω (a fixed string's exact harmonic ladder) and decays at
+        // n·λ (damping rises with frequency — why a real string's ring
+        // mellows toward its fundamental as it dies), and each
+        // instantaneous displacement hands off to catenaryPath's own
+        // sin(nπ·s) spatial shape.
         let wave = 0;
         if (edge.vibAmp > PLUCK_MIN_AMP && !reduceMotionRef.current) {
           edge.vibPhase += PLUCK_OMEGA * dt;
@@ -3721,6 +4113,22 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           wave = edge.vibAmp * Math.sin(edge.vibPhase);
         } else {
           edge.vibAmp = 0;
+        }
+        let wave2 = 0;
+        if (edge.vibAmp2 > PLUCK_MIN_AMP && !reduceMotionRef.current) {
+          edge.vibPhase2 += 2 * PLUCK_OMEGA * dt;
+          edge.vibAmp2 *= Math.exp(-2 * PLUCK_DECAY * dt);
+          wave2 = edge.vibAmp2 * Math.sin(edge.vibPhase2);
+        } else {
+          edge.vibAmp2 = 0;
+        }
+        let wave3 = 0;
+        if (edge.vibAmp3 > PLUCK_MIN_AMP && !reduceMotionRef.current) {
+          edge.vibPhase3 += 3 * PLUCK_OMEGA * dt;
+          edge.vibAmp3 *= Math.exp(-3 * PLUCK_DECAY * dt);
+          wave3 = edge.vibAmp3 * Math.sin(edge.vibPhase3);
+        } else {
+          edge.vibAmp3 = 0;
         }
 
         // Displayed endpoints (parallax included) — the thread has to
@@ -3754,6 +4162,8 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             samples: EDGE_CATENARY_SAMPLES,
             maxSag: EDGE_MAX_SAG,
             wave,
+            wave2,
+            wave3,
           }));
         }
 
@@ -3765,7 +4175,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         // droplet floating off the true curve would give the trick away.
         const dewEl = dewElRefs.current[i];
         if (dewEl && !reduceMotionRef.current && tow.edge !== edge) {
-          const belly = catenaryBelly(x1, y1, x2, y2, { k: edge.displayK, maxSag: EDGE_MAX_SAG, wave });
+          const belly = catenaryBelly(x1, y1, x2, y2, { k: edge.displayK, maxSag: EDGE_MAX_SAG, wave, wave3 });
           // Condensation collects only where water actually would: real
           // slack, and a belly genuinely hanging below its own chord
           // (a bowed-up thread — a chord drawn steeply "uphill" — sheds).
@@ -3828,7 +4238,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           if (drop.y - drop.startY >= DEW_FALL_DISTANCE) {
             const size = drop.r / DEW_MAX_RADIUS;
             ink?.splash(drop.x / scaleX, drop.y / scaleY, DEW_SPLASH * size);
-            playDrip(DEW_DRIP_FREQ_BASE - DEW_DRIP_FREQ_SPAN * size, 0.2 + 0.5 * size);
+            playDrip(DEW_DRIP_FREQ_BASE - DEW_DRIP_FREQ_SPAN * size, 0.2 + 0.5 * size, stereoPanAt(drop.x / scaleX));
             if (dropEl) dropEl.setAttribute("r", "0");
             dewFreeSlots.push(drop.slot);
             fallingDrops.splice(d, 1);
@@ -3909,7 +4319,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                 // (ink pulling apart into droplets is exactly the right
                 // opening image), but a half-dozen simultaneous pops is
                 // not worth HEARING; the pop waits out the bloom.
-                if (simTime > 1.5) playDrip(BRIDGE_SNAP_FREQ, 0.6);
+                if (simTime > 1.5) playDrip(BRIDGE_SNAP_FREQ, 0.6, stereoPanAt(entry.midX / scaleX));
               }
               continue;
             }
@@ -3959,6 +4369,142 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           card.style.transform = `translate(${ px }px, ${ py }px) translate(-50%, -125%)`;
         }
       }
+
+      // The aim line (see the AIM_STEPS constant block) — a ghost of the
+      // held note integrated forward through the frozen world: the same
+      // repulsion, the active law's own forces, the same damping and
+      // mass. Points carry the held note's current parallax offset so
+      // the filament stays attached to the blob the eye actually sees.
+      if (aimPathRef.current) {
+        const held = drag.id ? byId.get(drag.id) : null;
+        const heldSpeed = held ? Math.hypot(held.vx, held.vy) : 0;
+        const aimTarget = held && !reduceMotionRef.current && heldSpeed > AIM_MIN_SPEED ? 1 : 0;
+        aimAmp += (aimTarget - aimAmp) * 0.18;
+
+        if (held && aimAmp > 0.02) {
+          const lawNow = modeRef.current;
+          const offX = (held.dispX ?? held.x * scaleX) - held.x * scaleX;
+          const offY = (held.dispY ?? held.y * scaleY) - held.y * scaleY;
+          let gx = held.x;
+          let gy = held.y;
+          let gvx = held.vx;
+          let gvy = held.vy;
+          const aimPts = [];
+
+          for (let s = 0; s < AIM_STEPS; s++) {
+            let fx = 0;
+            let fy = 0;
+            // Repulsion, direct sum — one ghost against n frozen bodies
+            // doesn't earn a tree any more than collision's pairs do.
+            // A plain iterator rather than forEach's callback, since the
+            // callback would close over the loop's own mutating gx/gy.
+            for (const other of byId.values()) {
+              if (other === held) continue;
+              const ddx = gx - other.x;
+              const ddy = gy - other.y;
+              const d = Math.max(MIN_DIST, Math.hypot(ddx, ddy));
+              const mag = (k * k) / d;
+              fx += (ddx / d) * mag;
+              fy += (ddy / d) * mag;
+            }
+
+            if (lawNow === "web") {
+              for (const edge of edgeList) {
+                if (edge.a !== drag.id && edge.b !== drag.id) continue;
+                const other = byId.get(edge.a === drag.id ? edge.b : edge.a);
+                const ddx = other.x - gx;
+                const ddy = other.y - gy;
+                const d = Math.max(MIN_DIST, Math.hypot(ddx, ddy));
+                const f = ((d * d) / k) * (1 + EDGE_WEIGHT_BONUS * (edge.weight - 1));
+                fx += (ddx / d) * f;
+                fy += (ddy / d) * f;
+              }
+              fx -= (gx - cx) * CENTER_STRENGTH;
+              fy -= (gy - cy) * CENTER_STRENGTH;
+            } else if (lawNow === "strata") {
+              fx -= (gx - cx) * STRATA_CENTER_X;
+              fy += (held.strataY - gy) * STRATA_SPRING;
+            } else if (held.orbit) {
+              const o = held.orbit;
+              if (o.isPrimary) {
+                fx += (o.anchorX - gx) * ORRERY_PRIMARY_SPRING;
+                fy += (o.anchorY - gy) * ORRERY_PRIMARY_SPRING;
+              } else {
+                const focus = o.primaryId ? byId.get(o.primaryId) : null;
+                const focusX = focus ? focus.x : cx;
+                const focusY = focus ? focus.y : cy;
+                // The conic at THIS instant's phase — frozen with the
+                // rest of the world, per the header's admission.
+                const rOrbit = (o.a * (1 - o.e * o.e)) / (1 + o.e * Math.cos(o.theta));
+                const localX = Math.cos(o.theta) * rOrbit;
+                const localY = Math.sin(o.theta) * rOrbit * ORRERY_TILT;
+                fx += (focusX + localX * o.planeCos - localY * o.planeSin - gx) * ORRERY_SPRING;
+                fy += (focusY + localX * o.planeSin + localY * o.planeCos - gy) * ORRERY_SPRING;
+              }
+            }
+
+            // Damping applied per lookahead step where the live sim
+            // applies it per substep — a slightly gentler decay, which
+            // errs the prediction long rather than short; an aim line
+            // that undersells a throw would be the worse lie.
+            gvx = (gvx + (fx / held.mass) * AIM_DT) * DAMPING;
+            gvy = (gvy + (fy / held.mass) * AIM_DT) * DAMPING;
+            gx += gvx * AIM_DT;
+            gy += gvy * AIM_DT;
+            if (s % 2 === 0) aimPts.push({ x: gx * scaleX + offX, y: gy * scaleY + offY });
+          }
+
+          aimPathRef.current.setAttribute("d", smoothPath(aimPts));
+          aimPathRef.current.setAttribute("opacity", (aimAmp * AIM_OPACITY).toFixed(3));
+        } else if (aimAmp <= 0.02 && aimPathRef.current.getAttribute("opacity") !== "0") {
+          aimPathRef.current.setAttribute("d", "");
+          aimPathRef.current.setAttribute("opacity", "0");
+        } else if (!held && aimAmp > 0.02) {
+          aimPathRef.current.setAttribute("opacity", (aimAmp * AIM_OPACITY).toFixed(3));
+        }
+      }
+
+      // The focus swimmer (see the FOCUS_SPRING constant block) — chases
+      // the focused note's displayed position on its underdamped spring,
+      // squashing along its own travel like everything else that moves
+      // here; with nothing focused it fades out where it stands. Under
+      // reduced motion it rides exactly on target: present (a focus
+      // indicator is accessibility, not ornament), just not swimming.
+      if (focusRingRef.current) {
+        const focusedNode = focusIdRef.current ? byId.get(focusIdRef.current) : null;
+        if (focusedNode) {
+          const targetX = focusedNode.dispX ?? focusedNode.x * scaleX;
+          const targetY = focusedNode.dispY ?? focusedNode.y * scaleY;
+          if (reduceMotionRef.current || swimmer.opacity <= 0.01) {
+            swimmer.x = targetX;
+            swimmer.y = targetY;
+            swimmer.vx = 0;
+            swimmer.vy = 0;
+          } else {
+            swimmer.vx = (swimmer.vx + (targetX - swimmer.x) * FOCUS_SPRING * dt) * FOCUS_DAMPING;
+            swimmer.vy = (swimmer.vy + (targetY - swimmer.y) * FOCUS_SPRING * dt) * FOCUS_DAMPING;
+            swimmer.x += swimmer.vx * dt;
+            swimmer.y += swimmer.vy * dt;
+          }
+          swimmer.opacity += (1 - swimmer.opacity) * 0.2;
+
+          let deform = "";
+          const swimSpeed = Math.hypot(swimmer.vx, swimmer.vy);
+          if (swimSpeed > 4 && !reduceMotionRef.current) {
+            const ang = (Math.atan2(swimmer.vy, swimmer.vx) * 180) / Math.PI;
+            const s = 1 + Math.min(0.35, swimSpeed * 0.0009);
+            deform = ` rotate(${ ang }) scale(${ s },${ 1 / s }) rotate(${ -ang })`;
+          }
+          focusRingRef.current.setAttribute("transform", `translate(${ swimmer.x },${ swimmer.y })${ deform }`);
+          focusRingRef.current.setAttribute("r", focusedNode.radiusPx + FOCUS_RING_PAD);
+          focusRingRef.current.setAttribute("opacity", (swimmer.opacity * 0.85).toFixed(3));
+        } else if (swimmer.opacity > 0.01) {
+          swimmer.opacity *= 0.85;
+          focusRingRef.current.setAttribute("opacity", (swimmer.opacity * 0.85).toFixed(3));
+        } else if (focusRingRef.current.getAttribute("opacity") !== "0") {
+          focusRingRef.current.setAttribute("opacity", "0");
+        }
+      }
     };
 
     const handleVisibility = () => {
@@ -3981,6 +4527,8 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
       svg.removeEventListener("contextmenu", handleContextMenu);
+      svg.removeEventListener("keydown", handleKey);
+      svg.removeEventListener("blur", handleFocusBlur);
       svg.removeEventListener("wheel", handleWheel);
       svg.removeEventListener("dblclick", handleDblClick);
       svg.removeEventListener("pointerenter", handlePointerEnter);
@@ -4096,7 +4644,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           initialized under reduced motion, in which case this stays a
           blank transparent element. */}
       <canvas ref={ inkCanvasRef } className="note-constellation-ink" aria-hidden="true" />
-      <svg ref={ svgRef } className="note-constellation-svg" aria-hidden="true">
+      {/* Focusable now (see the FOCUS_SPRING constant block) — tabIndex
+          puts the stage in the tab order, role="application" hands arrow
+          keys to this component's own graph-walking instead of a screen
+          reader's virtual cursor, and the aria-live region further down
+          announces each focused note by name. The old aria-hidden is
+          gone for exactly that reason: a focusable stage that claims to
+          not exist is a contradiction assistive tech rightly punishes. */}
+      <svg
+        ref={ svgRef }
+        className="note-constellation-svg"
+        tabIndex={ 0 }
+        role="application"
+        aria-label="Note constellation. Arrow keys move between connected notes, Enter opens the focused note, Escape releases focus."
+      >
         {/* Everything the camera pans/zooms lives in this one wrapping
             group — see the MIN_ZOOM/MAX_ZOOM module comment. The physics
             layout itself (every child's own position below) stays in the
@@ -4168,6 +4729,26 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               ))
             }
           </g>
+          {/* Voronoi territories — see the VORONOI constant block. Above
+              the pools (a map's cadaster sits over its terrain washes)
+              and below the streamlines and everything that moves: the
+              tessellation is ground, not content. Cell geometry is
+              written per frame by the tick loop while the overlay is on;
+              each cell carries a whisper of its own note's color, so the
+              desk reads as stained glass at a squint. */}
+          <g className={ `note-constellation-voronoi ${ territories ? "visible" : "" }` }>
+            {
+              graph.nodes.map((note) => (
+                <path
+                  key={ note.id }
+                  ref={ (el) => { voronoiElRefs.current[note.id] = el; } }
+                  className="note-constellation-voronoi-cell"
+                  fill={ NOTE_COLORS[note.color] || "var(--page-ink-color)" }
+                  fillOpacity={ VORONOI_FILL_OPACITY }
+                />
+              ))
+            }
+          </g>
           {/* Current streamlines — see the STREAM_COUNT constant block.
               Above the pools (motion over stains) and below every
               annotation and thread: the filaments are the water's own
@@ -4223,7 +4804,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               ))
             }
           </g>
-          <g className="note-constellation-edges">
+          <g className={ `note-constellation-edges ${ skeleton ? "skeleton" : "" }` }>
             {
               graph.edges.map((edge, i) => {
                 // An active path takes visual priority over a plain hover —
@@ -4247,7 +4828,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                   <path
                     key={ edge.id }
                     ref={ (el) => { edgeElRefs.current[i] = el; } }
-                    className={ `note-constellation-edge ${ dimmed ? "dimmed" : "" } ${ onPath ? "on-path" : "" } ${ flowing ? "flowing" : "" } ${ flowReversed ? "flow-reverse" : "" } ${ lensed ? "lensed" : "" }` }
+                    className={ `note-constellation-edge ${ dimmed ? "dimmed" : "" } ${ onPath ? "on-path" : "" } ${ flowing ? "flowing" : "" } ${ flowReversed ? "flow-reverse" : "" } ${ lensed ? "lensed" : "" } ${ edge.mst ? "mst" : "" }` }
                     strokeWidth={ Math.min(EDGE_WIDTH_MAX, EDGE_WIDTH_BASE + edge.weight * EDGE_WIDTH_PER_TAG) }
                   />
                 );
@@ -4414,6 +4995,18 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               ))
             }
           </g>
+          {/* The aim line — see the AIM_STEPS constant block. Up with
+              the focus ring at the top of the world: the throw being
+              aimed is the current statement, and its oracle shouldn't
+              sink under what it's aiming through. Geometry and fade are
+              written every frame by the tick loop. */}
+          <path ref={ aimPathRef } className="note-constellation-aim" opacity={ 0 } />
+          {/* The focus swimmer's ring — see the FOCUS_SPRING constant
+              block. Topmost in the world: focus is the most deliberate
+              statement the keyboard can make, and its ring should never
+              sink under a pool, a thread, or a neck. Transform, radius,
+              and fade are all written every frame by the tick loop. */}
+          <circle ref={ focusRingRef } className="note-constellation-focus-ring" opacity={ 0 } />
         </g>
         {/* The fisheye boundary — a faint dashed ink ring at the lens's
             exact screen-space reach, outside the world group on purpose
@@ -4493,6 +5086,40 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           >
             <FaMagnifyingGlass aria-hidden="true" />
             Magnify
+          </button>
+        )
+      }
+      {
+        graph.nodes.length > 0 && phase !== "diving" && (
+          // The Voronoi territories toggle (see the VORONOI constant
+          // block) — stacked up the same bottom-left pill column as
+          // reshuffle and magnify. Shown under reduced motion too: a
+          // static tessellation of a static layout is a perfectly good
+          // reading there.
+          <button
+            type="button"
+            className={ `note-constellation-cells ${ territories ? "active" : "" }` }
+            aria-pressed={ territories }
+            onClick={ () => { playTick(); setTerritories((prev) => !prev); } }
+          >
+            <FaTableCells aria-hidden="true" />
+            Cells
+          </button>
+        )
+      }
+      {
+        graph.edges.length > 0 && phase !== "diving" && (
+          // The skeleton toggle (see the Kruskal block in the build
+          // effect) — meaningless without edges, so it only appears when
+          // there are threads to strip back.
+          <button
+            type="button"
+            className={ `note-constellation-skeleton ${ skeleton ? "active" : "" }` }
+            aria-pressed={ skeleton }
+            onClick={ () => { playTick(); setSkeleton((prev) => !prev); } }
+          >
+            <FaShareNodes aria-hidden="true" />
+            Skeleton
           </button>
         )
       }
@@ -4589,6 +5216,13 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           )
         }
       </AnimatePresence>
+      {/* The keyboard focus announcement (see the FOCUS_SPRING constant
+          block) — visually hidden, politely spoken: each focused note by
+          name, which is the reading the swimmer's ring gives sighted
+          visitors. */}
+      <div className="note-constellation-sr-only" aria-live="polite">
+        { focusId ? ((graph.nodes.find((note) => note.id === focusId)?.title || "Untitled").trim() || "Untitled") : "" }
+      </div>
       <AnimatePresence mode="wait">
         {
           pathStatus && (

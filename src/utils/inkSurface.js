@@ -157,6 +157,13 @@ export class InkSurface {
     return this.wave.gradientAt(x, y);
   }
 
+  // Strike a standing eigenmode across the whole pool (see waveField.js's
+  // exciteMode) — a splash taps the water somewhere; this strikes it
+  // everywhere at once, like a bell.
+  strikeMode(m, n, amount) {
+    this.wave.exciteMode(m, n, amount);
+  }
+
   step(dt) {
     this.wave.step(dt);
   }
