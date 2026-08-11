@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import gsap from "gsap";
 import { interpret } from "xstate";
-import { FaArrowsRotate, FaCamera, FaCircleNodes, FaCircleQuestion, FaLayerGroup, FaMagnifyingGlass, FaShareNodes, FaStar, FaSun, FaTableCells, FaXmark } from "react-icons/fa6";
+import { FaArrowsRotate, FaCamera, FaCircleNodes, FaCircleQuestion, FaLayerGroup, FaMagnifyingGlass, FaMagnifyingGlassLocation, FaShareNodes, FaStar, FaSun, FaTableCells, FaXmark } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { blobPath, closedCatmullRomPath, createBlobMorph } from "../../utils/blob";
@@ -919,6 +919,20 @@ const CHLADNI_FREQ_BASE = 150; // Hz — the (1,1) fundamental's pitch
 // the mathematics away for house style.
 const VORONOI_FILL_OPACITY = 0.05;
 
+// Search — the one way to find a specific note on a large desk that
+// wasn't hover, a tag, or a traced path. Title/body text match, dimming
+// the graph down to what matched (priority path > search > lens > hover
+// — a typed query is a fresher, more specific statement than a
+// previously-toggled tag, so it outranks the lens exactly the way a
+// traced path already outranks both), and Enter fits the camera to
+// every match at once via the same flyToWorldBox the cluster dive uses.
+// The pill blooms open on click or "/" (the app's own established
+// search shortcut, reused here since the graph is itself a search
+// surface once a query is typed) rather than mounting a permanent input
+// — most sessions in this panel never search at all.
+const SEARCH_FIT_PADDING = 90; // px of breathing room around the matched box
+const SEARCH_FIT_DURATION = 0.6;
+
 // The focus swimmer — keyboard navigation as physics. Arrow keys walk
 // the graph edge by edge: from the focused note, the neighbor whose
 // thread best matches the pressed direction wins (unit-vector dot
@@ -1153,6 +1167,7 @@ const GUIDE_SECTIONS = [
       { keys: ["Space"], text: "Ping outward from the focused note.", motion: true },
       { keys: ["P"], text: "Pin the focused note." },
       { keys: ["1", "2", "3"], text: "Web · Orrery · Strata." },
+      { keys: ["/"], text: "Find a note by title or text." },
       { keys: ["?"], text: "This guide." },
       { keys: ["Esc"], text: "Release focus, then close the panel." },
     ],
@@ -1304,6 +1319,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // worldGroupRef), positioned every frame by the tick loop.
   const lensRingRef = useRef(null);
   const reheatControllerRef = useRef(null);
+  // The search fly-to's own bridge into the physics closure (see
+  // flyToWorldBox and the search JSX further down) — same controller-ref
+  // pattern as morph/minimap/reheat.
+  const searchControllerRef = useRef(null);
+  const searchInputRef = useRef(null);
   const inkCanvasRef = useRef(null);
   // The dive effect's bridge to the ink surface living inside the physics
   // effect's closure — same controller-ref pattern as morph/minimap/reheat.
@@ -1399,6 +1419,14 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // The field guide (see GUIDE_SECTIONS) — mirrored as a ref for the
   // keydown handler's own Escape layering.
   const [guideOpen, setGuideOpen] = useState(false);
+  // Search (see the SEARCH_FIT_PADDING constant block) — searchOpen owns
+  // the pill's bloom, searchQuery the live filter text. Neither needs a
+  // ref into the physics closure: the search input lives outside the
+  // svg's own DOM subtree, so its keystrokes never reach handleKey, and
+  // handleKey's own "/" branch only ever needs to set state, never read
+  // it back.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   // A stable service instance for this component's whole lifetime — same
   // useState-initializer convention SprintPanel.jsx's own interpret() call
   // already uses, so it isn't recreated every render.
@@ -1565,6 +1593,22 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     graph.nodes.forEach((note) => { if ((note.tags || []).includes(lensTag)) set.add(note.id); });
     return set;
   }, [lensTag, graph.nodes]);
+
+  // The search's own match set (see the SEARCH_FIT_PADDING constant
+  // block) — title or body text, case-insensitive substring, null when
+  // the query is empty so the dimming chain below can fall straight
+  // through to the lens exactly like lensNodeIds already does.
+  const searchNodeIds = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return null;
+    const set = new Set();
+    graph.nodes.forEach((note) => {
+      const title = (note.title || "").toLowerCase();
+      const text = (note.text || "").toLowerCase();
+      if (title.includes(q) || text.includes(q)) set.add(note.id);
+    });
+    return set;
+  }, [searchQuery, graph.nodes]);
 
   // A fresh lens taps the pool once under every member note (see the
   // LENS_SPLASH constant block) — splashNote already no-ops by
@@ -3479,6 +3523,72 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       camera.zoom = nextZoom;
     };
 
+    // Fit-to-bounds — the zoom that shows a padded WORLD-PIXEL box on both
+    // axes, then whatever camera translate centers that box (the same
+    // forward mapping the minimap jump already solves, with the zoom now
+    // solved for too). Pulled out once both the cluster dive below and
+    // the search fly-to (see searchControllerRef further down) needed the
+    // exact same "frame this box" solve on two different note sets —
+    // duplicating it a third time was the actual sign to extract it, the
+    // same threshold utils/catenary.js was pulled from TagThreads.jsx for.
+    const flyToWorldBox = (rect, minX, minY, maxX, maxY, padding, duration) => {
+      const boxW = maxX - minX + padding * 2;
+      const boxH = maxY - minY + padding * 2;
+      const fitZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(rect.width / boxW, rect.height / boxH)));
+      const fit = {
+        x: rect.width / 2 - ((minX + maxX) / 2) * fitZoom,
+        y: rect.height / 2 - ((minY + maxY) / 2) * fitZoom,
+        zoom: fitZoom,
+      };
+
+      gsap.killTweensOf(camera);
+      camera.vx = 0;
+      camera.vy = 0;
+
+      if (reduceMotionRef.current) {
+        cameraAnimating = false;
+        Object.assign(camera, fit);
+        return;
+      }
+      cameraAnimating = true;
+      gsap.to(camera, {
+        ...fit,
+        duration,
+        ease: "power3.out",
+        overwrite: "auto",
+        onComplete: () => { cameraAnimating = false; },
+      });
+    };
+
+    // The search fly-to (see the search JSX and its own state further
+    // down) — resolves the current match set's own true positions into
+    // the same world-pixel box flyToWorldBox already knows how to frame.
+    // Bridged through a controller ref rather than reading React state
+    // directly, the same reason morph/minimap/reheat all are: this whole
+    // effect only runs once per [active], so it can never see a state
+    // update React makes after that first render.
+    searchControllerRef.current = {
+      flyToMatches: (ids) => {
+        if (!ids || ids.size === 0) return;
+        const rect = svg.getBoundingClientRect();
+        const scaleX = rect.width / DOMAIN_W;
+        const scaleY = rect.height / DOMAIN_H;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        ids.forEach((id) => {
+          const node = byId.get(id);
+          if (!node) return;
+          const mx = node.x * scaleX;
+          const my = node.y * scaleY;
+          if (mx < minX) minX = mx;
+          if (mx > maxX) maxX = mx;
+          if (my < minY) minY = my;
+          if (my > maxY) maxY = my;
+        });
+        if (minX === Infinity) return;
+        flyToWorldBox(rect, minX, minY, maxX, maxY, SEARCH_FIT_PADDING, SEARCH_FIT_DURATION);
+      },
+    };
+
     // Double-clicking empty space resets the view — a small, standard
     // pan/zoom-UI convention, not something this needed to invent — unless
     // the point sits inside a cluster's own ink pool, in which case the
@@ -3513,33 +3623,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           if (my < minY) minY = my;
           if (my > maxY) maxY = my;
         });
-
-        // Fit-to-bounds: the zoom that shows the padded cluster box on
-        // both axes, then whatever camera translate centers that box —
-        // the same forward mapping the minimap jump already solves, with
-        // the zoom now solved for too.
-        const boxW = maxX - minX + CLUSTER_FIT_PADDING * 2;
-        const boxH = maxY - minY + CLUSTER_FIT_PADDING * 2;
-        const fitZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(rect.width / boxW, rect.height / boxH)));
-        const fit = {
-          x: rect.width / 2 - ((minX + maxX) / 2) * fitZoom,
-          y: rect.height / 2 - ((minY + maxY) / 2) * fitZoom,
-          zoom: fitZoom,
-        };
-
-        if (reduceMotionRef.current) {
-          cameraAnimating = false;
-          Object.assign(camera, fit);
-          return;
-        }
-        cameraAnimating = true;
-        gsap.to(camera, {
-          ...fit,
-          duration: CLUSTER_FIT_DURATION,
-          ease: "power3.out",
-          overwrite: "auto",
-          onComplete: () => { cameraAnimating = false; },
-        });
+        flyToWorldBox(rect, minX, minY, maxX, maxY, CLUSTER_FIT_PADDING, CLUSTER_FIT_DURATION);
         return;
       }
 
@@ -3620,6 +3704,22 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         e.preventDefault();
         playTick();
         setGuideOpen((prev) => !prev);
+        return;
+      }
+
+      // "/" opens search (see the SEARCH_FIT_PADDING constant block) —
+      // the same shortcut the app's own header search already teaches,
+      // reused here since the graph is itself a search surface once a
+      // query is typed. stopPropagation is load-bearing: this listener
+      // lives on the svg, and without it the keystroke would still
+      // bubble up to Home.jsx's own window-level "/" handler and steal
+      // focus into the header's (currently hidden, behind this panel)
+      // search input instead.
+      if (e.key === "/") {
+        e.preventDefault();
+        e.stopPropagation();
+        setSearchOpen(true);
+        requestAnimationFrame(() => searchInputRef.current?.focus());
         return;
       }
       if (e.key === "Enter" && focusIdRef.current) {
@@ -5006,6 +5106,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       morphControllerRef.current = null;
       minimapControllerRef.current = null;
       reheatControllerRef.current = null;
+      searchControllerRef.current = null;
       inkControllerRef.current = null;
       modeControllerRef.current = null;
       ink?.dispose();
@@ -5141,7 +5242,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         className="note-constellation-svg"
         tabIndex={ 0 }
         role="application"
-        aria-label="Note constellation. Arrow keys move between connected notes, Enter opens the focused note, Space pings from it, P pins it, 1 to 3 switch the layout, question mark opens the gesture guide, Escape releases focus."
+        aria-label="Note constellation. Arrow keys move between connected notes, Enter opens the focused note, Space pings from it, P pins it, 1 to 3 switch the layout, slash finds a note by text, question mark opens the gesture guide, Escape releases focus."
       >
         {/* Everything the camera pans/zooms lives in this one wrapping
             group — see the MIN_ZOOM/MAX_ZOOM module comment. The physics
@@ -5181,7 +5282,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               whole layer steps back while a traced path is active, same
               deliberate-beats-ambient priority the edge dimming below
               already follows. */}
-          <g className={ `note-constellation-hulls ${ (pathNodeIds || lensNodeIds) ? "dimmed" : "" }` }>
+          <g className={ `note-constellation-hulls ${ (pathNodeIds || searchNodeIds || lensNodeIds) ? "dimmed" : "" }` }>
             {
               graph.clusters.map((cluster) => (
                 <path
@@ -5299,9 +5400,18 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                 const onPath = pathEdgeIds?.has(pairKey(edge.a, edge.b)) ?? false;
                 // Lensed = the lens tag is genuinely among this edge's own
                 // shared tags (see the sharedTags build comment) — dimming
-                // priority path > lens > hover, same as the nodes below.
+                // priority path > search > lens > hover, same as the
+                // nodes below (a typed query outranks a standing lens
+                // tag the same way a traced path outranks both).
                 const lensed = lensTag ? (edge.sharedTags?.includes(lensTag) ?? false) : false;
-                const dimmed = pathEdgeIds ? !onPath : lensTag ? !lensed : (hoveredId && edge.a !== hoveredId && edge.b !== hoveredId);
+                const searched = searchNodeIds ? (searchNodeIds.has(edge.a) || searchNodeIds.has(edge.b)) : false;
+                const dimmed = pathEdgeIds
+                  ? !onPath
+                  : searchNodeIds
+                    ? !searched
+                    : lensTag
+                      ? !lensed
+                      : (hoveredId && edge.a !== hoveredId && edge.b !== hoveredId);
                 // The ink-flow dashes march a→b as drawn; an edge the path
                 // walks b→a plays the same animation in reverse so the
                 // current runs unbroken from anchor to anchor (see
@@ -5376,11 +5486,15 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                 const onPath = pathNodeIds?.has(note.id) ?? false;
                 const isAnchor = pathAnchors.includes(note.id);
                 const isPinned = pinnedIds.includes(note.id);
+                // Priority path > search > lens > hover — see the edge
+                // pass above for why search outranks the lens.
                 const dimmed = pathNodeIds
                   ? !onPath
-                  : lensNodeIds
-                    ? !lensNodeIds.has(note.id)
-                    : (connectedIds && !connectedIds.has(note.id));
+                  : searchNodeIds
+                    ? !searchNodeIds.has(note.id)
+                    : lensNodeIds
+                      ? !lensNodeIds.has(note.id)
+                      : (connectedIds && !connectedIds.has(note.id));
                 const color = NOTE_COLORS[note.color] || "var(--page-ink-color)";
                 const shapes = getShapes(note.id, radius);
 
@@ -5775,6 +5889,69 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               ))
             }
           </div>
+        )
+      }
+      {
+        graph.nodes.length > 0 && phase !== "diving" && (
+          // Search — see the SEARCH_FIT_PADDING constant block. Top-right,
+          // mirroring the tag lens rail's top-left; a plain icon pill that
+          // blooms into an input on click or "/" (see handleKey), collapses
+          // back to a pill on Escape or when it loses focus with nothing
+          // typed. The match count and fly-to button only appear once
+          // there's something to report — an empty, freshly-opened input
+          // asks a question, it doesn't yet have an answer to show.
+          <motion.div
+            className={ `note-constellation-search ${ searchOpen ? "open" : "" }` }
+            animate={{ width: searchOpen ? 268 : 40 }}
+            transition={ SNAPPY }
+          >
+            <button
+              type="button"
+              className="note-constellation-search-icon"
+              aria-label={ searchOpen ? "Search notes" : "Open search" }
+              onClick={ () => {
+                if (searchOpen) {
+                  searchControllerRef.current?.flyToMatches(searchNodeIds);
+                } else {
+                  playTick();
+                  setSearchOpen(true);
+                  requestAnimationFrame(() => searchInputRef.current?.focus());
+                }
+              } }
+            >
+              <FaMagnifyingGlassLocation aria-hidden="true" />
+            </button>
+            <input
+              ref={ searchInputRef }
+              type="text"
+              className="note-constellation-search-input"
+              placeholder="Find a note…"
+              value={ searchQuery }
+              tabIndex={ searchOpen ? 0 : -1 }
+              onChange={ (e) => setSearchQuery(e.target.value) }
+              onFocus={ () => setSearchOpen(true) }
+              onBlur={ () => { if (!searchQuery) setSearchOpen(false); } }
+              onKeyDown={ (e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  searchControllerRef.current?.flyToMatches(searchNodeIds);
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSearchQuery("");
+                  setSearchOpen(false);
+                  searchInputRef.current?.blur();
+                }
+              } }
+            />
+            {
+              searchNodeIds && (
+                <span className="note-constellation-search-count">
+                  { searchNodeIds.size === 0 ? "No matches" : `${ searchNodeIds.size } found` }
+                </span>
+              )
+            }
+          </motion.div>
         )
       }
       <AnimatePresence>

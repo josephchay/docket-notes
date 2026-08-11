@@ -974,6 +974,80 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Search — see NoteConstellation.jsx's own SEARCH_FIT_PADDING constant
+   block. Top-right, mirroring the tag lens rail's top-left; framer owns
+   the pill's own width bloom (see the JSX's animate={{ width }}), so
+   this only sets the rest-state box and what never changes as it opens.
+   The icon button doubles as the fly-to trigger once open — clicking it
+   while collapsed opens the pill, clicking it while open jumps the
+   camera to the current matches, same "the icon IS the verb" economy
+   the reshuffle/magnify pills already use. */
+.note-constellation-search {
+  position: absolute;
+  top: 84px;
+  right: 20px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  overflow: hidden;
+  border: 1px solid var(--page-line-color);
+  border-radius: 999px;
+  background-color: var(--page-bg-color);
+  box-shadow: 0 10px 24px -10px rgba(25, 25, 25, 0.3);
+}
+
+.note-constellation-search-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--page-ink-color);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* No transition on width here — an always-mounted, always-full-size
+   input inside a clipping pill (the JSX only ever mounts the one
+   element) means the input itself never needs to resize, just the box
+   clipping it, which framer already animates. */
+.note-constellation-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 10px 0 0;
+  border: none;
+  outline: none;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--page-ink-color);
+}
+
+.note-constellation-search-input::placeholder {
+  color: var(--page-ink-color);
+  opacity: .4;
+}
+
+.note-constellation-search-count {
+  flex-shrink: 0;
+  padding-right: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--page-ink-color);
+  opacity: .5;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 /* The layout law switcher — see NoteConstellation.jsx's own LAYOUT_MODES
    block. One segmented pill at bottom center (the three laws are one
    exclusive choice), in the same floating-chrome language as the

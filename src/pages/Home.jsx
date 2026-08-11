@@ -1078,11 +1078,18 @@ const Home = () => {
   }
 
   // Quick-capture shortcuts: N jots a new note in a random color, / jumps to
-  // the search field. Both stand down while any field has the caret.
+  // the search field. Both stand down while any field has the caret, and
+  // both stand down while the note constellation is open — that panel is
+  // a full-viewport overlay with its own single-letter vocabulary (P
+  // pins, 1/2/3 switch layouts, / opens ITS OWN search), and without this
+  // guard every one of those keystrokes would also reach here: an "n"
+  // meant for the graph would jot a random new note onto the hidden desk
+  // behind it, an "f" would silently toggle focus mode, and "/" would
+  // steal the caret into a search field the visitor can't even see.
   useEffect(() => {
     const handleKey = (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.target instanceof Element && e.target.closest("input, textarea")) return;
+      if (e.target instanceof Element && e.target.closest("input, textarea, .note-constellation-panel")) return;
 
       if (e.key === "/") {
         e.preventDefault();
