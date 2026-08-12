@@ -289,6 +289,43 @@
   user-select: none;
 }
 
+/* The spectrum wheel's own furniture — see NoteConstellation.jsx's own
+   SPECTRUM_COLOR_ORDER constant block. Same opacity-fade-by-active-law
+   discipline as the strata layer right above; wedge fill comes per-sector
+   from its own color (set in the JSX), so this owns only what every
+   sector shares. */
+.note-constellation-spectrum {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .45s ease-in-out;
+}
+
+.note-constellation-spectrum.visible {
+  opacity: 1;
+}
+
+.note-constellation-spectrum-wedge {
+  opacity: .16;
+  filter: blur(6px);
+}
+
+/* Sector lettering — the same quiet letterspaced map register the strata
+   months and cluster region names already use, this being the third
+   place that voice shows up; colored per-sector (set in the JSX) rather
+   than plain ink, since a wedge's own name is the one label in this file
+   that gets to say its color out loud. */
+.note-constellation-spectrum-label {
+  text-anchor: middle;
+  dominant-baseline: middle;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  opacity: .55;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* The orrery's orbit guides — see NoteConstellation.jsx's own
    LAYOUT_MODES block. The pin ring's quiet dashed register: a guide is a
    standing promise about where a planet belongs, not content. vector-

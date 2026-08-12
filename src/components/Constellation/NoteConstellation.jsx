@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import gsap from "gsap";
 import Matter from "matter-js";
 import { interpret } from "xstate";
-import { FaArrowsRotate, FaCamera, FaCircleNodes, FaCircleQuestion, FaDice, FaImagePortrait, FaLayerGroup, FaMagnifyingGlass, FaMagnifyingGlassLocation, FaShareNodes, FaStar, FaSun, FaTableCells, FaXmark } from "react-icons/fa6";
+import { FaArrowsRotate, FaCamera, FaCircleNodes, FaCircleQuestion, FaDice, FaImagePortrait, FaLayerGroup, FaMagnifyingGlass, FaMagnifyingGlassLocation, FaPalette, FaShareNodes, FaStar, FaSun, FaTableCells, FaXmark } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { blobPath, closedCatmullRomPath, createBlobMorph } from "../../utils/blob";
@@ -823,6 +823,7 @@ const LAYOUT_MODES = [
   { id: "web", label: "Web", Icon: FaCircleNodes },
   { id: "orrery", label: "Orrery", Icon: FaSun },
   { id: "strata", label: "Strata", Icon: FaLayerGroup },
+  { id: "spectrum", label: "Spectrum", Icon: FaPalette },
 ];
 const MODE_TEMPERATURE = 42; // domain units/s — the migration's opening speed cap
 const MODE_SPLASH = 0.9; // the pool's center detonation on switch
@@ -845,6 +846,77 @@ const STRATA_BOTTOM_Y = DOMAIN_H * 0.86; // oldest shelf (deposition order — s
 const STRATA_SPRING = 5.5; // pull toward the note's own shelf
 const STRATA_CENTER_X = 0.035; // weak x centering — CENTER_STRENGTH's job, split to the one axis strata leave free
 const STRATA_BAND_MAX_HALF = 5; // a wash band's half-height cap, domain units
+
+// Spectrum — COLOR AS PHYSICS, the fourth law: web reads tags, orrery reads
+// relation, strata reads time, and color is the one attribute of a note
+// this graph has only ever used for paint, never for arrangement — until
+// now. The wheel is fixed furniture (see SPECTRUM_SECTORS below, a plain
+// module-level constant: unlike the other three laws' own per-note
+// assignments, sector boundaries don't depend on which notes exist, only
+// on how many colors NOTE_COLORS defines), ordered by actual hue around
+// the color wheel rather than object-key order, with one extra sector for
+// uncolored notes. Each note gets a stable target point within its own
+// color's wedge — a fixed angle (sector center plus a per-note jitter
+// narrower than the sector itself, so neighboring wedges never bleed into
+// each other) at a fixed radius (jittered too, so a wedge fills as an
+// area rather than lining up on one spoke) — assigned once at build time
+// exactly like strataY, then chased by an ordinary spring every frame
+// exactly like the strata shelf spring. Full 2D repulsion stays on here
+// (unlike strata's x-only or orrery's none): nothing else declumps notes
+// within their own wedge, and repulsion is exactly the tool the web
+// itself already uses for that job. The y-component of every angle here
+// carries the same DOMAIN_H/DOMAIN_W foreshortening the orrery's own
+// Vogel-spiral anchor placement already uses, for the same reason: it
+// keeps a geometrically circular wheel from overflowing the domain's own
+// shorter (vertical) axis.
+const SPECTRUM_COLOR_ORDER = ["red", "orange", "yellow", "green", "blue", "purple", "pink"]; // hue order, not object-key order
+const SPECTRUM_RADIUS = 36; // domain units — the wheel's own base radius
+const SPECTRUM_RADIUS_JITTER = 11; // per-note radius scatter, fills the wedge as an area
+const SPECTRUM_SECTOR_FRACTION = 0.72; // how much of a sector's own angular width a note's jitter can reach — the rest is the gap that keeps wedges visually distinct
+const SPECTRUM_SPRING = 3.4; // pull toward the note's own target point
+const SPECTRUM_INNER_RADIUS = SPECTRUM_RADIUS * 0.32; // the wedge guides' own inner cut — see SPECTRUM_SECTORS
+const SPECTRUM_OUTER_PAD = 6; // domain units beyond the outermost jittered note a wedge guide still reaches (summed pre-scale, unlike LASSO_HALO_PAD's post-scale px — so this one's own screen size rides the camera zoom)
+const SPECTRUM_WEDGE_SAMPLES = 10; // arc segments per wedge edge — plenty smooth at this radius
+
+// The wheel's own fixed sectors — one per named color plus one for
+// uncolored notes, evenly spaced, computed once at module load since
+// nothing about it depends on live note data. `color` falls back to the
+// page's own line color for the uncolored sector, the same neutral this
+// file already reaches for whenever a cluster pool has no dominant tint.
+const SPECTRUM_SECTORS = [...SPECTRUM_COLOR_ORDER, null].map((colorKey, i, arr) => ({
+  key: colorKey || "none",
+  color: colorKey ? NOTE_COLORS[colorKey] : "var(--page-line-color)",
+  label: colorKey || "Uncolored",
+  centerAngle: (i / arr.length) * Math.PI * 2,
+  startAngle: (i / arr.length) * Math.PI * 2 - Math.PI / arr.length,
+  endAngle: (i / arr.length) * Math.PI * 2 + Math.PI / arr.length,
+}));
+
+// A wedge as a sampled ring sector (inner and outer arcs joined into one
+// closed ring) — the same point-sample-then-join idiom every curve in
+// this file already uses (catenaryPath, breathingBlobPath), rather than
+// reaching for SVG's own arc command, which nothing else here does
+// either. Takes explicit x/y semi-axes rather than one radius plus an
+// aspect multiplier: the caller is folding together TWO independent
+// distortions (the domain's own DOMAIN_H/DOMAIN_W foreshortening — see
+// the per-note target-point math this mirrors — and the viewport's own
+// generally-non-uniform scaleX/scaleY), and pre-multiplying both into a
+// single (rx, ry) pair before calling keeps this function a plain
+// ellipse-sector sampler with no unit ambiguity of its own, the same way
+// every catenaryPath call site already hands in final world-pixel
+// coordinates rather than raw domain ones.
+const spectrumWedgePath = (cx, cy, innerRx, innerRy, outerRx, outerRy, startAngle, endAngle) => {
+  const pts = [];
+  for (let i = 0; i <= SPECTRUM_WEDGE_SAMPLES; i++) {
+    const a = startAngle + (endAngle - startAngle) * (i / SPECTRUM_WEDGE_SAMPLES);
+    pts.push(`${ cx + Math.cos(a) * outerRx } ${ cy + Math.sin(a) * outerRy }`);
+  }
+  for (let i = SPECTRUM_WEDGE_SAMPLES; i >= 0; i--) {
+    const a = startAngle + (endAngle - startAngle) * (i / SPECTRUM_WEDGE_SAMPLES);
+    pts.push(`${ cx + Math.cos(a) * innerRx } ${ cy + Math.sin(a) * innerRy }`);
+  }
+  return `M ${ pts.join(" L ") } Z`;
+};
 
 // The weighted grip — dragging a note is no longer teleportation. The
 // grabbed note hangs from the cursor through a real spring (target = the
@@ -1020,6 +1092,17 @@ const SEARCH_FIT_DURATION = 0.6;
 // question about right now, not a standing curated fact about the desk.
 const LASSO_POINT_GAP = 1.5; // domain units between recorded points — fine enough for tight loops, coarse enough not to flood the array
 const LASSO_MIN_POINTS = 4; // fewer than this and release resolves to nothing — an accidental ctrl-click, not a drag
+// A hard ceiling on the recorded stroke — every other transient buffer in
+// this file (trails, dew, bridges, sonar) is a fixed-size pool; the lasso
+// was the one exception, growing without bound for as long as a drag
+// stayed open. A held or rapidly re-traced loop would otherwise make the
+// live preview's own smoothPath (paid every frame while dragging) and the
+// release's pointInPolygon scan (paid once, but over every note) both
+// grow with elapsed drag time rather than actual loop complexity. Past
+// the cap, new points simply stop recording — the drawn loop holds its
+// last shape rather than snapping or dropping earlier points, which would
+// make an already-closed-feeling loop visibly change shape underhand.
+const LASSO_MAX_POINTS = 400;
 const LASSO_HALO_PAD = 8; // px beyond the blob's own radius
 const LASSO_HALO_OPACITY = 0.22;
 
@@ -1054,6 +1137,7 @@ const PORTRAIT_STYLED_SELECTOR = [
   ".note-constellation-pin-ring", ".note-constellation-anchor-ring", ".note-constellation-trail",
   ".note-constellation-dew-drop", ".note-constellation-bridge", ".note-constellation-orbit-guide",
   ".note-constellation-strata-band", ".note-constellation-strata-label", ".note-constellation-voronoi-cell",
+  ".note-constellation-spectrum-wedge", ".note-constellation-spectrum-label",
   ".note-constellation-focus-ring", ".note-constellation-lasso-ring", ".note-constellation-stream",
   ".note-constellation-sonar-ring", ".note-constellation-aim",
 ].join(", ");
@@ -1221,6 +1305,31 @@ const IMPACT_SPLASH_MAX = 0.25;
 const BUOYANCY_GAIN = 45; // force per unit of surface slope
 const BUOYANCY_MAX = 14; // cap — a detonation shoves, it doesn't launch
 
+// Mass wells — mass finishes the physical story buoyancy started. Every
+// note has had real Newtonian INERTIA since MASS_MAX_BONUS (a=F/m: heavy
+// notes yield less to every force); this gives it real Newtonian GRAVITY
+// too, the other half of what mass does in an actual universe. Every
+// frame, every note presses a small continuous depression into the ink
+// surface at wherever it currently sits — re-applied each frame rather
+// than stamped once, so the well genuinely tracks its note like a real
+// dimple in a rubber sheet would, not a footprint left behind — scaled
+// by how far its own mass sits above the lightest possible note (an
+// empty one, mass exactly 1), so a bare note presses essentially nothing
+// and only a genuinely substantial one visibly loads the surface. This
+// is not a new force in its own right: it's read back entirely through
+// the buoyancy coupling that already exists two blocks below — a light
+// note drifting near a heavy one's well simply feels a stronger downhill
+// pull toward it, the classic "marble deflecting into a bowling ball's
+// dent in a rubber sheet" picture, produced here by composing two
+// systems this file already had rather than adding a third. No new
+// rendering either: the ink shader already shades by |h|, so a heavy
+// note's own well shows up as a standing pool beneath it for free.
+// Negative amount (a trough, not a crest) is what makes buoyancy's own
+// −∇h actually point downhill TOWARD the well from outside it. Gated
+// implicitly by `ink` itself being null under reduced motion, the same
+// as every other splash call already is.
+const WELL_GAIN = 0.55; // trough depth per second per unit of (mass − 1)
+
 // Contact thuds — collisions become audible through utils/sound.js's own
 // playImpact, the exact paper-on-paper landing voice the note pile
 // already uses (a collision here IS two notes landing against each
@@ -1253,6 +1362,29 @@ const THUD_LEVEL = 0.7; // scales playImpact's own strength curve down to ambien
 // isn't, and a press must not set the neighborhood swaying.
 const LEAN_K = 0.4; // force per domain unit of separation from the held note
 const LEAN_MAX = 11; // cap — distant family leans no harder than near
+
+// Path tension — a traced shortest path has been a purely visual
+// statement until now (a bold flowing stroke, drawn over whatever the
+// layout already decided): once a path has real interior hops (3+
+// members — a direct 2-note path has no interior to straighten), every
+// member BETWEEN the two anchors feels a weak spring toward its own
+// perpendicular foot on the straight segment joining the two anchors'
+// live positions — clamped to the segment itself (t ∈ [0,1]), so a member
+// that happens to sit off to the side of the line is pulled toward the
+// line, never past either anchor. The two anchors themselves are exempt
+// (they're the line; nothing pulls an endpoint toward itself) and so is
+// every note NOT on the path — this rides on top of whatever law is
+// active exactly like the family lean, weak enough to visibly strain
+// against a law's own forces rather than override them (an orrery member
+// mid-path still answers to its orbit first). The readable effect: trace
+// a path and its own interior hops visibly draw taut, the graph
+// physically favoring the route just asked about. Recomputed by hand
+// each step() call from shortestPathRef (a plain array, short by
+// construction — the same O(path length) a plain edge-scan already costs
+// elsewhere) rather than folded into the main per-node loop, so nodes
+// that aren't on the path pay nothing for this at all.
+const PATH_TENSION_GAIN = 0.55; // force per domain unit of perpendicular distance from the anchor-to-anchor line
+const PATH_TENSION_MAX = 9; // cap, the same restraint discipline the family lean already keeps
 
 const SONAR_SPEED = 55; // domain units/s — the front's wave speed
 const SONAR_MAX_R = 46; // domain units — where the front dies out
@@ -1295,7 +1427,7 @@ const GUIDE_SECTIONS = [
       { keys: ["Enter"], text: "Open the focused note." },
       { keys: ["Space"], text: "Ping outward from the focused note.", motion: true },
       { keys: ["P"], text: "Pin the focused note." },
-      { keys: ["1", "2", "3"], text: "Web · Orrery · Strata." },
+      { keys: ["1", "2", "3", "4"], text: "Web · Orrery · Strata · Spectrum." },
       { keys: ["/"], text: "Find a note by title or text." },
       { keys: ["?"], text: "This guide." },
       { keys: ["Esc"], text: "Release focus, then close the panel." },
@@ -1506,6 +1638,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   const orbitGuideRefs = useRef({});
   const strataBandRefs = useRef([]);
   const strataLabelRefs = useRef([]);
+  // The spectrum wheel's own furniture (see the SPECTRUM_COLOR_ORDER
+  // constant block) — fixed-count (SPECTRUM_SECTORS.length), same
+  // index-keyed pattern as the strata bands/labels above.
+  const spectrumWedgeRefs = useRef([]);
+  const spectrumLabelRefs = useRef([]);
   // The mode switch's bridge into the physics closure (annealing kick,
   // center splash, reduced-motion re-settle) — same controller-ref
   // pattern as morph/minimap/reheat/ink.
@@ -1660,6 +1797,12 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // fresh anchor from a removal — only a fresh one launches a signal ping.
   const pathAnchorsRef = useRef(pathAnchors);
   pathAnchorsRef.current = pathAnchors;
+  // Mirrors shortestPath (see that useMemo further down) for the path
+  // tension force — declared here with the rest of this render's ref
+  // bridges, but only assigned once shortestPath itself is actually
+  // computed below, the same order every other value-dependent ref
+  // assignment in this block already respects.
+  const shortestPathRef = useRef(null);
   const magnifyRef = useRef(magnify);
   magnifyRef.current = magnify;
   const modeRef = useRef(mode);
@@ -1869,6 +2012,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     if (pathAnchors.length !== 2) return null;
     return findShortestPath(graph.edges, pathAnchors[0], pathAnchors[1]);
   }, [pathAnchors, graph.edges]);
+  // Read by step()'s own path-tension force (see the PATH_TENSION_GAIN
+  // constant block) — this [active]-only physics effect never re-runs
+  // when a path is traced/cleared, so it reads the live value through
+  // this ref instead, the same bridge pathAnchorsRef already is.
+  shortestPathRef.current = shortestPath;
 
   const pathNodeIds = useMemo(() => (shortestPath ? new Set(shortestPath) : null), [shortestPath]);
 
@@ -2391,6 +2539,21 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       byId.get(note.id).strataY = strataYForIndex(rowIndexByKey.get(monthKeyOf(note.time)));
     });
 
+    // ————— Spectrum assignments (see the SPECTRUM_COLOR_ORDER constant
+    // block) — each note's own target point within its color's wedge,
+    // fixed for this mount exactly like strataY above: a stable per-note
+    // jitter, not re-rolled per frame, so a note settles at one place in
+    // its wedge rather than drifting around inside it forever.
+    {
+      const sectorWidth = (Math.PI * 2) / SPECTRUM_SECTORS.length;
+      noteList.forEach((note) => {
+        const sector = SPECTRUM_SECTORS.find((s) => s.key === (note.color || "none")) || SPECTRUM_SECTORS[SPECTRUM_SECTORS.length - 1];
+        const node = byId.get(note.id);
+        node.spectrumAngle = sector.centerAngle + (Math.random() - 0.5) * sectorWidth * SPECTRUM_SECTOR_FRACTION;
+        node.spectrumRadius = SPECTRUM_RADIUS + Math.random() * SPECTRUM_RADIUS_JITTER;
+      });
+    }
+
     const strataForState = strataRows.map((key, i) => ({
       key: key === null ? "undated" : String(key),
       label: key === null
@@ -2638,7 +2801,12 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         for (const { point, node } of points) {
           const { fx, fy } = tree.accumulateForce(point.x, point.y, point, BARNES_HUT_THETA, repel);
           node.fx += fx;
-          if (layoutMode === "web") node.fy += fy;
+          // Full 2D repulsion — web needs it to fill the whole domain,
+          // spectrum needs it to fill its own wedge (see the
+          // SPECTRUM_COLOR_ORDER constant block); strata keeps x only
+          // (its own shelf spring owns y), orrery skips this block
+          // entirely (see the outer guard above).
+          if (layoutMode === "web" || layoutMode === "spectrum") node.fy += fy;
         }
       }
 
@@ -2709,6 +2877,55 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         }
       }
 
+      // Path tension (see the PATH_TENSION_GAIN constant block) — every
+      // interior member of a traced path leans toward its own foot on
+      // the straight line between the two anchors' live positions. Own
+      // short loop over the path array rather than folded into the main
+      // per-node forEach below, so notes that aren't on the path (almost
+      // always most of them) pay nothing for this at all. No reduced-
+      // motion gate: unlike the family lean just above (whose own gate
+      // exists because a mere press sets drag.id before a gesture is
+      // known to be a completed drag), a traced path only ever exists
+      // after two FULLY completed shift-clicks — there's no in-progress
+      // ambiguity to guard against — and step() itself only ever runs
+      // continuously when motion isn't reduced; under reduced motion
+      // this can only run inside a one-shot settle pass that converges
+      // before anything paints, so there is no swaying to prevent, only
+      // a final position to get right. Gating it anyway would just mean
+      // a reduced-motion visitor who traces a path and then reshuffles
+      // or switches modes gets a different, non-tensioned convergence
+      // than a full-motion visitor doing the same thing — the same
+      // "settle to a physically-informed final picture" contract strata,
+      // orrery, and spectrum's own center-pull branches already keep
+      // with no gate of their own.
+      const tensionPath = shortestPathRef.current;
+      if (tensionPath && tensionPath.length > 2) {
+        const start = byId.get(tensionPath[0]);
+        const end = byId.get(tensionPath[tensionPath.length - 1]);
+        const segX = end.x - start.x;
+        const segY = end.y - start.y;
+        const segLenSq = segX * segX + segY * segY;
+        if (segLenSq > 0.0001) {
+          for (let i = 1; i < tensionPath.length - 1; i++) {
+            const member = byId.get(tensionPath[i]);
+            if (!member || member.dragging || member.pinned) continue;
+            const t = Math.max(0, Math.min(1, ((member.x - start.x) * segX + (member.y - start.y) * segY) / segLenSq));
+            const footX = start.x + segX * t;
+            const footY = start.y + segY * t;
+            const pullX = (footX - member.x) * PATH_TENSION_GAIN;
+            const pullY = (footY - member.y) * PATH_TENSION_GAIN;
+            const pullMag = Math.hypot(pullX, pullY);
+            if (pullMag > PATH_TENSION_MAX) {
+              member.fx += (pullX / pullMag) * PATH_TENSION_MAX;
+              member.fy += (pullY / pullMag) * PATH_TENSION_MAX;
+            } else {
+              member.fx += pullX;
+              member.fy += pullY;
+            }
+          }
+        }
+      }
+
       // Bounded per-substep movement while annealing (see the
       // REHEAT_TEMPERATURE constant block) — the paper's own displacement
       // cap, expressed as a speed limit since this integration is
@@ -2752,6 +2969,16 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         if (layoutMode === "web") {
           node.fx -= (node.x - cx) * CENTER_STRENGTH;
           node.fy -= (node.y - cy) * CENTER_STRENGTH;
+        } else if (layoutMode === "spectrum") {
+          // The spectrum law (see the SPECTRUM_COLOR_ORDER constant
+          // block) — an ordinary spring toward the note's own fixed
+          // target point in its color's wedge, exactly the strata shelf
+          // spring's own shape, just aimed at a polar point instead of a
+          // horizontal shelf.
+          const targetX = cx + Math.cos(node.spectrumAngle) * node.spectrumRadius;
+          const targetY = cy + Math.sin(node.spectrumAngle) * node.spectrumRadius * (DOMAIN_H / DOMAIN_W);
+          node.fx += (targetX - node.x) * SPECTRUM_SPRING;
+          node.fy += (targetY - node.y) * SPECTRUM_SPRING;
         } else if (layoutMode === "strata") {
           node.fx -= (node.x - cx) * STRATA_CENTER_X;
           // The shelf spring — the strata law itself (see the
@@ -2759,7 +2986,17 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           // month, x to nothing but repulsion and the weak centering
           // above.
           node.fy += (node.strataY - node.y) * STRATA_SPRING;
-        } else if (node.orbit) {
+        } else if (layoutMode === "orrery" && node.orbit) {
+          // The mode check is load-bearing now that a 4th law exists:
+          // node.orbit is assigned unconditionally at build time (every
+          // note is either a system member or a comet — see the
+          // LAYOUT_MODES block), so with only the truthy check this
+          // branch would silently also catch spectrum-mode notes that
+          // happen to carry tag edges, stranding them on stale orrery
+          // targets instead of their own spectrum wedge. web/strata
+          // above are real mode checks already; this one only looked
+          // like an exception because orrery used to be the sole
+          // remaining possibility once those two were ruled out.
           // The orrery law (see the LAYOUT_MODES block). Primaries hold
           // their Vogel anchor; everything else chases a live Kepler
           // target — polar conic for position, equal-area law for the
@@ -3633,7 +3870,9 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       if (lasso.active) {
         const { x, y } = domainFromEvent(e);
         const last = lasso.points[lasso.points.length - 1];
-        if (Math.hypot(x - last.x, y - last.y) >= LASSO_POINT_GAP) lasso.points.push({ x, y });
+        if (lasso.points.length < LASSO_MAX_POINTS && Math.hypot(x - last.x, y - last.y) >= LASSO_POINT_GAP) {
+          lasso.points.push({ x, y });
+        }
         return;
       }
       // Tracked on every move regardless of what else this gesture is
@@ -4224,9 +4463,15 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       }
 
       // "?" summons the field guide (see GUIDE_SECTIONS) — the one key
-      // every keyboard-driven surface teaches first.
+      // every keyboard-driven surface teaches first. stopPropagation is
+      // load-bearing here too (see "/" below for the same reasoning):
+      // without it, this bubbles straight to ShortcutsSheet.jsx's own
+      // window-level "?" handler and pops the app-wide shortcuts sheet
+      // open on top of this panel's own field guide — the same key
+      // opening two overlapping overlays at once.
       if (e.key === "?") {
         e.preventDefault();
+        e.stopPropagation();
         playTick();
         setGuideOpen((prev) => !prev);
         return;
@@ -4284,7 +4529,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         togglePin(focusIdRef.current);
         return;
       }
-      const modePick = { 1: "web", 2: "orrery", 3: "strata" }[e.key];
+      const modePick = { 1: "web", 2: "orrery", 3: "strata", 4: "spectrum" }[e.key];
       if (modePick) {
         switchMode(modePick);
         return;
@@ -5125,6 +5370,54 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         });
       }
 
+      // The spectrum wheel's own furniture (see the SPECTRUM_COLOR_ORDER
+      // constant block) — center and radii converted to world-pixel space
+      // once per frame (see spectrumWedgePath's own comment on why this
+      // needs explicit x/y semi-axes rather than one radius), then every
+      // sector reuses that same pair. Labels sit just past the outer edge
+      // of their own wedge, at its center angle, counter-scaled by
+      // 1/zoom exactly like the strata labels and cluster region names.
+      if (modeRef.current === "spectrum") {
+        const wheelCx = cx * scaleX;
+        const wheelCy = cy * scaleY;
+        const aspect = DOMAIN_H / DOMAIN_W;
+        const outerRx = (SPECTRUM_RADIUS + SPECTRUM_RADIUS_JITTER + SPECTRUM_OUTER_PAD) * scaleX;
+        const outerRy = (SPECTRUM_RADIUS + SPECTRUM_RADIUS_JITTER + SPECTRUM_OUTER_PAD) * aspect * scaleY;
+        const innerRx = SPECTRUM_INNER_RADIUS * scaleX;
+        const innerRy = SPECTRUM_INNER_RADIUS * aspect * scaleY;
+        const labelRx = outerRx + 14;
+        const labelRy = outerRy + 14 * aspect;
+
+        SPECTRUM_SECTORS.forEach((sector, i) => {
+          const wedgeEl = spectrumWedgeRefs.current[i];
+          if (wedgeEl) {
+            wedgeEl.setAttribute(
+              "d",
+              spectrumWedgePath(wheelCx, wheelCy, innerRx, innerRy, outerRx, outerRy, sector.startAngle, sector.endAngle)
+            );
+          }
+          const labelEl = spectrumLabelRefs.current[i];
+          if (labelEl) {
+            const lx = wheelCx + Math.cos(sector.centerAngle) * labelRx;
+            const ly = wheelCy + Math.sin(sector.centerAngle) * labelRy;
+            labelEl.setAttribute("transform", `translate(${ lx },${ ly }) scale(${ 1 / camera.zoom })`);
+          }
+        });
+      }
+
+      // Mass wells (see the WELL_GAIN constant block) — cast before this
+      // frame's own wave-equation step, the same "apply the forcing term,
+      // then integrate" order the file already reasons about for driven
+      // fields. Excite amount is negative (a trough) and scaled by dt, so
+      // total well depth tracks elapsed time rather than frame rate, the
+      // same discipline INK_WAKE_GAIN's own splash already keeps.
+      if (ink) {
+        byId.forEach((node) => {
+          const excess = node.mass - 1;
+          if (excess > 0.01) ink.splash(node.x, node.y, -WELL_GAIN * excess * dt);
+        });
+      }
+
       // The liquid ink surface's own frame (see the INK_WAKE constants):
       // one wave-equation step (dt already clamped at 0.05 above, safely
       // inside the CFL bound inkSurface.js derives), an ink-color refresh
@@ -5588,7 +5881,21 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             } else if (lawNow === "strata") {
               fx -= (gx - cx) * STRATA_CENTER_X;
               fy += (held.strataY - gy) * STRATA_SPRING;
-            } else if (held.orbit) {
+            } else if (lawNow === "spectrum") {
+              // Same target-point spring step()'s own spectrum branch
+              // uses (see the SPECTRUM_COLOR_ORDER constant block) — the
+              // ghost has to chase the same wedge the real note would.
+              const targetX = cx + Math.cos(held.spectrumAngle) * held.spectrumRadius;
+              const targetY = cy + Math.sin(held.spectrumAngle) * held.spectrumRadius * (DOMAIN_H / DOMAIN_W);
+              fx += (targetX - gx) * SPECTRUM_SPRING;
+              fy += (targetY - gy) * SPECTRUM_SPRING;
+            } else if (lawNow === "orrery" && held.orbit) {
+              // The mode check is load-bearing here for the same reason
+              // it now is in step() itself (see that block's own
+              // comment): node.orbit is set unconditionally on every
+              // note, so without this check a spectrum-mode drag would
+              // silently preview an orrery orbit instead of its own
+              // wedge spring.
               const o = held.orbit;
               if (o.isPrimary) {
                 fx += (o.anchorX - gx) * ORRERY_PRIMARY_SPRING;
@@ -5812,7 +6119,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       ? {
         text: shortestPath.length === 2
           ? "Directly connected"
-          : `Path found — ${ shortestPath.length } notes, ${ shortestPath.length - 1 } hops`,
+          // The hop count is the concrete payoff (see findShortestPath's
+          // own comment); "drawing taut" names the physical answer to it
+          // — see the PATH_TENSION_GAIN constant block — only once
+          // there's an actual interior to straighten.
+          : `Path found — ${ shortestPath.length } notes, ${ shortestPath.length - 1 } hops, drawing taut`,
         tone: "found",
       }
       : { text: "No path between these notes", tone: "warn" };
@@ -5841,6 +6152,8 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     pathStatus = { text: "Each system orbits its most connected note · Untagged notes ride the comet belt", tone: "subtle" };
   } else if (mode === "strata" && graph.nodes.length > 0) {
     pathStatus = { text: "Notes settle onto the shelf of their own month — oldest at the bottom", tone: "subtle" };
+  } else if (mode === "spectrum" && graph.nodes.length > 0) {
+    pathStatus = { text: "Notes gather into their own color's wedge of the wheel", tone: "subtle" };
   } else if (graph.edges.length > 0) {
     // The stir hint only where the gesture actually exists — under
     // reduced motion right-drag does nothing (see the STIR constants),
@@ -5910,6 +6223,36 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                     className="note-constellation-strata-label"
                   >
                     { band.label }
+                  </text>
+                </g>
+              ))
+            }
+          </g>
+          {/* The spectrum wheel's own furniture — see the
+              SPECTRUM_COLOR_ORDER constant block. Same background tier as
+              the strata bands right above (both are "the ground a law's
+              own notes settle onto," never content of their own), and the
+              same mode-gated opacity-fade discipline. Wedge shapes are
+              fixed for the whole mount (see spectrumWedgePath's own
+              comment on why); the tick loop only ever rewrites their d
+              attribute to follow the live domain→screen scale, the same
+              one-frame-stale-at-worst contract every other per-frame
+              geometry write in this file already accepts. */}
+          <g className={ `note-constellation-spectrum ${ mode === "spectrum" ? "visible" : "" }` }>
+            {
+              SPECTRUM_SECTORS.map((sector, i) => (
+                <g key={ sector.key }>
+                  <path
+                    ref={ (el) => { spectrumWedgeRefs.current[i] = el; } }
+                    className="note-constellation-spectrum-wedge"
+                    fill={ sector.color }
+                  />
+                  <text
+                    ref={ (el) => { spectrumLabelRefs.current[i] = el; } }
+                    className="note-constellation-spectrum-label"
+                    fill={ sector.color }
+                  >
+                    { sector.label }
                   </text>
                 </g>
               ))
