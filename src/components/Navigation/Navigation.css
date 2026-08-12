@@ -160,12 +160,28 @@
   height: 58px;
   background: #000;
   z-index: 21;
+  /* Clips NavRipple's own canvas to the button's true circular silhouette
+     — without this the ripple's square canvas would spill past the
+     rounded corners at its own widest point. */
+  overflow: hidden;
 }
 
 .nav .activator-container .activator button img {
   position: relative;
   width: 30px;
   height: 30px;
+}
+
+/* NavRipple.jsx's own canvas — fills the button exactly, sits behind the
+   plus icon (plain DOM order; the icon has no z-index of its own to need
+   one here either), inert to pointer events so it never steals the
+   button's own click. */
+.activator-ripple {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .nav .activator-container .color-selectors {
@@ -213,4 +229,54 @@
 
 .nav .activator-container .color-selectors .selector.seventh {
   z-index: 4;
+}
+
+/* The hovered pot's own metaball bridge (see Navigation.jsx's bridges
+   state and POT_BRIDGE_MAX_DIST) — portaled to document.body, so a fixed
+   fullscreen overlay in page space, same as .note-radial-layer/
+   .note-swap-bridge-layer elsewhere in the app. Deliberately NOT inside
+   .activator-container's own gooey-filter chain — that filter is tuned
+   for the open/close transit's own blur radius, and layering a second,
+   differently-shaped fill through it would blur this bridge's own crisp
+   metaball geometry right back into the soft trick it's standing in for. */
+.nav-pot-bridge-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+}
+
+/* Drag-to-pour's own ghost (see ColorSelector.jsx's ensureGhost) — a
+   plain element appended straight to document.body rather than rendered
+   through React, since it only ever exists for the span of one drag and
+   needs zero reconciliation overhead following the pointer at 1:1. */
+.nav-pot-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 990;
+  box-shadow: 0 10px 22px -8px rgba(25, 25, 25, 0.4);
+}
+
+/* The export/import data-stream's own drops (see spawnDataStream in
+   Navigation.jsx) — plain ink-colored dots, GSAP-positioned via x/y
+   directly rather than left/top, since that's the transform GSAP already
+   writes to by default for a plain element. */
+.nav-data-drop {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background-color: var(--page-ink-color);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 990;
 }

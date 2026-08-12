@@ -6,6 +6,17 @@
   overflow: hidden;
 }
 
+/* The dissolve's own WebGL canvas (see TrashPhysics.jsx's triggerDissolve)
+   — fills the same fixed viewport box the physics layer itself does, so
+   its screen-space shader math lines up 1:1 with the pieces' own
+   getBoundingClientRect-derived positions with no extra offset to track. */
+.trash-physics-dissolve {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 .trash-physics-chip {
   position: absolute;
   top: 0;
@@ -13,4 +24,18 @@
   border-radius: 6px;
   box-shadow: 0 6px 14px -6px rgba(25, 25, 25, 0.35);
   will-change: transform, opacity;
+}
+
+/* A shredded strip (see TrashPhysics.jsx's drop()) — squarer corners than
+   the default chip's own 6px, since a real shredded strip's own cut edge
+   is a straight blade line, not a soft rounded corner. */
+.trash-physics-strip {
+  border-radius: 1.5px;
+}
+
+/* A live-held piece mid drag-to-toss (see TrashPhysics.jsx's grab()) — a
+   deeper, closer shadow than a settled chip's own, the same "lifted off
+   the surface" read NotePile.jsx's own .dragging card gets. */
+.trash-physics-grabbed {
+  box-shadow: 0 20px 34px -12px rgba(25, 25, 25, 0.55);
 }

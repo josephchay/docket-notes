@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import gsap from "gsap";
 import { FaXmark, FaArrowRotateLeft, FaTrash, FaBoxArchive } from "react-icons/fa6";
 
 import { timeAgo } from "../../utils/date";
@@ -12,6 +13,12 @@ import "./TrashPanel.css";
 // The event the command palette's "Open the trash" entry (and the
 // toolbar's trash button) fire to summon this panel from anywhere.
 export const TRASH_EVENT = "docket:trash";
+
+// A press on a swatch has to clear this many px before it counts as a
+// real drag-to-toss rather than a stray click — the same pixel-threshold
+// discipline NotePile.jsx's own toss gesture uses to tell "picked up and
+// thrown" apart from "just tapped."
+const DRAG_THRESHOLD = 6;
 
 // Every note deleted this session, not just the last few the toast deck had
 // room for — opened the same dot-to-sheet way as the command palette and
@@ -39,6 +46,34 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
   const physicsRef = useRef(null);
   const panelRef = useRef(null);
   const swatchRefs = useRef({});
+  // Empty-trash's own shake (see shakeEmpty below) — a SEPARATE node from
+  // panelRef on purpose: panelRef is SheetPanel's own motion.div, already
+  // carrying Framer's own scaleX/scaleY/translateY/rotateX for the
+  // dot-to-sheet entrance/exit plus useBlobClipMorph's clip-path — GSAP
+  // shaking that exact node would mean two systems fighting over the same
+  // transform every frame, the same conflict this session already hit
+  // (and worked around the same way) in ColorSelector.jsx's drag-to-pour.
+  // This wraps the panel's own content instead, one layer further in,
+  // where nothing else has ever claimed the transform.
+  const shakeRef = useRef(null);
+  // The one live drag-to-toss in flight, if any — { note, startX, startY,
+  // active }. `active` flips true only once the press clears
+  // DRAG_THRESHOLD, the same "don't hand off to physics for a plain
+  // click" gate dropPhysics's own button path never needed since a
+  // button click is unambiguous already.
+  const dragStateRef = useRef(null);
+
+  const shakeEmpty = () => {
+    if (reduceMotion || !shakeRef.current) return;
+
+    gsap.killTweensOf(shakeRef.current);
+    gsap.timeline()
+      .to(shakeRef.current, { x: -7, rotate: -1.4, duration: .06, ease: "power1.out" })
+      .to(shakeRef.current, { x: 6, rotate: 1.1, duration: .08, ease: "power1.inOut" })
+      .to(shakeRef.current, { x: -5, rotate: -.8, duration: .08, ease: "power1.inOut" })
+      .to(shakeRef.current, { x: 3, rotate: .4, duration: .09, ease: "power1.inOut" })
+      .to(shakeRef.current, { x: 0, rotate: 0, duration: .16, ease: "power2.out" });
+  };
 
   const dropPhysics = (note) => {
     const swatch = swatchRefs.current[note.id];
@@ -70,7 +105,11 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
     };
   }, []);
 
-  const handleRestore = (noteId) => {
+  // The shared tail end of a restore/shred, however it was triggered —
+  // a button click or a live toss release both land here, so the drag
+  // gesture below doesn't have to re-derive the same bookkeeping the
+  // buttons already handle correctly.
+  const finishRestore = (noteId) => {
     setPendingExit((prev) => ({ ...prev, [noteId]: "restore" }));
     setRestoreBurst(noteId);
     clearTimeout(burstTimerRef.current);
@@ -78,10 +117,76 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
     onRestore(noteId);
   };
 
+  const finishShred = (noteId) => {
+    setPendingExit((prev) => ({ ...prev, [noteId]: "shred" }));
+    onShred(noteId);
+  };
+
   const handleShred = (note) => {
     dropPhysics(note);
-    setPendingExit((prev) => ({ ...prev, [note.id]: "shred" }));
-    onShred(note.id);
+    finishShred(note.id);
+  };
+
+  // Live drag-to-toss: pressing a row's swatch and dragging it hands the
+  // note off to TrashPhysics.jsx as a real physics body the instant the
+  // press clears DRAG_THRESHOLD — toss it up past RESTORE_VELOCITY_THRESHOLD
+  // and releaseGrabbed reads that as thrown back, anything else reads as
+  // let go and shreds right where it lands. The buttons stay exactly as
+  // they were: a full, keyboard-reachable path to the same two outcomes
+  // for anyone not reaching for the gesture.
+  const handleSwatchDown = (e, note) => {
+    if (reduceMotion) return;
+    dragStateRef.current = { note, startX: e.clientX, startY: e.clientY, active: false };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const handleSwatchMove = (e) => {
+    const state = dragStateRef.current;
+    if (!state) return;
+
+    if (!state.active) {
+      const dx = e.clientX - state.startX;
+      const dy = e.clientY - state.startY;
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      state.active = true;
+
+      // Grabbed right from the swatch's own current rect — the same
+      // origin dropPhysics already reads for the button path, so a
+      // toss picks up exactly where the list's own swatch was sitting.
+      const swatch = swatchRefs.current[state.note.id];
+      const panelRect = panelRef.current?.getBoundingClientRect();
+      const rect = swatch?.getBoundingClientRect();
+      if (!rect) { dragStateRef.current = null; return; }
+
+      physicsRef.current?.grab({
+        id: state.note.id,
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+        width: rect.width,
+        height: rect.height,
+        color: state.note.color,
+        panelRect,
+      });
+      // The physics piece takes over the visual from here — the list's
+      // own swatch hides rather than doubling it up. Never restored to
+      // visible on release: the row is about to exit either way.
+      if (swatch) swatch.style.opacity = "0";
+    }
+
+    physicsRef.current?.moveGrabbed(state.note.id, e.clientX, e.clientY);
+  };
+
+  const handleSwatchUp = (e) => {
+    const state = dragStateRef.current;
+    dragStateRef.current = null;
+    if (!state) return;
+
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    if (!state.active) return; // never crossed the threshold — a plain click on the swatch, nothing to release
+
+    const result = physicsRef.current?.releaseGrabbed(state.note.id);
+    if (result?.restored) finishRestore(state.note.id);
+    else finishShred(state.note.id);
   };
 
   const handleEmptyAll = () => {
@@ -122,6 +227,12 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
       setTimeout(() => physicsRef.current?.drop(drop), index * 20);
     });
 
+    // The panel's own shake rides right alongside the drop volley rather
+    // than waiting for it — the physical read is "the bin got upended and
+    // everything's still tumbling out," not "the bin shook, then
+    // separately, things fell."
+    shakeEmpty();
+
     onEmpty();
   };
 
@@ -155,6 +266,7 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
         panelClassName="trash-panel"
         ariaLabel="Trash"
       >
+        <div ref={ shakeRef } className="trash-shake-wrap">
               <div className="trash-header">
                 <h3>Trash</h3>
                 <div className="trash-header-actions">
@@ -245,6 +357,11 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
                                   else delete swatchRefs.current[entry.note.id];
                                 } }
                                 className={ `trash-item-swatch ${ entry.note.color }-bg` }
+                                style={{ touchAction: "none" }}
+                                onPointerDown={ (e) => handleSwatchDown(e, entry.note) }
+                                onPointerMove={ handleSwatchMove }
+                                onPointerUp={ handleSwatchUp }
+                                onPointerCancel={ handleSwatchUp }
                               />
                               <div className="trash-item-body">
                                 <span className="trash-item-title">{ labelFor(entry.note) }</span>
@@ -258,7 +375,7 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
                                 whileHover={{ scale: 1.12 }}
                                 whileTap={{ scale: .88 }}
                                 transition={{ type: "spring", stiffness: 420, damping: 16 }}
-                                onClick={ () => handleRestore(entry.note.id) }
+                                onClick={ () => finishRestore(entry.note.id) }
                               >
                                 <FaArrowRotateLeft />
                                 <SparkBurst
@@ -290,6 +407,7 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
                   )
                 }
               </div>
+        </div>
       </SheetPanel>
     </>
   );

@@ -10,11 +10,15 @@ import Note from "../Note/Note";
 import QuoteCard from "../Quote/QuoteCard";
 import TagThreads from "./TagThreads";
 import NotePile from "../Pile/NotePile";
+import EmptyStateWash from "./EmptyStateWash";
 import { NOTE_COLORS } from "../../constants/colors";
 
 import "./NoteList.css";
 import { itemsPerFlexRow } from "../../utils/math";
 import useInkPulse from "../../hooks/useInkPulse";
+import { createPoint, integratePoint } from "../../utils/verlet";
+import { pointInPolygon } from "../../utils/hull";
+import { smoothPath } from "../../utils/svgPath";
 import { SNAPPY, EXIT_SPRING } from "../Motion";
 
 gsap.registerPlugin(ScrollTrigger);
@@ -52,35 +56,128 @@ const BURST = [
   { color: "var(--green-color)", x: -55, y: 60 },
 ];
 
-const GooeyBlobs = ({ burst }) => (
-  <div
-    className="gooey-blobs"
-    aria-hidden="true"
-  >
-    {
-      BLOBS.map((blob, index) => (
-        <motion.span
-          key={ index }
-          className="gooey-blob"
-          style={{
-            width: blob.size,
-            height: blob.size,
-            backgroundColor: blob.color,
-          }}
-          animate={{
-            x: blob.x,
-            y: blob.y,
-            scale: [1, 1.15, 1],
-          }}
-          transition={{
-            duration: blob.duration,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-        />
-      ))
-    }
-    {
+// The idle drifters used to just be four independent Framer keyframe
+// loops — each blob's own path pre-baked, with zero awareness that the
+// gooey filter was about to melt it into whichever neighbor its own fixed
+// path happened to cross. This runs them as real verlet points instead
+// (utils/verlet.js, the same position-based integration ClothField/
+// PullString's own rope already trust): each blob still eases toward a
+// lazy wandering target derived from its OLD keyframe range (so the
+// overall character — which blob roams how far, how fast — is unchanged),
+// but a plain pairwise penetration check now actually pushes two blobs
+// apart the instant they'd overlap, so a "collision" is a real position
+// correction, not a coincidence of two unrelated timelines.
+const BLOB_SPRING = 0.05;      // pull toward the wander target, per frame
+const BLOB_DAMPING = 0.93;     // per-frame implied-velocity retention
+const BLOB_RADIUS_FACTOR = 0.4; // fraction of a blob's own CSS size counted as its collision radius
+const BLOB_SEPARATION_PADDING = 8; // px of extra berth beyond bare contact
+
+// The wander target a blob's own verlet point eases toward — a lazy
+// Lissajous derived straight from its old 3-key keyframe range (x[0]/x[1]
+// as the two extremes of a sine sweep) rather than a fresh shape, so this
+// reads as the same slow drift the old fixed timeline had, just now a
+// target something else can actually knock the real point off of.
+const blobTarget = (blob, t) => {
+  const xMid = (blob.x[0] + blob.x[1]) / 2;
+  const xAmp = (blob.x[1] - blob.x[0]) / 2;
+  const yMid = (blob.y[0] + blob.y[1]) / 2;
+  const yAmp = (blob.y[1] - blob.y[0]) / 2;
+  const phase = (t / blob.duration) * Math.PI * 2;
+  return {
+    x: xMid + xAmp * Math.sin(phase),
+    // A slightly different rate than X, same reason TagThreads.jsx's own
+    // idle wobble staggers its sine terms — a matched rate would just
+    // trace a straight diagonal line back and forth instead of a loop.
+    y: yMid + yAmp * Math.cos(phase * 0.82),
+  };
+};
+
+const VerletBlobs = ({ reduceMotion }) => {
+  const elRefs = useRef([]);
+  const pointsRef = useRef(null);
+  if (!pointsRef.current) pointsRef.current = BLOBS.map((blob) => createPoint(blob.x[0], blob.y[0]));
+
+  useEffect(() => {
+    if (reduceMotion) return undefined;
+
+    let lastT = performance.now();
+    let simTime = 0;
+    let raf;
+
+    const tick = (now) => {
+      raf = requestAnimationFrame(tick);
+      const dt = Math.min(0.032, (now - lastT) / 1000);
+      lastT = now;
+      simTime += dt;
+
+      const points = pointsRef.current;
+      points.forEach((p, i) => {
+        const target = blobTarget(BLOBS[i], simTime);
+        integratePoint(p, dt, (target.x - p.x) * BLOB_SPRING, (target.y - p.y) * BLOB_SPRING, BLOB_DAMPING);
+      });
+
+      // All-pairs separation — four points, so the honest O(n²) reason
+      // NoteConstellation.jsx's own quadtree comment names (complexity,
+      // never a measured bottleneck at THAT scale) applies here even more
+      // plainly: there is no scale at which four blobs would ever justify
+      // reaching for it.
+      for (let i = 0; i < points.length; i++) {
+        for (let j = i + 1; j < points.length; j++) {
+          const a = points[i];
+          const b = points[j];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.hypot(dx, dy) || 0.001;
+          const minDist = (BLOBS[i].size + BLOBS[j].size) * BLOB_RADIUS_FACTOR + BLOB_SEPARATION_PADDING;
+          if (dist >= minDist) continue;
+
+          const overlap = (minDist - dist) / 2;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          a.x -= nx * overlap;
+          a.y -= ny * overlap;
+          b.x += nx * overlap;
+          b.y += ny * overlap;
+        }
+      }
+
+      points.forEach((p, i) => {
+        const el = elRefs.current[i];
+        if (el) el.style.transform = `translate(${ p.x.toFixed(2) }px, ${ p.y.toFixed(2) }px) scale(${ (1 + Math.sin(simTime * 0.6 + i * 1.7) * 0.12).toFixed(3) })`;
+      });
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [reduceMotion]);
+
+  return BLOBS.map((blob, index) => (
+    <span
+      key={ index }
+      ref={ (el) => { elRefs.current[index] = el; } }
+      className="gooey-blob"
+      style={{
+        width: blob.size,
+        height: blob.size,
+        backgroundColor: blob.color,
+      }}
+    />
+  ));
+};
+
+const GooeyBlobs = ({ burst, reduceMotion }) => (
+  <>
+    {/* EmptyStateWash sits OUTSIDE the gooey-filtered div on purpose — that
+        filter (see .gooey-blobs below) is a blur+contrast trick tuned for
+        melting solid blob shapes together, and running a WebGL canvas's
+        own rendered output through it would just muddy real ripple detail
+        for no benefit. */}
+    <EmptyStateWash reduceMotion={ reduceMotion } />
+    <div
+      className="gooey-blobs"
+      aria-hidden="true"
+    >
+      <VerletBlobs reduceMotion={ reduceMotion } />
+      {
       burst && BURST.map((drop, index) => (
         <motion.span
           key={ `burst-${ index }` }
@@ -100,8 +197,9 @@ const GooeyBlobs = ({ burst }) => (
           transition={{ duration: 1.15, delay: index * .06, ease: "easeInOut" }}
         />
       ))
-    }
-  </div>
+      }
+    </div>
+  </>
 );
 
 // Each letter of the heading springs up from under the fold on its own,
@@ -244,28 +342,36 @@ const NoteList = ({
   }, [gridRadialAt]);
 
   // Click-drag across empty desk space — same exclusion as the radial menu
-  // above — draws an elastic selection rectangle and picks up every note it
-  // covers as it grows, live. Held in a ref rather than state until it
-  // actually crosses MOVE_THRESHOLD so a plain click on empty space (no
-  // drag at all) never enters select mode or touches the selection.
-  // Client (viewport) coordinates throughout, matched against each note's
-  // own getBoundingClientRect(), so no local coordinate conversion is
-  // needed against the grid's own scroll/layout.
-  const LASSO_THRESHOLD = 6;
+  // above — traces a real freeform loop (recorded points, the same
+  // "gap-throttled array plus a Catmull-Rom smoothPath" recipe
+  // NoteConstellation.jsx's own lasso already established) rather than
+  // the axis-aligned rectangle this used to draw, and picks up every note
+  // it actually encircles as it grows, live. Held in a ref rather than
+  // state until it actually crosses LASSO_THRESHOLD so a plain click on
+  // empty space (no drag at all) never enters select mode or touches the
+  // selection. Client (viewport) coordinates throughout, matched against
+  // each note's own getBoundingClientRect(), so no local coordinate
+  // conversion is needed against the grid's own scroll/layout.
+  const LASSO_THRESHOLD = 6; // px of travel from the press point before this counts as a real drag
+  const LASSO_POINT_GAP = 4; // px between recorded points — fine enough for tight loops, coarse enough not to flood the array
   const lassoStateRef = useRef(null);
-  const [lassoRect, setLassoRect] = useState(null);
+  const [lassoPath, setLassoPath] = useState(null);
 
-  const notesInLasso = (rect) => {
+  // A note counts as "in" the loop by its own CENTER landing inside the
+  // traced polygon (the same convention NoteConstellation's own lasso
+  // already uses) rather than any overlap with it — the only reading that
+  // actually makes sense once the loop is an arbitrary traced shape
+  // instead of a rectangle, where "does any pixel of this card touch the
+  // marquee" was a reasonable stand-in for "did you mean to include it."
+  const notesInLasso = (points) => {
     const container = ref.current;
-    if (!container) return [];
+    if (!container || points.length < 3) return [];
 
+    const polygon = points.map((p) => [p.x, p.y]);
     const ids = [];
     container.querySelectorAll("[data-note-id]").forEach((el) => {
       const r = el.getBoundingClientRect();
-      const overlaps =
-        r.left < rect.x + rect.width && r.left + r.width > rect.x &&
-        r.top < rect.y + rect.height && r.top + r.height > rect.y;
-      if (overlaps) ids.push(el.dataset.noteId);
+      if (pointInPolygon(r.left + r.width / 2, r.top + r.height / 2, polygon)) ids.push(el.dataset.noteId);
     });
 
     return ids;
@@ -275,37 +381,39 @@ const NoteList = ({
     const state = lassoStateRef.current;
     if (!state) return;
 
-    const dx = e.clientX - state.startX;
-    const dy = e.clientY - state.startY;
+    const first = state.points[0];
 
     if (!state.active) {
-      if (Math.hypot(dx, dy) < LASSO_THRESHOLD) return;
+      if (Math.hypot(e.clientX - first.x, e.clientY - first.y) < LASSO_THRESHOLD) return;
       state.active = true;
       if (!selectMode) enterSelectMode?.();
     }
 
-    const rect = {
-      x: Math.min(state.startX, e.clientX),
-      y: Math.min(state.startY, e.clientY),
-      width: Math.abs(dx),
-      height: Math.abs(dy),
-    };
-    setLassoRect(rect);
-    setSelection?.(notesInLasso(rect));
+    const last = state.points[state.points.length - 1];
+    if (Math.hypot(e.clientX - last.x, e.clientY - last.y) >= LASSO_POINT_GAP) {
+      state.points.push({ x: e.clientX, y: e.clientY });
+    }
+
+    // Closed with an explicit line back to the very first point — smoothPath
+    // itself only ever draws an open curve THROUGH the given points, and an
+    // unclosed loop would leave a visible straight gap between the last
+    // recorded point and the start every frame it's still growing.
+    setLassoPath(`${ smoothPath(state.points) } L ${ first.x } ${ first.y } Z`);
+    setSelection?.(notesInLasso(state.points));
   };
 
   const handleLassoUp = () => {
     window.removeEventListener("pointermove", handleLassoMove);
     window.removeEventListener("pointerup", handleLassoUp);
     lassoStateRef.current = null;
-    setLassoRect(null);
+    setLassoPath(null);
   };
 
   const handleLassoDown = (e) => {
     if (e.button !== 0) return;
     if (e.target.closest(".note, button, input, textarea, a")) return;
 
-    lassoStateRef.current = { startX: e.clientX, startY: e.clientY, active: false };
+    lassoStateRef.current = { points: [{ x: e.clientX, y: e.clientY }], active: false };
     window.addEventListener("pointermove", handleLassoMove);
     window.addEventListener("pointerup", handleLassoUp);
   };
@@ -362,6 +470,45 @@ const NoteList = ({
 
     return () => trigger.kill();
   }, []);
+
+  // The grid's own settle wave — a light band sweeping down the WHOLE
+  // desk as you scroll through it, tied to real scroll progress the same
+  // ScrollTrigger infrastructure the quote card's own parallax just above
+  // already sets up (same scroller, same scrub). Deliberately NOT another
+  // per-card entrance layered on top of each Note's own whileInView pop
+  // (see Note.jsx) — reaching into any note's own transform here would
+  // mean fighting the half-dozen Framer-driven systems already living on
+  // that exact element (the pointer tilt, the move-string lean, the
+  // scroll-velocity skew, the spawn/delete morphs), the same conflict this
+  // session already hit — and worked around — in ColorSelector.jsx's own
+  // drag-to-pour. A grid-wide overlay this file fully owns sidesteps all
+  // of that: nothing on any note is ever touched, so nothing here can
+  // fight it.
+  const gridWashRef = useRef(null);
+
+  useEffect(() => {
+    if (!ref.current || !gridWashRef.current || reduceMotion) return undefined;
+
+    const trigger = ScrollTrigger.create({
+      trigger: ref.current,
+      scroller: ".home",
+      start: "top top",
+      end: "bottom bottom",
+      scrub: 0.6,
+      onUpdate: (self) => {
+        // Faded out right at the very top/bottom of the sweep rather than
+        // visible resting at the edge — the band should read as passing
+        // THROUGH the desk, not parked at either end of it.
+        const edge = Math.min(self.progress, 1 - self.progress);
+        gsap.set(gridWashRef.current, {
+          top: `${ self.progress * 100 }%`,
+          opacity: Math.min(1, edge * 14),
+        });
+      },
+    });
+
+    return () => trigger.kill();
+  }, [reduceMotion]);
 
   useEffect(() => {
     const delayTimer = setTimeout(() => {
@@ -600,6 +747,11 @@ const NoteList = ({
         onPointerDown={ handleLassoDown }
       >
         {
+          !reduceMotion && !pileView && (
+            <div ref={ gridWashRef } className="grid-settle-wave" aria-hidden="true" />
+          )
+        }
+        {
           pileView && (
             <NotePile
               notes={ notes }
@@ -652,7 +804,7 @@ const NoteList = ({
               <div
                 className="empty-state"
               >
-                <GooeyBlobs />
+                <GooeyBlobs reduceMotion={ reduceMotion } />
                 <motion.h3
                   className="liquid-text"
                   initial={{
@@ -718,7 +870,7 @@ const NoteList = ({
               <div
                 className="empty-state"
               >
-                <GooeyBlobs burst={ celebrateClean } />
+                <GooeyBlobs burst={ celebrateClean } reduceMotion={ reduceMotion } />
                 {/* Only plays right after the desk goes from holding notes
                     to holding none — a quieter counterpart to the milestone
                     ink shower, for clearing out rather than filling up. */}
@@ -817,20 +969,17 @@ const NoteList = ({
         createPortal(
           <AnimatePresence>
             {
-              lassoRect && (
-                <motion.div
-                  className="lasso-rect"
-                  style={{
-                    left: lassoRect.x,
-                    top: lassoRect.y,
-                    width: lassoRect.width,
-                    height: lassoRect.height,
-                  }}
-                  initial={{ opacity: 0, scale: .92 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 1.05, transition: EXIT_SPRING }}
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                />
+              lassoPath && (
+                <svg className="lasso-layer" aria-hidden="true">
+                  <motion.path
+                    className="lasso-path"
+                    d={ lassoPath }
+                    initial={{ opacity: 0, scale: .92 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 1.05, transition: EXIT_SPRING }}
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  />
+                </svg>
               )
             }
           </AnimatePresence>,

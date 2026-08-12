@@ -38,6 +38,25 @@
   outline: none;
 }
 
+/* The empty-trash shake's own wrapper (see TrashPanel.jsx's shakeRef) —
+   GSAP's target instead of the panel's own root (that one's already
+   Framer's, and PullRig-style layering, not a shared node, is how this
+   app keeps two animation systems from fighting over one transform). It
+   has to pass the panel's own flex layout straight through to
+   .trash-header/.trash-body underneath, or the header would stop
+   staying put while the body scrolls beneath it — flex: 1 1 auto sizes
+   this to fill exactly the space .trash-panel already gives it,
+   min-height: 0 is the standard flexbox fix that lets .trash-body's own
+   overflow-y: auto actually engage inside a nested flex column instead
+   of the column growing to fit its content and never triggering a
+   scrollbar at all. */
+.trash-shake-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .trash-header {
   display: flex;
   align-items: center;
@@ -137,11 +156,17 @@
   transition: background-color 0.4s ease-in-out;
 }
 
+/* Also the live drag-to-toss's own handle (see TrashPanel.jsx's
+   handleSwatchDown) — grab cursor as the only static hint, since the
+   physics piece itself (TrashPhysics.jsx's .trash-physics-grabbed) is
+   what actually shows a press has taken hold once it clears the drag
+   threshold. */
 .trash-item-swatch {
   width: 14px;
   height: 14px;
   border-radius: 50%;
   flex-shrink: 0;
+  cursor: grab;
 }
 
 .trash-item-body {
