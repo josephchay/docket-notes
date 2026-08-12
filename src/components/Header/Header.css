@@ -73,6 +73,14 @@ header.header {
   color: #a1a7b6;
 }
 
+/* The search field's own ripple (see the #search-ripple defs and
+   searchDisplaceRef in Header.jsx) — GSAP owns the filter's live scale
+   attribute directly, so nothing here needs its own transition; the CSS
+   side is just the one-line hookup to the filter. */
+.header .search input.search-ripple-text {
+  filter: url(#search-ripple);
+}
+
 /* A fixed slot at the end of the field, so the "/" hint and the clear
    button can trade places without the search bar changing width. */
 .header .search .search-extra {
@@ -385,21 +393,40 @@ header.header {
   transition: color 0.4s ease-in-out;
 }
 
-.header .ink-levels .ink-bar {
+.header .ink-levels .ink-vial-wrap {
   display: block;
-  width: 18px;
-  border-radius: 4px 4px 2px 2px;
+}
+
+/* InkVial.jsx's own SVG — a real liquid surface now, not a scaled
+   rectangle, but wearing the exact same box (18×64), opacity, and
+   rounded-corner language the old plain .ink-bar did. */
+.header .ink-levels .ink-vial {
+  display: block;
   opacity: .85;
-  transition: opacity 0.25s ease-in-out, box-shadow 0.25s ease-in-out;
+  transition: opacity 0.25s ease-in-out;
 }
 
-.header .ink-levels .ink-column:hover .ink-bar {
+.header .ink-levels .ink-vial-fill {
+  stroke: transparent;
+  stroke-width: 2px;
+  paint-order: stroke;
+  transition: stroke 0.25s ease-in-out;
+}
+
+.header .ink-levels .ink-column:hover .ink-vial {
   opacity: 1;
 }
 
-.header .ink-levels .ink-column.active .ink-bar {
+.header .ink-levels .ink-column.active .ink-vial {
   opacity: 1;
-  box-shadow: 0 0 0 2px var(--page-ink-color);
+}
+
+/* The old .ink-bar's own ring used box-shadow's spread — not something
+   drop-shadow (the SVG-safe equivalent) can reproduce, so this uses a
+   real stroke around the liquid shape's own outline instead; paint-order
+   keeps that stroke from cutting into the fill's own wavy edge. */
+.header .ink-levels .ink-column.active .ink-vial-fill {
+  stroke: var(--page-ink-color);
 }
 
 /* Flips the page between fresh paper and the Ink (dark) theme. */

@@ -16,6 +16,30 @@
   transition: border-radius 0.3s ease-in-out, box-shadow 0.25s ease-in-out;
 }
 
+/* Blank paper, not a transparent hole — the plain background every other
+   moment gets from its own color-bg class (see commons.css), which
+   .note-soak-overlay above deliberately withholds for the whole soak so
+   there's a real "before" to soak color INTO, not just an already-colored
+   card wearing a redundant matching coat of paint on top. */
+.note.soaking {
+  background-color: var(--page-surface-color);
+}
+
+/* The duplicate's own ink-soak (see Note.jsx's isSoaking/soakRef) — the
+   ONLY source of the card's true color for as long as it's rendered (the
+   card's own color class withholds the whole time), a growing clip-path
+   circle GSAP drives directly. z-index 0 keeps it under the card's real
+   content (header, title, text, footer, pull-zone all render after it in
+   the DOM with no z-index of their own, so plain paint order already
+   puts them on top) while still sitting above the plain card background. */
+.note-soak-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
 /* A third ring, alongside .editing/.selected below — this one names why a
    card survived the current search rather than a mode the card itself is
    in. Translucent ink rather than either of those two's solid black or
@@ -284,6 +308,22 @@
   width: 0;
   height: 0;
   filter: url(#gooey-effect);
+}
+
+/* --- The move-string's own gooey swap bridge (see MoveString.jsx) -------- */
+/* Portaled to document.body for the same reason the radial menu is —
+   page-absolute coordinates, escaping any transformed ancestor. Absolute
+   rather than fixed (unlike .note-radial-layer): the bridge's own path
+   coordinates already include the page's scroll offset (see
+   MoveString.jsx's handleStart), so this needs to scroll WITH the page to
+   stay lined up with the two cards it's drawn between, not stay pinned to
+   the viewport the way a click-anchored menu should. */
+.note-swap-bridge-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  overflow: visible;
+  pointer-events: none;
 }
 
 .note-radial-item {

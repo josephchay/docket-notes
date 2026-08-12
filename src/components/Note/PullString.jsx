@@ -44,7 +44,7 @@ export const solveCatenaryA = (span, sag) => {
 
 // A single decorative elastic pull-string. Grab the tassel, stretch the rope,
 // and release past the threshold to fire `onTrigger` with a little sparkle burst.
-const PullString = ({ anchorX, restY = 26, colorName, icon, verb, onTrigger }) => {
+const PullString = ({ anchorX, restY = 26, colorName, icon, verb, onTrigger, reduceMotion = false }) => {
   const pullX = useMotionValue(0);
   const pullY = useMotionValue(0);
   const tabRef = useRef(null);
@@ -144,6 +144,7 @@ const PullString = ({ anchorX, restY = 26, colorName, icon, verb, onTrigger }) =
       tabClassName={ `pull-tab ${ colorName }-bg ${ ready ? "ready" : "" }` }
       tabContent={ icon }
       burst={ burst }
+      reduceMotion={ reduceMotion }
       dragProps={{
         drag: true,
         dragSnapToOrigin: true,

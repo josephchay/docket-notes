@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
+import gsap from "gsap";
 import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan, FaClockRotateLeft, FaGear, FaLayerGroup } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
@@ -16,6 +17,8 @@ import useMagnetic from "../../hooks/useMagnetic";
 import { playStar } from "../../utils/sound";
 import LiquidMeter from "../Meter/LiquidMeter";
 import SparkBurst from "../Spark/SparkBurst";
+import InkVial from "./InkVial";
+import FilterScatter from "./FilterScatter";
 import { SNAPPY, POP, RAIL_SLIDE, enterExitStagger, iconSpin } from "../Motion";
 
 import './Header.css';
@@ -142,8 +145,25 @@ const Header = ({
   // one transform.
   const toolbarMagnetic = useMagnetic({ range: 80, maxLift: 10, maxScale: 1.28, axis: "xy", reduceMotion });
 
+  // The search field's own ripple (see the <filter id="search-ripple">
+  // defs below) — a SEPARATE feDisplacementMap from the shared
+  // #liquid-text filter LiquidTextFilter.jsx already drives (that one's
+  // GSAP tween runs forever, a constant ambient wobble; the same shared
+  // filter instance can't ALSO carry this field's own different behavior
+  // — intensifying per keystroke rather than idling — without every other
+  // .liquid-text element in the app picking that up too). Scale starts at
+  // 0 (flat, undistorted) and only ever moves because a keystroke moved
+  // it; nothing here idles.
+  const searchDisplaceRef = useRef(null);
   const handleSearch = (e) => {
     setNotesSortText(e.target.value);
+
+    if (!reduceMotion && searchDisplaceRef.current) {
+      gsap.killTweensOf(searchDisplaceRef.current);
+      gsap.timeline()
+        .to(searchDisplaceRef.current, { attr: { scale: 9 }, duration: .08, ease: "power2.out" })
+        .to(searchDisplaceRef.current, { attr: { scale: 0 }, duration: .55, ease: "power2.out" });
+    }
   }
 
   // Escape wipes the query and hands the caret back to the desk.
@@ -152,6 +172,35 @@ const Header = ({
       setNotesSortText("");
       e.target.blur();
     }
+  }
+
+  // The color row's own physical sweep on clear (see FilterScatter.jsx) —
+  // chipRefs is a plain array (registered the same way toolbarMagnetic's
+  // own items are, via a ref-callback per index) rather than React state,
+  // since nothing here ever needs to trigger a re-render off it. The real
+  // clearFilters() prop always fires regardless of reduceMotion — the
+  // scatter is purely the decorative half, layered on top of (not gating)
+  // the actual filter reset.
+  const chipRefs = useRef([]);
+  const filterScatterRef = useRef(null);
+
+  const handleClearFilters = () => {
+    if (!reduceMotion && filterScatterRef.current) {
+      const chips = chipRefs.current
+        .map((el, index) => {
+          if (!el) return null;
+          const rect = el.getBoundingClientRect();
+          return {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+            size: rect.width,
+            color: `var(--${ paletteNames[index] }-color)`,
+          };
+        })
+        .filter(Boolean);
+      filterScatterRef.current.scatter(chips);
+    }
+    clearFilters();
   }
 
   // Turning the star filter on throws a little handful of sparks, the same
@@ -251,12 +300,26 @@ const Header = ({
         <div className="icon">
           <img src={ searchIcon } alt="Search Icon" />
         </div>
+        {/* The search field's own liquid filter (see searchDisplaceRef
+            above) — width/height 0, the same invisible-defs-only pattern
+            LiquidTextFilter.jsx uses for the shared #liquid-text filter,
+            just scoped locally here since nothing outside this one input
+            wears it. */}
+        <svg width="0" height="0" aria-hidden="true">
+          <defs>
+            <filter id="search-ripple" x="-20%" y="-60%" width="140%" height="220%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.02 0.05" numOctaves="2" seed="3" result="search-noise" />
+              <feDisplacementMap ref={ searchDisplaceRef } in="SourceGraphic" in2="search-noise" scale="0" xChannelSelector="R" yChannelSelector="G" />
+            </filter>
+          </defs>
+        </svg>
         <input
           type="text"
           placeholder="Search"
           value={ searchText }
           onChange={ handleSearch }
           onKeyDown={ handleSearchKeyDown }
+          className="search-ripple-text"
         />
         {/* One slot, two moods: a "/" shortcut hint while idle, a clear
             button once there is something to clear. */}
@@ -378,7 +441,7 @@ const Header = ({
               onTapStart={ colorRingPulse.squash }
               onClick={ () => setSortColor(sortColor === name ? null : name) }
             >
-              <span className={ `color-chip ${ name }-bg` } />
+              <span ref={ (el) => { chipRefs.current[paletteNames.indexOf(name)] = el; } } className={ `color-chip ${ name }-bg` } />
               {
                 sortColor === name && (
                   <motion.span
@@ -402,6 +465,7 @@ const Header = ({
           ))
         }
       </motion.div>
+      <FilterScatter ref={ filterScatterRef } />
       <AnimatePresence>
         {
           filtersActive && (
@@ -415,7 +479,7 @@ const Header = ({
               whileHover={{ scale: 1.06 }}
               whileTap={{ scale: .92 }}
               transition={ springy }
-              onClick={ clearFilters }
+              onClick={ handleClearFilters }
             >
               <FaRotateLeft className="clear-filters-icon" />
               <span>Clear</span>
@@ -498,11 +562,8 @@ const Header = ({
                             { count }
                           </motion.span>
                           <motion.span
-                            className={ `ink-bar ${ name }-bg` }
-                            style={{
-                              height: 8 + Math.round((count / maxCount) * 56),
-                              originY: 1,
-                            }}
+                            className="ink-vial-wrap"
+                            style={{ originY: 1 }}
                             initial={{ scaleY: 0 }}
                             animate={{ scaleY: 1 }}
                             transition={{
@@ -511,7 +572,15 @@ const Header = ({
                               damping: 13,
                               delay: .06 + index * .045,
                             }}
-                          />
+                          >
+                            <InkVial
+                              count={ count }
+                              height={ 8 + Math.round((count / maxCount) * 56) }
+                              colorName={ name }
+                              open={ inkOpen }
+                              reduceMotion={ reduceMotion }
+                            />
+                          </motion.span>
                         </button>
                       );
                     })

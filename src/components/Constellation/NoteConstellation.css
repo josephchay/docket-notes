@@ -928,7 +928,8 @@
 .note-constellation-cells,
 .note-constellation-skeleton,
 .note-constellation-exposure-toggle,
-.note-constellation-toss {
+.note-constellation-toss,
+.note-constellation-voice {
   position: absolute;
   left: 20px;
   bottom: 20px;
@@ -954,7 +955,8 @@
 .note-constellation-cells:hover,
 .note-constellation-skeleton:hover,
 .note-constellation-exposure-toggle:hover,
-.note-constellation-toss:hover {
+.note-constellation-toss:hover,
+.note-constellation-voice:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 26px -10px rgba(25, 25, 25, 0.38);
 }
@@ -964,7 +966,8 @@
 .note-constellation-cells:active,
 .note-constellation-skeleton:active,
 .note-constellation-exposure-toggle:active,
-.note-constellation-toss:active {
+.note-constellation-toss:active,
+.note-constellation-voice:active {
   transform: translateY(0);
 }
 
@@ -973,7 +976,8 @@
 .note-constellation-cells svg,
 .note-constellation-skeleton svg,
 .note-constellation-exposure-toggle svg,
-.note-constellation-toss svg {
+.note-constellation-toss svg,
+.note-constellation-voice svg {
   font-size: 12px;
 }
 
@@ -1023,6 +1027,18 @@
    toss is a one-off action, not a standing toggle. */
 .note-constellation-toss {
   bottom: 240px;
+}
+
+/* The pool's own voice continues the column past toss — see
+   NoteConstellation.jsx's own updatePoolVoice wiring. */
+.note-constellation-voice {
+  bottom: 284px;
+}
+
+.note-constellation-voice.active {
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  border-color: var(--page-ink-color);
 }
 
 /* The fisheye's boundary ring — the lens's exact screen-space reach, a

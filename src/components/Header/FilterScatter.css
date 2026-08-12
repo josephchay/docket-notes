@@ -1,0 +1,17 @@
+/* Portaled to document.body (see FilterScatter.jsx), so this sits above
+   everything regardless of the header's own stacking context. */
+.filter-scatter-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 960;
+  pointer-events: none;
+}
+
+.filter-scatter-chip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  border-radius: 5px;
+  will-change: transform, opacity;
+}

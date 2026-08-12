@@ -7,7 +7,11 @@ import { WaveField } from "./waveField";
 // FluidVisualizer already ripples with) stepped on the CPU in the graph's
 // own domain space, rendered as a fullscreen fragment shader that shades
 // each pixel from the height field: |h| pools ink, the height gradient
-// adds a sheen along wavefronts. The same split HistoryConstellation.jsx
+// adds a sheen along wavefronts, and the height field's own curvature
+// (its Laplacian) throws real caustics — the cheap, standard "focus where
+// the surface is concave" approximation, needing no second ray-marched
+// pass, since the four neighbor taps the gradient already samples hand
+// the Laplacian its stencil for free. The same split HistoryConstellation.jsx
 // already established for WebGL work in this app — physics in plain JS
 // where it can be hand-verified, shaders doing only the per-pixel part
 // nothing else can do cheaply.
@@ -47,6 +51,7 @@ const FRAG = `
   uniform vec2 uScale;      // px per domain unit
   uniform vec2 uTexel;      // one height-texture texel, in uv units
   uniform vec3 uInk;
+  uniform float uTime;      // seconds, the same simTime the physics itself runs on
 
   // Height is packed into a uint8 channel as (h * 0.5 + 0.5) — see
   // InkSurface.upload — so unpacking is the inverse affine map.
@@ -72,9 +77,11 @@ const FRAG = `
     if (fade <= 0.001) discard;
 
     float h = heightAt(tuv);
-    float hx = heightAt(tuv + vec2(uTexel.x, 0.0));
-    float hy = heightAt(tuv + vec2(0.0, uTexel.y));
-    vec2 grad = vec2(hx - h, hy - h);
+    float hxPos = heightAt(tuv + vec2(uTexel.x, 0.0));
+    float hxNeg = heightAt(tuv - vec2(uTexel.x, 0.0));
+    float hyPos = heightAt(tuv + vec2(0.0, uTexel.y));
+    float hyNeg = heightAt(tuv - vec2(0.0, uTexel.y));
+    vec2 grad = vec2(hxPos - h, hyPos - h);
 
     // Two shading terms, both from the field itself: displaced water
     // carries ink (alpha from |h|, crest or trough alike — ink pools
@@ -85,7 +92,34 @@ const FRAG = `
     float sheen = smoothstep(0.02, 0.3, length(grad));
     float alpha = (body * 0.085 + sheen * 0.05) * fade;
 
-    gl_FragColor = vec4(uInk, alpha);
+    // Caustics — the standard cheap real-time approximation for them:
+    // light doesn't refract through this field for real (there's nothing
+    // underneath to shine it onto but the desk itself), but a patch of
+    // surface curving concave-up focuses a bundle of parallel rays into a
+    // bright knot exactly the way a real lens would, and convex patches
+    // spread them thin — so the height field's own Laplacian (curvature),
+    // not the height or its slope, is what actually predicts where a
+    // caustic falls. hxPos/hxNeg/hyPos/hyNeg above already hand this its
+    // four corners for free; h itself is the fifth sample the five-point
+    // stencil needs.
+    float laplacian = hxPos + hxNeg + hyPos + hyNeg - 4.0 * h;
+    float caustic = smoothstep(0.0, 0.05, laplacian);
+    // A slow shimmer keyed off both position and uTime, so a caustic knot
+    // never reads as a static decal — real light through moving water
+    // never holds still even over a momentarily-calm patch, since the
+    // water itself never is either.
+    caustic *= 0.75 + 0.25 * sin(uTime * 2.2 + tuv.x * 40.0 + tuv.y * 37.0);
+    caustic *= fade;
+
+    // Mixed toward white rather than a fixed highlight color, so this
+    // reads correctly against uInk's own live value (setInk swaps it per
+    // theme) instead of fighting whichever ink is currently loaded — and
+    // left OUT of alpha entirely when caustic is 0, so a calm, uncurved
+    // patch renders byte-for-byte what it always has.
+    vec3 color = mix(uInk, vec3(1.0), clamp(caustic, 0.0, 1.0));
+    float causticAlpha = caustic * 0.4;
+
+    gl_FragColor = vec4(color, clamp(alpha + causticAlpha, 0.0, 1.0));
   }
 `;
 
@@ -123,6 +157,7 @@ export class InkSurface {
       uScale: { value: new THREE.Vector2(1, 1) },
       uTexel: { value: new THREE.Vector2(1 / cols, 1 / rows) },
       uInk: { value: new THREE.Color("#191919") },
+      uTime: { value: 0 },
     };
 
     const material = new THREE.ShaderMaterial({
@@ -157,6 +192,12 @@ export class InkSurface {
     return this.wave.gradientAt(x, y);
   }
 
+  // The field's own RMS energy (see waveField.js's energy) — what the
+  // ambient pool-voice sonification reads every frame.
+  energy() {
+    return this.wave.energy();
+  }
+
   // Strike a standing eigenmode across the whole pool (see waveField.js's
   // exciteMode) — a splash taps the water somewhere; this strikes it
   // everywhere at once, like a bell.
@@ -170,7 +211,7 @@ export class InkSurface {
 
   // One frame: pack the current heights into the texture, aim the shader's
   // inverse-camera at wherever the SVG camera currently is, draw.
-  render({ width, height, cameraX, cameraY, zoom, scaleX, scaleY }) {
+  render({ width, height, cameraX, cameraY, zoom, scaleX, scaleY, time = 0 }) {
     if (width !== this._width || height !== this._height) {
       this.renderer.setSize(width, height, false);
       this._width = width;
@@ -188,6 +229,7 @@ export class InkSurface {
 
     this.uniforms.uResolution.value.set(width, height);
     this.uniforms.uView.value.set(cameraX, cameraY, zoom);
+    this.uniforms.uTime.value = time;
     // px-per-domain folded together with the domain extent, so the shader
     // lands directly on texture uv: world / (scale · domain).
     this.uniforms.uScale.value.set(scaleX * this.domainW, scaleY * this.domainH);

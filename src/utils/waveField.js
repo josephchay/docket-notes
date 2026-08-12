@@ -121,6 +121,21 @@ export class WaveField {
     };
   }
 
+  // The field's own root-mean-square displacement — one number
+  // summarizing how energetic the whole surface currently is, the same
+  // RMS convention an audio VU meter already uses for exactly this "how
+  // much is this signal moving" question (fitting, since this is the
+  // number NoteConstellation.jsx's own ambient pool-voice sonification
+  // reads every frame). O(cols·rows): a plain reduction over the same
+  // height array step() already walks in full every call, so this costs
+  // nothing step() itself doesn't already pay for at this grid's size.
+  energy() {
+    const { height } = this;
+    let sumSq = 0;
+    for (let i = 0; i < height.length; i++) sumSq += height[i] * height[i];
+    return Math.sqrt(sumSq / height.length);
+  }
+
   // One leapfrog step, dt small enough to keep r = waveSpeed·dt/cellSize
   // under the 1/√2 bound derived above (the caller's responsibility — this
   // class has no way to know what dt it'll actually be called with ahead of

@@ -125,6 +125,101 @@ const play = (fn) => {
   fn(context);
 };
 
+// The pool's own voice — structurally the one different thing in this
+// whole file. Every cue above is a short, self-terminating envelope: call
+// it, it plays itself out, done. This is a PERSISTENT node graph — two
+// sine partials (a fifth apart, the same "add a quiet upper harmonic"
+// trick playThreadPluck already uses for a plucked string) through a
+// lowpass filter, left running and continuously re-aimed rather than
+// re-triggered — because it's sonifying something that doesn't have
+// discrete events to hang cues on: how much the ink surface is moving
+// RIGHT NOW, moment to moment (NoteConstellation.jsx's own resonance-
+// monitor toggle feeds it the wave field's live RMS energy every frame).
+// A calm pool doesn't just go quiet here — the filter's own cutoff drops
+// with it too, so stillness reads as the hum going dull and distant, not
+// merely fainter, the same way real still water muffles high frequencies
+// a choppy surface doesn't.
+//
+// updatePoolVoice is the ONLY entry point a caller needs while its own
+// toggle is on: it lazily starts the graph on first call, silently
+// re-aims it on every call after, and self-silences (tearing the graph
+// down, not just muting it) the instant `enabled` goes false — so a
+// visitor switching sound off mid-session doesn't leave this humming
+// on regardless, and switching it back on later resumes with the very
+// next call, no separate wake-up the caller needs to remember. The one
+// thing a caller MUST still do is call stopPoolVoice() itself once,
+// unconditionally, when its own toggle goes off or its component
+// unmounts — unlike every cue above, a started oscillator does not stop
+// itself, and forgetting this is a genuine leak: a hum playing forever
+// in the background of a page that no longer even shows the panel it
+// came from.
+let poolVoice = null;
+
+export const updatePoolVoice = (energy) => {
+  if (!enabled) {
+    if (poolVoice) stopPoolVoice();
+    return;
+  }
+
+  if (!poolVoice) {
+    const context = ensureContext();
+    if (!context) return;
+    if (context.state === "suspended") context.resume();
+
+    const gain = context.createGain();
+    gain.gain.value = 0;
+
+    const filter = context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 140;
+    filter.Q.value = .4;
+
+    const osc = context.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = 96;
+
+    const osc2 = context.createOscillator();
+    osc2.type = "sine";
+    osc2.frequency.value = 96 * 1.5; // a fifth above the fundamental
+
+    const gain2 = context.createGain();
+    gain2.gain.value = .35; // the upper partial sits quieter than the fundamental
+
+    osc.connect(filter);
+    osc2.connect(gain2);
+    gain2.connect(filter);
+    filter.connect(gain);
+    gain.connect(master);
+
+    osc.start();
+    osc2.start();
+
+    poolVoice = { osc, osc2, gain, filter };
+  }
+
+  // setTargetAtTime rather than a linear/exponential ramp — those need a
+  // known END time (every cue above has one, since they're each a fixed-
+  // duration envelope); this gets a fresh target every frame instead, the
+  // idiomatic Web Audio shape for a continuously-updated live parameter,
+  // and its own exponential approach is what keeps a fast-changing energy
+  // reading from ever zippering or clicking.
+  const e = Math.max(0, Math.min(1, energy));
+  const t = ctx.currentTime;
+  poolVoice.gain.gain.setTargetAtTime(.02 + e * .05, t, .4);
+  poolVoice.filter.frequency.setTargetAtTime(140 + e * 900, t, .3);
+};
+
+export const stopPoolVoice = () => {
+  if (!poolVoice) return;
+  const { osc, osc2, gain } = poolVoice;
+  const t = ctx.currentTime;
+  gain.gain.cancelScheduledValues(t);
+  gain.gain.setTargetAtTime(0, t, .25);
+  osc.stop(t + 1);
+  osc2.stop(t + 1);
+  poolVoice = null;
+};
+
 // A note being poured — a quick rising plink with a faint splash tail.
 export const playSpawn = () => play((context) => {
   tone(context, { freq: 320, glideTo: 540, duration: .09, type: "sine", peak: .34 });

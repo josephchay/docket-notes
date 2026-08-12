@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import gsap from "gsap";
 import Matter from "matter-js";
 import { interpret } from "xstate";
-import { FaArrowsRotate, FaCamera, FaCircleNodes, FaCircleQuestion, FaDice, FaImagePortrait, FaLayerGroup, FaMagnifyingGlass, FaMagnifyingGlassLocation, FaPalette, FaShareNodes, FaStar, FaSun, FaTableCells, FaXmark } from "react-icons/fa6";
+import { FaArrowsRotate, FaCamera, FaCircleNodes, FaCircleQuestion, FaDice, FaDove, FaEarListen, FaImagePortrait, FaLayerGroup, FaMagnifyingGlass, FaMagnifyingGlassLocation, FaPalette, FaShareNodes, FaStar, FaSun, FaTableCells, FaXmark } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { blobPath, closedCatmullRomPath, createBlobMorph } from "../../utils/blob";
@@ -13,7 +13,7 @@ import { InkSurface } from "../../utils/inkSurface";
 import { metaballBridge } from "../../utils/metaball";
 import { curlNoise2 } from "../../utils/noise";
 import { Quadtree } from "../../utils/quadtree";
-import { playDrip, playImpact, playMembrane, playStamp, playThreadPluck, playTick } from "../../utils/sound";
+import { playDrip, playImpact, playMembrane, playStamp, playThreadPluck, playTick, stopPoolVoice, updatePoolVoice } from "../../utils/sound";
 import { voronoiCells } from "../../utils/voronoi";
 import { smoothPath } from "../../utils/svgPath";
 import { createPoint, integratePoint, satisfyConstraint } from "../../utils/verlet";
@@ -184,6 +184,42 @@ const pluckEdge = (edge, amp, p = 0.5) => {
 const COLLISION_ITERATIONS = 2;
 const COLLISION_PADDING = 2; // extra breathing room, domain units, beyond bare surface contact
 
+// Bounce — the position correction above stops two notes overlapping;
+// this is what makes a hard collision actually READ as an impact rather
+// than a gentle cessation. A real 1D impulse along the contact normal
+// (the standard elastic-collision resolution every simple physics engine
+// uses — Box2D's own "sequential impulses" solver is this same formula
+// applied per-contact): reflect the CONVERGING component of the two
+// notes' relative velocity into a diverging one, scaled by restitution,
+// split by inverse mass exactly like the position correction just above
+// already splits by aFree/bFree — pinned or dragged notes have zero
+// inverse mass, so they still deal a bounce without ever taking one,
+// same story collision's own weighting already tells. Restitution is
+// deliberately low: this is paper meeting paper, not rubber balls — a
+// soft, weighty rebound, not a ping-pong ricochet. Self-limiting by
+// construction (the standard reason this class of solver never needs
+// separate "already resolved" bookkeeping): reflecting the converging
+// velocity makes it diverging, so the very same convergence test simply
+// won't re-fire for this pair next substep unless something else pushes
+// them back together — no per-pair state to track, no risk of
+// double-counting one impact.
+//
+// Gated under reduced motion for the exact reason the spin kick right
+// below already is: the settle pass runs this same collision code 220
+// times against a freshly-scattered (often heavily overlapping) initial
+// layout, and an impulse — unlike the position correction, which only
+// ever changes what's rendered, never anything hidden — writes into
+// node.vx/vy, which reduced motion never spends (step() only ever runs
+// as one-shot settle bursts there, never the continuous per-frame loop
+// that would actually integrate a lingering velocity into visible
+// motion). Left ungated, a pair still being pushed back together after
+// every rebound (a strong attractor, a crowded orrery shell) could bank
+// real velocity across all 220 iterations with nowhere to spend it —
+// dormant until reduced motion is later switched off mid-session, at
+// which point it would all cash out at once as an unrequested lurch.
+const BOUNCE_RESTITUTION = 0.4; // 0 = no bounce, 1 = perfectly elastic; paper is closer to 0 than 1
+const BOUNCE_MIN_CLOSING_SPEED = 6; // domain units/s of approach before a touch counts as a hit worth rebounding
+
 // Edges as real hanging threads (utils/catenary.js — the exact same math
 // TagThreads.jsx's own hover connectors use) rather than straight lines,
 // sag driven by each edge's own live tension rather than a fixed constant
@@ -237,6 +273,30 @@ const HOVER_MORPH_DURATION = 0.45;
 const BLOOM_DURATION = 0.85;
 const BLOOM_STAGGER = 0.028;
 
+// The pour — bloom handles VISIBILITY (revealScale, above); this is what
+// makes the opening read as poured ink rather than notes simply fading
+// into existence wherever they'll end up. Every note's own construction
+// below spawns it at this one shared point near the top edge (jittered —
+// see POUR_JITTER for why exact coincidence would matter) with an
+// outward-and-down velocity kick, INSTEAD of the old scattered-near-center
+// start — no separate animation system of its own, no release-gating, no
+// second physics pass: the ordinary step() forces this file already runs
+// every frame (repulsion, attraction, whichever law is active) simply
+// take over from there exactly as they always have, carrying each note the
+// rest of the way to wherever it actually belongs. That's also why this
+// needs no reduced-motion branch: the synchronous settle pass just
+// resolves the SAME forces from a different (more clustered) starting
+// configuration, the same way it already handles today's scattered one.
+// Real collisions along the way (and the impact/thud/splash they already
+// trigger) are consequently free — they were never a separate system to
+// wire up, just what this graph's own physics already does to any two
+// notes that get close.
+const POUR_POINT_Y = DOMAIN_H * 0.06; // domain units — near the top edge, the one shared source
+const POUR_JITTER = 4; // domain units — keeps freshly poured notes from spawning EXACTLY coincident, which would leave repulsion with a zero-length (dx, dy) and so no direction to push them apart in at all
+const POUR_KICK_VX = 14; // domain units/s — horizontal scatter range, ± half this per note
+const POUR_KICK_VY_MIN = 30; // domain units/s — downward kick floor: poured, not merely dropped
+const POUR_KICK_VY_SPAN = 22; // + up to this much more, randomized
+
 // The camera — a plain translate+scale on a wrapping <g> (see
 // worldGroupRef below), separate from the physics/layout itself, which
 // stays in the same fixed domain space regardless of how the viewport is
@@ -255,6 +315,31 @@ const MAX_ZOOM = 3.5;
 const WHEEL_SENSITIVITY = 0.0018;
 const PAN_MOMENTUM_DAMPING = 0.92; // per-frame velocity retention once coasting
 const PAN_MOMENTUM_STOP = 4; // px/s — below this, momentum just stops rather than drifting imperceptibly forever
+
+// Two-finger rotate — the pinch gesture's other axis. camera.rot (radians)
+// joins x/y/zoom in the same plain translate+scale(+now rotate) transform;
+// the pivot is always the viewport's own center in world-pixel space
+// (rect.width/2, rect.height/2 — where the domain's own center necessarily
+// lands, since scaleX/scaleY are defined as rect.width/DOMAIN_W and
+// rect.height/DOMAIN_H respectively), so a twist spins the whole desk in
+// place rather than around some arbitrary corner. Deliberately NOT a
+// persistent orientation: every "precise framing" camera move this file
+// already has (fit-to-cluster, the search fly-to, the minimap jump, the
+// idle-drift cruise, the boundary spring's own "ideal" position) solves
+// its target in plain unrotated world-pixel space, the same way it always
+// has — teaching all of those rotation math would be real surgery across
+// a lot of independently-tuned camera code for a tilt that's meant to be
+// playful, not a standing map orientation. So instead camera.rot only
+// ever moves while a live two-finger twist is actively driving it (see
+// the pinch block in handleMove); the instant that gesture ends, this
+// same damped spring — same shape the boundary spring above already
+// uses, pull proportional to displacement, velocity retained and eased —
+// relaxes it back to level, same as the pinch's own zoom/pan already
+// hands off NO momentum on release (see the pinch declaration below):
+// consistent restraint, not an oversight.
+const ROTATE_SPRING_STIFFNESS = 10; // rad/s² of pull-back per rad of current tilt
+const ROTATE_SPRING_DAMPING = 0.82; // per-frame angular-velocity retention while springing back
+const ROTATE_SNAP_EPS = 0.002; // rad, and rad/s — below both, the spring just snaps flush to level
 const VIEW_RESET_DURATION = 0.6;
 
 // The elastic pan boundary — a real damped spring (semi-implicit Euler,
@@ -511,6 +596,7 @@ const INK_WAKE_MAX = 0.3; // per-frame per-node splash cap
 const INK_PLUCK_GAIN = 0.025; // splash amount per px of pluck amplitude
 const INK_RESHUFFLE_SPLASH = 1.4; // the annealing shockwave's center detonation
 const INK_DIVE_SPLASH = 1.1; // the selected note's own splash-down
+const INK_POUR_SPLASH = 1.6; // the opening pour's own first-impression detonation, at POUR_POINT_Y
 
 // Pendulum labels — each title hangs from its node as a real point mass on
 // a rigid tether: utils/verlet.js's own position-based integration
@@ -777,6 +863,28 @@ const STIR_DECAY_TAU = 0.12; // s — paddle speed's decay constant once the poi
 const STIR_WAKE_GAIN = 0.02; // pool splash per (domain unit/s · s) of rod travel
 const STIR_WAKE_MAX = 0.4; // per-frame cap, same discipline as INK_WAKE_MAX
 
+// Stirring spins things up, not just along — the leaf-in-a-whirlpool
+// picture stirring has always half-promised but never delivered: a note
+// near the rod felt only a push in the rod's OWN direction of travel
+// (the translational force just above), never a torque, so circling the
+// rod tightly around a note pushed it around bodily without ever making
+// it visibly turn. This reads the TANGENTIAL component of the rod's
+// velocity relative to each note's own radius vector from it — near-zero
+// when the rod moves radially toward or away (a straight poke shouldn't
+// spin anything), largest when the rod's motion is purely tangential (an
+// actual circle traced around the note, which is exactly the gesture
+// that spins something up in real water). Same smoothstep falloff and
+// same additive-kick-into-omega shape the collision contact spin already
+// uses (see SPIN_CONTACT_GAIN) — the ambient vorticity ease in tick()
+// already relaxes whatever lands in node.omega back down regardless of
+// source, so this needs no decay logic of its own, and SPIN_MAX's own
+// clamp there catches any total this or any other source could reach.
+// Lives inside the exact same `stir.vx !== 0` block the translational
+// force already does, for the same reason that block needs no separate
+// reduced-motion check: stir speed is only ever nonzero when the gesture
+// itself was allowed to engage in the first place (see handleDown).
+const STIR_SPIN_GAIN = 0.12; // rad/s of kick per (domain unit/s) of the rod's own tangential speed, at mass 1
+
 // ————————————————————————————————————————————————————————————————————
 // The layout modes — the redesign's spine. The constellation is no longer
 // one arrangement but an instrument with three laws the same desk can flow
@@ -824,6 +932,7 @@ const LAYOUT_MODES = [
   { id: "orrery", label: "Orrery", Icon: FaSun },
   { id: "strata", label: "Strata", Icon: FaLayerGroup },
   { id: "spectrum", label: "Spectrum", Icon: FaPalette },
+  { id: "flock", label: "Flock", Icon: FaDove },
 ];
 const MODE_TEMPERATURE = 42; // domain units/s — the migration's opening speed cap
 const MODE_SPLASH = 0.9; // the pool's center detonation on switch
@@ -917,6 +1026,62 @@ const spectrumWedgePath = (cx, cy, innerRx, innerRy, outerRx, outerRy, startAngl
   }
   return `M ${ pts.join(" L ") } Z`;
 };
+
+// Flock — the fifth law, and the first that reads velocity rather than
+// just position: web/orrery/strata/spectrum all place a note by chasing a
+// TARGET POINT (an edge sum, a Kepler conic, a shelf, a wedge); nothing in
+// any of them ever makes one note's own HEADING answer to another's. This
+// is real Craig Reynolds boids (Reynolds, "Flocks, Herds, and Schools: A
+// Distributed Behavioral Model," SIGGRAPH 1987) — the same three local
+// rules every flocking sim since has descended from, run here over the
+// desk itself:
+//   separation: steer away from whatever's crowding your own personal
+//     space (FLOCK_SEPARATION_RADIUS) — pure repulsion, but short-range
+//     and neighbor-limited, unlike the web's own all-domain repulsion.
+//   alignment:  steer your own velocity toward the AVERAGE velocity of
+//     everything within FLOCK_NEIGHBOR_RADIUS — the one genuinely new
+//     ingredient; no other law here ever reads a neighbor's vx/vy.
+//   cohesion:   steer toward the average POSITION of that same
+//     neighborhood, so a loose scatter still reads as one body, not a gas.
+// Tag-sharing gets a say the way it always does in this file — not as a
+// separate fourth rule, but as extra WEIGHT inside alignment/cohesion's
+// own averages (see FLOCK_KIN_BONUS): kin swim as a tighter school inside
+// the larger flock, the same "attraction reads the edges" idea the web
+// law's own attraction already stands for, reinterpreted as steering
+// instead of a spring. flockKin (built once alongside edgeList) is what
+// answers "are these two kin" in O(1) inside the O(n²) neighbor scan
+// step() runs for this law — see the flockKin construction near edgeList.
+// Deliberately O(n²) rather than routed through the Barnes-Hut quadtree
+// the web's own repulsion already uses: that tree approximates ONE force
+// law (inverse-distance, every pair) that never changes shape; a boid's
+// three rules only even apply within a hard radius and need each
+// candidate's live velocity, not just its position, so reusing that tree
+// would mean rebuilding the exact machinery it exists to avoid. At the
+// note counts a personal desk realistically reaches (the same honest
+// ceiling the quadtree's own module comment already names), a
+// distance-squared early reject before any of the three rules touches a
+// candidate keeps this well clear of a real bottleneck.
+const FLOCK_NEIGHBOR_RADIUS = 30; // domain units — alignment/cohesion's own sensing range
+const FLOCK_SEPARATION_RADIUS = 10; // domain units — inside this, separation alone speaks
+const FLOCK_SEPARATION_GAIN = 5.5; // force per domain unit of penetration past the separation radius
+const FLOCK_ALIGN_GAIN = 0.7; // fraction of the velocity gap toward the neighborhood average, per second
+const FLOCK_COHESION_GAIN = 0.35; // force per domain unit toward the neighborhood's own centroid
+const FLOCK_KIN_BONUS = 2.5; // extra weight a tag-sharing neighbor's own vx/vy/x/y carry inside the averages
+const FLOCK_EDGE_MARGIN = 22; // domain units from the boundary where the edge-avoid steer engages
+const FLOCK_EDGE_GAIN = 0.4; // steer-back force per domain unit of penetration past that margin
+// A boid that ever actually reaches rest has nothing left to align or cohere
+// WITH — alignment's own target is the neighborhood's average velocity,
+// which is zero once everyone's stopped, a still point every other law here
+// is honestly happy to settle into but this one isn't: a flock reads as
+// alive by cruising, not by arriving. This is the standard fix real boids
+// implementations use — a soft floor under a boid's own speed, expressed as
+// a forward thrust rather than a velocity clamp so it still integrates
+// through mass like every other force in this file — using the CURRENT
+// heading once one exists, and each node's own stable flockHeading (set at
+// spawn, see byId's own construction) only as the one-time fallback for a
+// boid that has never yet had a velocity to hold a heading from.
+const FLOCK_SPEED_MIN = 6; // domain units/s — the cruising floor
+const FLOCK_THRUST_GAIN = 3; // force per (domain unit/s) of shortfall below that floor
 
 // The weighted grip — dragging a note is no longer teleportation. The
 // grabbed note hangs from the cursor through a real spring (target = the
@@ -1427,7 +1592,7 @@ const GUIDE_SECTIONS = [
       { keys: ["Enter"], text: "Open the focused note." },
       { keys: ["Space"], text: "Ping outward from the focused note.", motion: true },
       { keys: ["P"], text: "Pin the focused note." },
-      { keys: ["1", "2", "3", "4"], text: "Web · Orrery · Strata · Spectrum." },
+      { keys: ["1", "2", "3", "4", "5"], text: "Web · Orrery · Strata · Spectrum · Flock." },
       { keys: ["/"], text: "Find a note by title or text." },
       { keys: ["?"], text: "This guide." },
       { keys: ["Esc"], text: "Release focus, then close the panel." },
@@ -1437,6 +1602,7 @@ const GUIDE_SECTIONS = [
     title: "Two fingers",
     rows: [
       { keys: ["Pinch"], text: "Zoom and pan by touch." },
+      { keys: ["Twist"], text: "Tilt the desk — it springs back level on release.", motion: true },
     ],
   },
 ];
@@ -1730,6 +1896,12 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // cursor-tracking distortion left silently on from a previous visit
   // would be a stranger thing to inherit than a curated layout is.
   const [magnify, setMagnify] = useState(false);
+  // The pool's own voice (see utils/sound.js's own updatePoolVoice) — a
+  // fresh useState(false) rather than a persistedX module variable on
+  // purpose: unlike a curated layout or a standing lens, a visitor
+  // probably doesn't want ambient sound resuming un-asked on a later
+  // visit just because a past one turned it on.
+  const [poolVoiceOn, setPoolVoiceOn] = useState(false);
   // The current layout law (see the LAYOUT_MODES block) — React state for
   // the switcher and the mode-gated layers, mirrored as a ref for step()
   // and tick(). Persists across close/reopen like the lens and pins (see
@@ -1805,6 +1977,8 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   const shortestPathRef = useRef(null);
   const magnifyRef = useRef(magnify);
   magnifyRef.current = magnify;
+  const poolVoiceOnRef = useRef(poolVoiceOn);
+  poolVoiceOnRef.current = poolVoiceOn;
   const modeRef = useRef(mode);
   modeRef.current = mode;
   persistedMode = mode;
@@ -2162,13 +2336,22 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // with (a normalized zero vector is undefined).
     const byId = new Map();
     noteList.forEach((note) => {
-      const angle = Math.random() * Math.PI * 2;
-      const radius = Math.random() * Math.min(DOMAIN_W, DOMAIN_H) * 0.35;
+      // The pour (see POUR_POINT_Y) — every note starts clustered at one
+      // shared point near the top edge, jittered just enough that no two
+      // ever spawn EXACTLY coincident (see POUR_JITTER), with an
+      // outward-and-down velocity kick already in hand. From here on it's
+      // an ordinary note to step() — the very same repulsion/attraction/
+      // whichever-law-is-active forces that run every frame regardless
+      // carry it the rest of the way to wherever it actually belongs, so
+      // the "pour" is nothing but these two lines' worth of different
+      // initial conditions, not a separate animation system.
+      const pourAngle = Math.random() * Math.PI * 2;
+      const pourJitter = Math.random() * POUR_JITTER;
       byId.set(note.id, {
-        x: cx + Math.cos(angle) * radius,
-        y: cy + Math.sin(angle) * radius,
-        vx: 0,
-        vy: 0,
+        x: cx + Math.cos(pourAngle) * pourJitter,
+        y: POUR_POINT_Y + Math.sin(pourAngle) * pourJitter,
+        vx: (Math.random() - 0.5) * POUR_KICK_VX,
+        vy: POUR_KICK_VY_MIN + Math.random() * POUR_KICK_VY_SPAN,
         fx: 0,
         fy: 0,
         dragging: false,
@@ -2192,6 +2375,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         // MOON_RADIUS constant block), but cheap enough to init uniformly.
         favorite: !!note.favorite,
         moonAngle: Math.random() * Math.PI * 2,
+        // Flock's own one-time fallback heading (see FLOCK_SPEED_MIN) — a
+        // boid spawns at rest, so the thrust that keeps it cruising needs
+        // SOME direction to push in before it has ever had a real velocity
+        // of its own to hold a heading from.
+        flockHeading: Math.random() * Math.PI * 2,
         // Signal-ping arrival pulse (see the PING_HOP_INTERVAL constant
         // block) — folded into the render scale, rung down in tick().
         pingPulse: 0,
@@ -2269,6 +2457,18 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // jittered per edge so no two ever fall into lockstep.
     edgeList.forEach((edge) => {
       edge.dewRate = (DEW_GLOBAL_RATE / edgeList.length) * (0.6 + Math.random() * 0.8);
+    });
+
+    // Flock kinship (see the FLOCK_NEIGHBOR_RADIUS constant block) — a
+    // plain adjacency set built once alongside edgeList, since the graph's
+    // own edges don't change shape after mount. O(1) "are these two kin"
+    // inside step()'s own O(n²) boid neighbor scan.
+    const flockKin = new Map();
+    edgeList.forEach((edge) => {
+      if (!flockKin.has(edge.a)) flockKin.set(edge.a, new Set());
+      if (!flockKin.has(edge.b)) flockKin.set(edge.b, new Set());
+      flockKin.get(edge.a).add(edge.b);
+      flockKin.get(edge.b).add(edge.a);
     });
 
     // The skeleton — each cluster's maximum-weight spanning tree: Kruskal
@@ -2640,9 +2840,15 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
 
     // The annealing temperature (see the REHEAT_TEMPERATURE constant
     // block) — 0 means "not annealing", which is every moment except the
-    // couple of seconds after a reshuffle; step() below both applies it
-    // as a speed cap and cools it.
-    let temperature = 0;
+    // couple of seconds after a reshuffle, a mode switch, OR right now:
+    // every note the pour just spawned (see POUR_POINT_Y) starts crammed
+    // within POUR_JITTER of the very same point, which without a cap would
+    // hand the very first substep's repulsion an implausible, all-at-once
+    // burst of speed. Reusing the exact same mechanism a reshuffle's own
+    // "first lurch into a staged migration" already relies on rather than
+    // inventing a pour-specific one — step() below both applies it as a
+    // speed cap and cools it, so this needs nothing further here.
+    let temperature = REHEAT_TEMPERATURE;
 
     // The ambient current's own clock (see the CURRENT_STRENGTH constant
     // block) — advanced once per frame in tick(), read by step(); the
@@ -2739,6 +2945,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           zoom: camera.zoom,
           scaleX: rect.width / DOMAIN_W,
           scaleY: rect.height / DOMAIN_H,
+          time: simTime,
         });
       },
     };
@@ -2754,13 +2961,17 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       // single integration between two laws.
       const layoutMode = modeRef.current;
 
-      // Repulsion serves two of the three laws: the web takes it in full,
-      // the strata keep only its x-component (the shelf springs own y
-      // there, and vertical repulsion would just fight them), and the
-      // orrery skips it entirely — the Kepler springs place everything,
-      // the collision pass below still guarantees separation, and
-      // skipping here also skips paying for the tree build at all.
-      if (layoutMode !== "orrery") {
+      // Repulsion serves most of the laws: the web takes it in full, the
+      // strata keep only its x-component (the shelf springs own y there,
+      // and vertical repulsion would just fight them). The orrery skips it
+      // entirely — the Kepler springs place everything, the collision pass
+      // below still guarantees separation. Flock skips it too, but for a
+      // different reason: its own separation rule (see the
+      // FLOCK_NEIGHBOR_RADIUS constant block) already does this job,
+      // short-range and neighbor-limited rather than all-domain — running
+      // both would just be two repulsions fighting over the same job.
+      // Skipping here also skips paying for the tree build at all.
+      if (layoutMode !== "orrery" && layoutMode !== "flock") {
         // A fresh quadtree every substep, since every node's position
         // moved last substep — sized to the graph's own current extent
         // (padded a little) rather than the fixed DOMAIN_W×DOMAIN_H,
@@ -2827,6 +3038,69 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           const fy = (dy / dist) * force;
           a.fx += fx; a.fy += fy;
           b.fx -= fx; b.fy -= fy;
+        }
+      }
+
+      // Flock is boids' own statement (see the FLOCK_NEIGHBOR_RADIUS
+      // constant block) — one O(n²) neighbor scan standing in for the
+      // quadtree repulsion this law skipped above, since separation,
+      // alignment, and cohesion all need each candidate's live velocity,
+      // not just its position, and only ever apply inside a hard radius.
+      // i visits every j (not just j > i) — a boid's own three rules are
+      // fundamentally one-directional per pair (what I feel from you isn't
+      // what you feel from me, since MY neighborhood average isn't
+      // necessarily yours), unlike repulsion/attraction above, which are
+      // reciprocal by the physics itself and so get to halve their own
+      // work; boids don't share that symmetry to exploit.
+      if (layoutMode === "flock") {
+        const flockNodes = Array.from(byId, ([id, node]) => ({ id, node }));
+        const neighborRadiusSq = FLOCK_NEIGHBOR_RADIUS * FLOCK_NEIGHBOR_RADIUS;
+        for (let i = 0; i < flockNodes.length; i++) {
+          const a = flockNodes[i].node;
+          const aKin = flockKin.get(flockNodes[i].id);
+          let sumVx = 0, sumVy = 0, sumX = 0, sumY = 0, weight = 0;
+          for (let j = 0; j < flockNodes.length; j++) {
+            if (i === j) continue;
+            const bEntry = flockNodes[j];
+            const b = bEntry.node;
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const distSq = dx * dx + dy * dy;
+            if (distSq > neighborRadiusSq) continue;
+            const dist = Math.max(MIN_DIST, Math.sqrt(distSq));
+
+            // Separation — short-range and immediate, applied straight
+            // into a.fx/fy rather than folded into the averages below.
+            if (dist < FLOCK_SEPARATION_RADIUS) {
+              const push = (FLOCK_SEPARATION_RADIUS - dist) * FLOCK_SEPARATION_GAIN;
+              a.fx -= (dx / dist) * push;
+              a.fy -= (dy / dist) * push;
+            }
+
+            // Alignment + cohesion's shared averaging pass — a tag-sharing
+            // neighbor (see the flockKin constant block) counts for
+            // FLOCK_KIN_BONUS instead of 1, so kin pull the average
+            // harder without ever excluding the rest of the neighborhood.
+            const kinWeight = aKin && aKin.has(bEntry.id) ? FLOCK_KIN_BONUS : 1;
+            sumVx += b.vx * kinWeight;
+            sumVy += b.vy * kinWeight;
+            sumX += b.x * kinWeight;
+            sumY += b.y * kinWeight;
+            weight += kinWeight;
+          }
+
+          if (weight > 0) {
+            // Steering-force shape, not a velocity clamp — (target -
+            // current) fed through F = ma downstream like every other
+            // force here, so a heavier note still turns more sluggishly
+            // (see GRIP_K's own comment for why that felt inertia matters
+            // to this file), rather than every mass snapping its heading
+            // equally fast.
+            a.fx += (sumVx / weight - a.vx) * FLOCK_ALIGN_GAIN;
+            a.fy += (sumVy / weight - a.vy) * FLOCK_ALIGN_GAIN;
+            a.fx += (sumX / weight - a.x) * FLOCK_COHESION_GAIN;
+            a.fy += (sumY / weight - a.y) * FLOCK_COHESION_GAIN;
+          }
         }
       }
 
@@ -3029,6 +3303,28 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             node.fx += (targetX - node.x) * ORRERY_SPRING;
             node.fy += (targetY - node.y) * ORRERY_SPRING;
           }
+        } else if (layoutMode === "flock") {
+          // Edge-avoid — boids' classic "steer off the wall" rule: a soft
+          // inward push that only ever engages past FLOCK_EDGE_MARGIN, so
+          // it never competes with the interior flocking itself, just
+          // keeps the school from ever actually reaching the domain edge.
+          if (node.x < FLOCK_EDGE_MARGIN) node.fx += (FLOCK_EDGE_MARGIN - node.x) * FLOCK_EDGE_GAIN;
+          else if (node.x > DOMAIN_W - FLOCK_EDGE_MARGIN) node.fx -= (node.x - (DOMAIN_W - FLOCK_EDGE_MARGIN)) * FLOCK_EDGE_GAIN;
+          if (node.y < FLOCK_EDGE_MARGIN) node.fy += (FLOCK_EDGE_MARGIN - node.y) * FLOCK_EDGE_GAIN;
+          else if (node.y > DOMAIN_H - FLOCK_EDGE_MARGIN) node.fy -= (node.y - (DOMAIN_H - FLOCK_EDGE_MARGIN)) * FLOCK_EDGE_GAIN;
+
+          // The cruising floor (see FLOCK_SPEED_MIN) — thrust along the
+          // CURRENT heading once the boid actually has one, else its own
+          // stable spawn heading (flockHeading), so a boid fresh off zero
+          // velocity still has some direction to push in.
+          const speed = Math.hypot(node.vx, node.vy);
+          if (speed < FLOCK_SPEED_MIN) {
+            const hx = speed > 0.01 ? node.vx / speed : Math.cos(node.flockHeading);
+            const hy = speed > 0.01 ? node.vy / speed : Math.sin(node.flockHeading);
+            const thrust = (FLOCK_SPEED_MIN - speed) * FLOCK_THRUST_GAIN;
+            node.fx += hx * thrust;
+            node.fy += hy * thrust;
+          }
         }
 
         // Disabled under reduced motion — same reasoning as everything
@@ -3094,6 +3390,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             const smooth = t * t * (3 - 2 * t); // smoothstep
             node.fx += stir.vx * smooth * STIR_GAIN;
             node.fy += stir.vy * smooth * STIR_GAIN;
+
+            // The rod's own torque (see the STIR_SPIN_GAIN constant
+            // block) — the tangential component of its velocity around
+            // THIS note, not its raw direction of travel. sdist floored
+            // rather than trusted bare: unlike the translational force
+            // just above (which only ever divides sdist BY the constant
+            // STIR_RADIUS), this divides BY sdist itself, and the rod
+            // sitting exactly on a note's own position — vanishingly
+            // unlikely, not impossible — would otherwise hand omega a
+            // NaN that never heals, the same floor every other distance
+            // division in this file already keeps for exactly this
+            // reason (see MIN_DIST's own module comment).
+            const tangentialSpeed = (stir.vx * -sdy + stir.vy * sdx) / Math.max(0.001, sdist);
+            node.omega += (tangentialSpeed * STIR_SPIN_GAIN * smooth) / node.mass;
           }
         }
 
@@ -3162,18 +3472,31 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             a.impact += overlap * (aFree / total);
             b.impact += overlap * (bFree / total);
 
-            // Contact friction's spin kick (see the SPIN constants) —
-            // the tangential slip at the contact drags both silhouettes
-            // with it. Gated here rather than trusting the render gate:
-            // the reduced-motion settle pass runs this same collision
-            // code with large early overlaps, and banked-up omega would
-            // burst out spinning if the preference ever flipped off.
+            // Contact friction's spin kick (see the SPIN constants) and
+            // bounce's own velocity impulse (see the BOUNCE_RESTITUTION
+            // constant block) share one gate — both write into node
+            // velocity/omega rather than position, and both carry the
+            // exact same banked-state risk under a reduced-motion settle
+            // pass (see either constant block's own comment for the
+            // full reasoning).
             if (!reduceMotionRef.current) {
               const slipX = -ny;
               const slipY = nx;
               const slip = (b.vx - a.vx) * slipX + (b.vy - a.vy) * slipY;
               a.omega += (slip * SPIN_CONTACT_GAIN) / a.mass;
               b.omega += (slip * SPIN_CONTACT_GAIN) / b.mass;
+
+              const invMassA = aFree / a.mass;
+              const invMassB = bFree / b.mass;
+              const invMassSum = invMassA + invMassB;
+              const closingSpeed = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+              if (invMassSum > 0 && closingSpeed < -BOUNCE_MIN_CLOSING_SPEED) {
+                const j = (-(1 + BOUNCE_RESTITUTION) * closingSpeed) / invMassSum;
+                a.vx -= j * nx * invMassA;
+                a.vy -= j * ny * invMassA;
+                b.vx += j * nx * invMassB;
+                b.vy += j * ny * invMassB;
+              }
             }
           }
         }
@@ -3183,6 +3506,12 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     if (reduceMotionRef.current) {
       for (let i = 0; i < SETTLE_ITERATIONS; i++) step(SETTLE_DT);
     } else {
+      // The pour's own first impression — the same center detonation a
+      // reshuffle or mode switch already announces itself with, struck at
+      // POUR_POINT_Y rather than the domain center since that's genuinely
+      // where the ink is landing from.
+      ink?.splash(cx, POUR_POINT_Y, INK_POUR_SPLASH);
+
       // GSAP staggered bloom — tweens each node's own revealScale from 0→1
       // with an elastic overshoot; the tick loop below folds it into the
       // transform it already writes every frame, so this needs no special
@@ -3246,29 +3575,51 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       leave: (id) => morphTo(id, 0),
     };
 
+    // The camera itself — see the MIN_ZOOM/MAX_ZOOM module comment for the
+    // full reasoning. x/y/zoom/rot are what actually gets written to
+    // worldGroupRef's own transform every frame; vx/vy are the pan's own
+    // momentum, decayed in tick() below once a pan drag releases; vrot is
+    // the rotate spring's own working velocity (see ROTATE_SPRING_STIFFNESS).
+    const camera = { x: 0, y: 0, zoom: 1, rot: 0, vx: 0, vy: 0, vrot: 0 };
+
+    // Rotates a world-pixel point by `angle` around the viewport's own
+    // center (see the ROTATE_SPRING_STIFFNESS constant block for why that
+    // point, not the domain origin, is the pivot every rotation uses).
+    const rotateAroundPivot = (wx, wy, rect, angle) => {
+      if (!angle) return { x: wx, y: wy };
+      const px = rect.width / 2;
+      const py = rect.height / 2;
+      const dx = wx - px;
+      const dy = wy - py;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      return { x: px + dx * cos - dy * sin, y: py + dx * sin + dy * cos };
+    };
+
     // Screen pixels within the SVG's own box → domain space, inverting the
-    // camera's own translate+scale first (see the MIN_ZOOM/MAX_ZOOM
-    // comment above) — without that inversion, dragging a node while
-    // panned or zoomed would grab the wrong point entirely, since a given
-    // screen position no longer corresponds to the same domain coordinate
-    // once the camera has moved away from its default identity transform.
+    // camera's own translate+scale+rotate first (see the MIN_ZOOM/MAX_ZOOM
+    // comment above and ROTATE_SPRING_STIFFNESS below) — without that
+    // inversion, dragging a node while panned, zoomed, or (briefly, mid
+    // two-finger twist) rotated would grab the wrong point entirely, since
+    // a given screen position no longer corresponds to the same domain
+    // coordinate once the camera has moved away from its default identity
+    // transform.
+    const worldPixelFromLocal = (localX, localY, rect) => {
+      const ux = (localX - camera.x) / camera.zoom;
+      const uy = (localY - camera.y) / camera.zoom;
+      return rotateAroundPivot(ux, uy, rect, -camera.rot);
+    };
+
     const domainFromEvent = (e) => {
       const rect = svg.getBoundingClientRect();
       const localX = e.clientX - rect.left;
       const localY = e.clientY - rect.top;
-      const worldPixelX = (localX - camera.x) / camera.zoom;
-      const worldPixelY = (localY - camera.y) / camera.zoom;
+      const { x: worldPixelX, y: worldPixelY } = worldPixelFromLocal(localX, localY, rect);
       return {
         x: (worldPixelX / rect.width) * DOMAIN_W,
         y: (worldPixelY / rect.height) * DOMAIN_H,
       };
     };
-
-    // The camera itself — see the MIN_ZOOM/MAX_ZOOM module comment for the
-    // full reasoning. x/y/zoom are what actually gets written to
-    // worldGroupRef's own transform every frame; vx/vy are the pan's own
-    // momentum, decayed in tick() below once a pan drag releases.
-    const camera = { x: 0, y: 0, zoom: 1, vx: 0, vy: 0 };
 
     // Where a domain-space event currently sits in the stereo field (see
     // the STEREO_WIDTH constant block) — the same domain → world → camera
@@ -3319,6 +3670,12 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         gsap.killTweensOf(camera);
         camera.vx = 0;
         camera.vy = 0;
+        // targetX/Y above are plain unrotated centering math (mirroring the
+        // boundary spring's own "ideal position" formula) — honest only at
+        // rot 0, so a jump snaps level immediately rather than landing the
+        // graph centered but still visibly tilted.
+        camera.rot = 0;
+        camera.vrot = 0;
 
         if (immediate || reduceMotionRef.current) {
           cameraAnimating = false;
@@ -3615,19 +3972,23 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     // Pinch navigation — the camera's one genuinely touch-native gesture.
     // Every active pointer is rostered by id; the moment a second lands
     // on open water the gesture stops being a pan and becomes a pinch:
-    // per move, the zoom scales by the finger-distance ratio anchored at
+    // per move, the zoom scales by the finger-distance ratio and the
+    // camera tilts by the finger-pair's own angle change, both anchored at
     // the current midpoint (the exact keep-the-point-under-the-anchor
-    // solve the wheel already does, with the anchor between two fingers
-    // instead of under one wheel), and the midpoint's own travel pans.
-    // Incremental against the LAST frame's distance/midpoint rather than
-    // the gesture's start, so fingers that drift apart mid-gesture never
-    // cause a jump. Ends when either finger lifts — deliberately without
-    // handing momentum off or converting back to a pan, since a
-    // half-lifted pinch has no honest single-pointer intent to inherit.
-    // Direct manipulation, so not gated on reduced motion, same as the
-    // pan and the wheel.
+    // solve the wheel already does, generalized to rotation too — see the
+    // handleMove pinch block), and the midpoint's own travel pans.
+    // Incremental against the LAST frame's distance/angle/midpoint rather
+    // than the gesture's start, so fingers that drift apart (or spin past
+    // ±180°) mid-gesture never cause a jump. Ends when either finger
+    // lifts — deliberately without handing zoom/pan momentum off or
+    // converting back to a pan, since a half-lifted pinch has no honest
+    // single-pointer intent to inherit; the tilt follows the same
+    // restraint by simply not tracking any angular velocity to inherit in
+    // the first place; see ROTATE_SPRING_STIFFNESS for what un-does it
+    // instead. Direct manipulation, so not gated on reduced motion, same
+    // as the pan and the wheel.
     const activePointers = new Map();
-    const pinch = { active: false, lastDist: 0, lastMidX: 0, lastMidY: 0 };
+    const pinch = { active: false, lastDist: 0, lastAngle: 0, lastMidX: 0, lastMidY: 0 };
 
     // The lasso's own live state (see the LASSO_POINT_GAP constant block)
     // — declared up here with pinch/stir/tow for the same temporal-
@@ -3678,6 +4039,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         camera.vy = 0;
         pinch.active = true;
         pinch.lastDist = Math.max(1, Math.hypot(p2.x - p1.x, p2.y - p1.y));
+        pinch.lastAngle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
         pinch.lastMidX = (p1.x + p2.x) / 2;
         pinch.lastMidY = (p1.y + p2.y) / 2;
         return;
@@ -3836,26 +4198,41 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         roster.y = e.clientY;
       }
 
-      // The pinch (see its declaration) — anchored zoom from the finger
-      // distance's ratio plus pan from the midpoint's travel, both
-      // incremental against last frame.
+      // The pinch (see its declaration) — zoom from the finger distance's
+      // ratio, tilt from the finger-pair's own angle change, and pan from
+      // the midpoint's travel, all three folded into ONE anchor solve: read
+      // whatever world-pixel point currently sits under this frame's own
+      // midpoint through the OLD camera, apply this frame's zoom/rotate
+      // deltas, then place the camera so that same point lands back under
+      // the (possibly already-travelled) midpoint. That single re-anchor is
+      // what makes pan fall out for free alongside zoom and rotate, the
+      // same "keep the point under the gesture fixed" idea the wheel's own
+      // zoom-anchor already uses, generalized from one axis to three.
       if (pinch.active) {
         if (activePointers.size < 2) return;
         const [p1, p2] = Array.from(activePointers.values());
         const rect = svg.getBoundingClientRect();
         const dist = Math.max(1, Math.hypot(p2.x - p1.x, p2.y - p1.y));
+        const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
         const midX = (p1.x + p2.x) / 2 - rect.left;
         const midY = (p1.y + p2.y) / 2 - rect.top;
 
+        const anchor = worldPixelFromLocal(midX, midY, rect);
+
+        let deltaAngle = angle - pinch.lastAngle;
+        if (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
+        else if (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+        camera.rot += deltaAngle;
+        camera.vrot = 0; // no inherited spin on release — see the pinch declaration
+
         const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.zoom * (dist / pinch.lastDist)));
-        const applied = nextZoom / camera.zoom;
-        camera.x = midX - (midX - camera.x) * applied;
-        camera.y = midY - (midY - camera.y) * applied;
+        const rotatedAnchor = rotateAroundPivot(anchor.x, anchor.y, rect, camera.rot);
+        camera.x = midX - rotatedAnchor.x * nextZoom;
+        camera.y = midY - rotatedAnchor.y * nextZoom;
         camera.zoom = nextZoom;
-        camera.x += midX - (pinch.lastMidX - rect.left);
-        camera.y += midY - (pinch.lastMidY - rect.top);
 
         pinch.lastDist = dist;
+        pinch.lastAngle = angle;
         pinch.lastMidX = midX + rect.left;
         pinch.lastMidY = midY + rect.top;
         return;
@@ -4267,14 +4644,18 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      const worldX = (mouseX - camera.x) / camera.zoom;
-      const worldY = (mouseY - camera.y) / camera.zoom;
+      const world = worldPixelFromLocal(mouseX, mouseY, rect);
 
       const zoomFactor = Math.exp(-e.deltaY * WHEEL_SENSITIVITY);
       const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, camera.zoom * zoomFactor));
 
-      camera.x = mouseX - worldX * nextZoom;
-      camera.y = mouseY - worldY * nextZoom;
+      // rot itself never changes here — rotateAroundPivot still has to run
+      // (at whatever tilt is currently live, mid pinch-release spring or
+      // not) since the anchor solve is in world-pixel space, upstream of
+      // rotation, not domain space.
+      const rotated = rotateAroundPivot(world.x, world.y, rect, camera.rot);
+      camera.x = mouseX - rotated.x * nextZoom;
+      camera.y = mouseY - rotated.y * nextZoom;
       camera.zoom = nextZoom;
     };
 
@@ -4290,15 +4671,22 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       const boxW = maxX - minX + padding * 2;
       const boxH = maxY - minY + padding * 2;
       const fitZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(rect.width / boxW, rect.height / boxH)));
+      // rot: 0 rides along with every fit — this box's own min/max were
+      // measured in plain unrotated world-pixel space (see the callers
+      // below), so the frame this solves for is only honest at zero tilt;
+      // folding the un-tilt into the same move reads as one continuous
+      // camera gesture rather than a rotate snap-back the fit then fights.
       const fit = {
         x: rect.width / 2 - ((minX + maxX) / 2) * fitZoom,
         y: rect.height / 2 - ((minY + maxY) / 2) * fitZoom,
         zoom: fitZoom,
+        rot: 0,
       };
 
       gsap.killTweensOf(camera);
       camera.vx = 0;
       camera.vy = 0;
+      camera.vrot = 0;
 
       if (reduceMotionRef.current) {
         cameraAnimating = false;
@@ -4359,10 +4747,10 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       gsap.killTweensOf(camera);
       camera.vx = 0;
       camera.vy = 0;
+      camera.vrot = 0;
 
       const rect = svg.getBoundingClientRect();
-      const worldX = (e.clientX - rect.left - camera.x) / camera.zoom;
-      const worldY = (e.clientY - rect.top - camera.y) / camera.zoom;
+      const { x: worldX, y: worldY } = worldPixelFromLocal(e.clientX - rect.left, e.clientY - rect.top, rect);
       const hit = clusterList.find((cluster) => cluster.lastHull && pointInPolygon(worldX, worldY, cluster.lastHull));
 
       if (hit) {
@@ -4382,7 +4770,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         return;
       }
 
-      const target = { x: 0, y: 0, zoom: 1 };
+      const target = { x: 0, y: 0, zoom: 1, rot: 0 };
       if (reduceMotionRef.current) {
         cameraAnimating = false;
         Object.assign(camera, target);
@@ -4501,7 +4889,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       // Keyboard parity (see the FOCUS_SPRING constant block) — the
       // mouse's bigger statements, granted to the focused note: Space
       // launches the signal ping from it (startPing carries its own
-      // reduced-motion gate), P pins it in place, and 1/2/3 pick the
+      // reduced-motion gate), P pins it in place, and 1-5 pick the
       // layout law directly — switchMode reads modeRef precisely so this
       // mount-time capture stays legal.
       if (e.key === " " && focusIdRef.current) {
@@ -4529,7 +4917,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         togglePin(focusIdRef.current);
         return;
       }
-      const modePick = { 1: "web", 2: "orrery", 3: "strata", 4: "spectrum" }[e.key];
+      const modePick = { 1: "web", 2: "orrery", 3: "strata", 4: "spectrum", 5: "flock" }[e.key];
       if (modePick) {
         switchMode(modePick);
         return;
@@ -4923,6 +5311,21 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           camera.y += (ty - camera.y) * DRIFT_EASE;
         }
       }
+
+      // The rotate spring (see ROTATE_SPRING_STIFFNESS) — pan and tilt are
+      // independent axes, so this runs on its own condition rather than
+      // nesting inside the pan/boundary block above: gated only on the one
+      // thing that actually owns rot moment to moment, a live two-finger
+      // twist, not on panDrag/cameraAnimating, which have no say over it.
+      if (!pinch.active && (camera.rot !== 0 || camera.vrot !== 0)) {
+        camera.vrot += -camera.rot * ROTATE_SPRING_STIFFNESS * dt;
+        camera.rot += camera.vrot * dt;
+        camera.vrot *= ROTATE_SPRING_DAMPING;
+        if (Math.abs(camera.rot) < ROTATE_SNAP_EPS && Math.abs(camera.vrot) < ROTATE_SNAP_EPS) {
+          camera.rot = 0;
+          camera.vrot = 0;
+        }
+      }
       // The impact shake rides the transform write alone (see the SHAKE
       // constants) — camera.x/y themselves never see it, so every
       // unprojection and the minimap stay honest.
@@ -4936,7 +5339,13 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         shake.amp = 0;
       }
       if (worldGroupRef.current) {
-        worldGroupRef.current.setAttribute("transform", `translate(${ camera.x + shakeX },${ camera.y + shakeY }) scale(${ camera.zoom })`);
+        // rotate(...) pivots on the viewport's own center in world-pixel
+        // space (see ROTATE_SPRING_STIFFNESS) — SVG's own transform-list
+        // order applies it first, before scale/translate, exactly matching
+        // rotateAroundPivot's math, so every unprojection built on that
+        // helper stays the true inverse of what's actually on screen.
+        const rotDeg = (camera.rot * 180) / Math.PI;
+        worldGroupRef.current.setAttribute("transform", `translate(${ camera.x + shakeX },${ camera.y + shakeY }) scale(${ camera.zoom }) rotate(${ rotDeg },${ rect.width / 2 },${ rect.height / 2 })`);
       }
 
       // The parallax head eases toward wherever the pointer currently
@@ -5426,6 +5835,16 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       if (ink) {
         ink.step(dt);
 
+        // The pool's own voice (see utils/sound.js's updatePoolVoice) —
+        // read right after this frame's own wave step, so the energy
+        // sonified is never more than one frame stale. Off by default
+        // and toggled independently of the sound-enabled setting itself
+        // (which updatePoolVoice checks internally, same gate every
+        // other cue in this file already answers to) — this only
+        // decides whether the constellation is ASKING for the pool's
+        // voice at all.
+        if (poolVoiceOnRef.current) updatePoolVoice(ink.energy());
+
         const theme = document.documentElement.getAttribute("data-theme");
         if (theme !== inkTheme) {
           inkTheme = theme;
@@ -5444,6 +5863,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           zoom: camera.zoom,
           scaleX,
           scaleY,
+          time: simTime,
         });
       }
 
@@ -5529,8 +5949,9 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       // lens's own eased engagement so it condenses and dissolves with it.
       if (lensRingRef.current) {
         if (fisheye.amp > 0.003 && fisheyeHasSubject) {
-          lensRingRef.current.setAttribute("cx", camera.x + fisheyeFocusX * camera.zoom);
-          lensRingRef.current.setAttribute("cy", camera.y + fisheyeFocusY * camera.zoom);
+          const fisheyeRotated = rotateAroundPivot(fisheyeFocusX, fisheyeFocusY, rect, camera.rot);
+          lensRingRef.current.setAttribute("cx", camera.x + fisheyeRotated.x * camera.zoom);
+          lensRingRef.current.setAttribute("cy", camera.y + fisheyeRotated.y * camera.zoom);
           lensRingRef.current.setAttribute("opacity", (FISHEYE_RING_OPACITY * fisheye.amp).toFixed(3));
         } else {
           lensRingRef.current.setAttribute("opacity", "0");
@@ -5819,8 +6240,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         const node = byId.get(hoveredIdRef.current);
         const card = cardElRef.current;
         if (node && card) {
-          const screenX = camera.x + (node.dispX ?? node.x * scaleX) * camera.zoom;
-          const screenY = camera.y + (node.dispY ?? node.y * scaleY) * camera.zoom;
+          const worldPixelX = node.dispX ?? node.x * scaleX;
+          const worldPixelY = node.dispY ?? node.y * scaleY;
+          const rotated = rotateAroundPivot(worldPixelX, worldPixelY, rect, camera.rot);
+          const screenX = camera.x + rotated.x * camera.zoom;
+          const screenY = camera.y + rotated.y * camera.zoom;
           const px = Math.min(Math.max(screenX, 90), rect.width - 90);
           const py = Math.max(screenY, 70);
           card.style.transform = `translate(${ px }px, ${ py }px) translate(-50%, -125%)`;
@@ -6045,6 +6469,14 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       inkControllerRef.current = null;
       modeControllerRef.current = null;
       ink?.dispose();
+      // Unconditional, regardless of poolVoiceOn's own value at teardown
+      // time — unlike every other cue in utils/sound.js, a started
+      // oscillator does not stop itself, and a mount that skipped this
+      // would leave the pool humming in the background of a page that no
+      // longer even shows the panel it came from. Cheap enough to call
+      // even when it was never started (stopPoolVoice no-ops on a null
+      // graph), so there's no reason to guard it behind poolVoiceOn here.
+      stopPoolVoice();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
@@ -6703,6 +7135,39 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           >
             <FaMagnifyingGlass aria-hidden="true" />
             Magnify
+          </button>
+        )
+      }
+      {
+        graph.nodes.length > 0 && phase !== "diving" && !reduceMotion && (
+          // The pool's own voice (see utils/sound.js's own
+          // updatePoolVoice) — stacked with fisheye's own toggle in the
+          // same pill language, same reduced-motion gate for the same
+          // practical reason (not that ambient sound is a motion
+          // preference — utils/sound.js's own opt-in gate already stands
+          // fully apart from reduceMotion — but that its data source,
+          // the ink surface, is never built there, so there'd be nothing
+          // genuine left for it to sonify). Explicitly stopping on the
+          // OFF transition here, rather than just letting the tick loop
+          // stop calling updatePoolVoice, is load-bearing: a started
+          // oscillator holds its last volume forever once nothing is
+          // re-aiming it, so simply withholding future updates would
+          // leave it humming right where it was, not fading out.
+          <button
+            type="button"
+            className={ `note-constellation-voice ${ poolVoiceOn ? "active" : "" }` }
+            aria-pressed={ poolVoiceOn }
+            onClick={ () => {
+              playTick();
+              setPoolVoiceOn((prev) => {
+                const next = !prev;
+                if (!next) stopPoolVoice();
+                return next;
+              });
+            } }
+          >
+            <FaEarListen aria-hidden="true" />
+            Listen
           </button>
         )
       }
