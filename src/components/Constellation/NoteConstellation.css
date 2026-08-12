@@ -69,6 +69,36 @@
   pointer-events: none;
 }
 
+/* The lasso's own in-progress stroke — see NoteConstellation.jsx's own
+   LASSO_POINT_GAP constant block. Dashed like the aim line for the same
+   reason (a loop still being drawn is a proposal, not yet a commitment),
+   in blue rather than ink: this file's own established "you did this on
+   purpose" color, the same one the path anchors wear. Geometry and fade
+   are written every frame by the tick loop. */
+.note-constellation-lasso {
+  fill: none;
+  stroke: var(--blue-color);
+  stroke-width: 1.5px;
+  stroke-dasharray: 5 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+/* A lassoed note's own halo — see NoteConstellation.jsx's own
+   LASSO_HALO_PAD constant block. A soft filled wash rather than another
+   stroked ring, in the same blue "deliberately marked" register the
+   drawn stroke above and the path anchors already use, visually distinct
+   from the pin ring's dashed ink and the anchor ring's spinning dashed
+   blue — a current statement, not a standing arrangement. Opacity is a
+   JSX fillOpacity prop (LASSO_HALO_OPACITY), not set here — the same
+   single-source-of-truth discipline the Voronoi cells' own fillOpacity
+   already follows, so this number can't quietly drift from that one. */
+.note-constellation-lasso-ring {
+  fill: var(--blue-color);
+  pointer-events: none;
+}
+
 /* The focus swimmer's ring — a solid ink line, deliberately heavier than
    every dashed standing annotation (pins, guides, the fisheye rim):
    keyboard focus is a current statement, not a standing arrangement.
@@ -570,6 +600,55 @@
   border-color: var(--page-ink-color);
 }
 
+/* The portrait — see NoteConstellation.jsx's own PORTRAIT_STYLED_SELECTOR
+   constant block. Continues the right-side column past Guide, otherwise
+   identical chrome; it never carries an .active state (a capture is a
+   one-off action, not a standing toggle), so unlike guide-toggle this has
+   no such modifier rule. */
+.note-constellation-portrait {
+  position: absolute;
+  right: 20px;
+  bottom: 176px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--page-line-color);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--page-ink-color);
+  background-color: var(--page-bg-color);
+  box-shadow: 0 10px 24px -10px rgba(25, 25, 25, 0.3);
+  cursor: pointer;
+  transition: transform .15s ease-in-out, box-shadow .15s ease-in-out;
+}
+
+.note-constellation-portrait:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px -10px rgba(25, 25, 25, 0.38);
+}
+
+.note-constellation-portrait svg {
+  font-size: 12px;
+}
+
+/* The portrait's own flash — see NoteConstellation.jsx's own
+   PORTRAIT_FLASH_DURATION constant block. Ink-colored (a stamp of ink,
+   the same register the reused export/stamp sound already carries) at
+   the very top of the stack, outside the svg being captured; opacity is
+   driven entirely by a direct GSAP tween, never by CSS or React state. */
+.note-constellation-portrait-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background-color: var(--page-ink-color);
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* The field guide itself — see NoteConstellation.jsx's GUIDE_SECTIONS.
    A right-hand column in the hover card's own paper register, scrolling
    inside itself on short stages; kbd chips carry the gestures, prose
@@ -811,7 +890,8 @@
 .note-constellation-magnify,
 .note-constellation-cells,
 .note-constellation-skeleton,
-.note-constellation-exposure-toggle {
+.note-constellation-exposure-toggle,
+.note-constellation-toss {
   position: absolute;
   left: 20px;
   bottom: 20px;
@@ -836,7 +916,8 @@
 .note-constellation-magnify:hover,
 .note-constellation-cells:hover,
 .note-constellation-skeleton:hover,
-.note-constellation-exposure-toggle:hover {
+.note-constellation-exposure-toggle:hover,
+.note-constellation-toss:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 26px -10px rgba(25, 25, 25, 0.38);
 }
@@ -845,7 +926,8 @@
 .note-constellation-magnify:active,
 .note-constellation-cells:active,
 .note-constellation-skeleton:active,
-.note-constellation-exposure-toggle:active {
+.note-constellation-exposure-toggle:active,
+.note-constellation-toss:active {
   transform: translateY(0);
 }
 
@@ -853,7 +935,8 @@
 .note-constellation-magnify svg,
 .note-constellation-cells svg,
 .note-constellation-skeleton svg,
-.note-constellation-exposure-toggle svg {
+.note-constellation-exposure-toggle svg,
+.note-constellation-toss svg {
   font-size: 12px;
 }
 
@@ -896,6 +979,13 @@
    NoteConstellation.jsx's own EXPOSURE constants. */
 .note-constellation-exposure-toggle {
   bottom: 196px;
+}
+
+/* The toss continues the column past exposure — see NoteConstellation.jsx's
+   own TOSS_GRAVITY constant block. No .active state, like reshuffle: a
+   toss is a one-off action, not a standing toggle. */
+.note-constellation-toss {
+  bottom: 240px;
 }
 
 /* The fisheye's boundary ring — the lens's exact screen-space reach, a

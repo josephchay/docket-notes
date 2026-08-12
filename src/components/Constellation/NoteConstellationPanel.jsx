@@ -96,6 +96,13 @@ const NoteConstellationPanel = ({ notes, openEditor, reduceMotion }) => {
             // Particles/ panel — SheetPanel's own AnimatePresence already
             // owns the mount/unmount timing through its close animation;
             // `active` alone gates whether the layout simulation runs.
+            // NoteConstellation.jsx genuinely unmounts once that close
+            // finishes (it's nested inside SheetPanel's own exit-gated
+            // subtree, which this component doesn't control), which is
+            // why the handful of settings meant to survive a reopen — see
+            // that file's own persistedPinnedIds comment — carry
+            // themselves across in a plain module-level variable instead
+            // of relying on the component instance surviving.
             <NoteConstellation active={ open } notes={ notes } onSelectNote={ handleSelect } reduceMotion={ reduceMotion } />
           ) : (
             open && (

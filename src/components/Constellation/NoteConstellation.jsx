@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import gsap from "gsap";
+import Matter from "matter-js";
 import { interpret } from "xstate";
-import { FaArrowsRotate, FaCamera, FaCircleNodes, FaCircleQuestion, FaLayerGroup, FaMagnifyingGlass, FaMagnifyingGlassLocation, FaShareNodes, FaStar, FaSun, FaTableCells, FaXmark } from "react-icons/fa6";
+import { FaArrowsRotate, FaCamera, FaCircleNodes, FaCircleQuestion, FaDice, FaImagePortrait, FaLayerGroup, FaMagnifyingGlass, FaMagnifyingGlassLocation, FaShareNodes, FaStar, FaSun, FaTableCells, FaXmark } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { blobPath, closedCatmullRomPath, createBlobMorph } from "../../utils/blob";
@@ -12,7 +13,7 @@ import { InkSurface } from "../../utils/inkSurface";
 import { metaballBridge } from "../../utils/metaball";
 import { curlNoise2 } from "../../utils/noise";
 import { Quadtree } from "../../utils/quadtree";
-import { playDrip, playImpact, playMembrane, playThreadPluck, playTick } from "../../utils/sound";
+import { playDrip, playImpact, playMembrane, playStamp, playThreadPluck, playTick } from "../../utils/sound";
 import { voronoiCells } from "../../utils/voronoi";
 import { smoothPath } from "../../utils/svgPath";
 import { createPoint, integratePoint, satisfyConstraint } from "../../utils/verlet";
@@ -353,6 +354,61 @@ const REHEAT_COOLING = 0.98; // per substep — ≈2% cooler each; dies out over
 const REHEAT_MIN_TEMPERATURE = 0.8; // below this, annealing is over and the cap comes off
 const REHEAT_KICK = 40; // domain units/s of random impulse per free node
 
+// The toss — matter-js applied to this file's own bodies for the one
+// thing its hand-rolled physics genuinely isn't built for: TRUE rigid-
+// body collision, with real restitution, rather than the soft position-
+// correction step()'s own COLLISION_ITERATIONS pass already does.
+// Reshuffle's own annealing sibling, but with a completely different
+// physical texture — not a re-settle into the SAME force field, an
+// actual throw-in-the-air-and-let-it-bounce, handed to a real rigid-
+// body engine for a few seconds and then handed straight back.
+//
+// Runs in WORLD-PIXEL space — the same scaleX/scaleY-converted space
+// node.radiusPx already lives in — not the small 160×100 domain this
+// file's own hand-rolled physics uses directly. This isn't an arbitrary
+// choice: Pile/NotePile.jsx already proves matter-js out, working, in
+// this exact codebase, and it operates at real CSS-pixel scale (a
+// GRAVITY of 1, toss velocities in the 2–4 px/tick range) — matter-js's
+// own internal solver tolerances (contact slop, its default iteration
+// counts) are tuned assuming roughly that scale. Running it directly at
+// the domain's own tiny numbers instead would be untested, riskier
+// territory for no real benefit, when converting in and back out at the
+// boundary (exactly once, when a toss starts and every frame it's read
+// back) costs nothing this file doesn't already pay to draw a node in
+// the first place.
+//
+// Every body is tagged with its own note id so collisions can feed the
+// EXISTING jelly-wobble/thud pipeline (see node.impact throughout this
+// file) — a toss bounce rings and knocks exactly like an ordinary
+// collision already does, no second sound or visual system built for
+// it. Pinned and currently-dragged notes sit out (a pin is a promise
+// even mid-toss), marked via node.tossed the same way node.pinned/
+// node.dragging already tell step() to leave a node's own integration
+// alone. The whole thing hands back to the active layout law's own
+// step() physics once every body has settled (or after a fixed
+// ceiling) — orbit, shelf, or web, whichever is current, reclaims
+// exactly wherever the bounce left each note. Hidden under reduced
+// motion like Magnify/Exposure: this is autonomous, large-amplitude
+// motion by definition, with no reduced rendition worth offering.
+const TOSS_GRAVITY = 1.4;
+const TOSS_DURATION = 3.2; // s — the ceiling; an early settle can end it sooner
+const TOSS_SETTLE_SPEED = 0.6; // world-px/tick average speed below which the toss counts as done
+const TOSS_KICK_VX = 5; // px/tick horizontal scatter, ± half this per body
+const TOSS_KICK_VY_MIN = 6; // px/tick upward kick range
+const TOSS_KICK_VY_SPAN = 6;
+const TOSS_RESTITUTION = 0.55;
+const TOSS_FRICTION = 0.25;
+const TOSS_FRICTION_AIR = 0.012;
+const TOSS_WALL_THICKNESS = 60;
+const TOSS_IMPACT_MIN_SPEED = 1.2; // world-px/tick of collision speed before a bounce is worth ringing
+// Calibrated against THUD_REF_IMPACT (the ordinary collision system's own
+// "full-strength landing" reference, 3): a typical mid-bounce speed
+// (~3–4 world-px/tick) should read as a clear but modest thud, and only
+// the hardest opening bounces (~10 world-px/tick, right after the kick)
+// should approach full strength — so tosses have real dynamic range
+// instead of every bounce instantly pegging the meter.
+const TOSS_IMPACT_GAIN = 0.3; // node.impact per world-px/tick of collision speed
+
 // Ink comet trails — a node moving fast enough (a fling, or being whipped
 // around mid-drag) smears a short trail of its own ink behind it: a ring
 // buffer of its last few rendered positions, drawn through the same
@@ -555,11 +611,13 @@ const PING_NODE_SPLASH = 0.3; // pool tap per arrival, at full energy
 // endpoints have the tag", since two notes can each carry the lens tag yet
 // be joined by an entirely different shared tag; the thread honestly
 // reports what the edge is actually made of. Dimming priority runs
-// path > lens > hover: a traced path is the most deliberate statement on
-// screen, a lens the next, a transient pointer position last — the three
-// never disagree about what's dimmed at once. Activating a lens taps the
-// pool once under every member, so the spotlight lands as a scatter of
-// rings across exactly the notes it names.
+// path > search > lens > hover (see the SEARCH_FIT_PADDING constant
+// block for why a typed query outranks a standing lens tag): a traced
+// path is the most deliberate statement on screen, search the next, a
+// lens the next, a transient pointer position last — the four never
+// disagree about what's dimmed at once. Activating a lens taps the pool
+// once under every member, so the spotlight lands as a scatter of rings
+// across exactly the notes it names.
 const LENS_MAX_TAGS = 14; // chips shown — plurality-first; a desk with more tags shows its top ones
 const LENS_SPLASH = 0.45; // per-member pool tap when a lens switches on
 
@@ -933,6 +991,76 @@ const VORONOI_FILL_OPACITY = 0.05;
 const SEARCH_FIT_PADDING = 90; // px of breathing room around the matched box
 const SEARCH_FIT_DURATION = 0.6;
 
+// The lasso — the one way to mark a GROUP of notes at once, rather than
+// one at a time (path anchors take exactly two, a lens takes a tag, a
+// pin takes one note under the pointer). Ctrl/Cmd-drag over open water —
+// this file's own established "ask a bigger question" modifier language
+// (shift asks the graph for a path, alt asks a note to hold still, this
+// asks the desk for a group) — sketches a freeform loop, closed straight
+// back to its own start for the live preview; release resolves it into a
+// set with the exact same primitive the cluster dive's own hit-test
+// already uses (utils/hull.js's pointInPolygon), tested against each
+// note's TRUE domain position, not its displayed one — a selection is a
+// fact about the graph, not about what the eye currently sees through
+// parallax or the fisheye. Selected notes carry a soft blue halo (this
+// file's own established "you did this on purpose" color, the same one
+// the path anchors wear), and P pins or unpins the WHOLE group at once —
+// a real use for selecting more than one note, reusing the exact
+// togglePin every single-note pin already calls: all-pin if any member
+// is unpinned, else all-unpin, so one press never leaves the group in a
+// mixed state. A trivial ctrl-click (too few recorded points to be a
+// real drag) resolves to nothing and leaves whatever selection already
+// existed alone, rather than wiping it from an accidental tap. Genuinely
+// motion-safe by nature — marking notes and freezing them in place moves
+// nothing on its own, the opposite of what reduced motion opts out of —
+// so unlike node-dragging and thread-towing this needs no reduced-motion
+// gate at all; only the drawn stroke's own liveness is direct
+// manipulation, exactly like panning already is. Deliberately transient
+// rather than added to the persistedX family above: a selection is a
+// question about right now, not a standing curated fact about the desk.
+const LASSO_POINT_GAP = 1.5; // domain units between recorded points — fine enough for tight loops, coarse enough not to flood the array
+const LASSO_MIN_POINTS = 4; // fewer than this and release resolves to nothing — an accidental ctrl-click, not a drag
+const LASSO_HALO_PAD = 8; // px beyond the blob's own radius
+const LASSO_HALO_OPACITY = 0.22;
+
+// The portrait — a keepsake, not another physics system. Every round so
+// far has added a way to STIR the desk; this is the one way to WALK AWAY
+// with something from it — a PNG of the constellation exactly as it
+// currently sits, ink pool and all. The technique is the standard
+// browser-native SVG-to-canvas rasterization (no library needed): the
+// live <svg> is cloned, every element that carries its visual identity
+// through an external CSS class (rather than an already-inline
+// fill/strokeWidth prop) gets that identity resolved to its CURRENT
+// computed value and written back as an inline style — the isolated
+// image context a serialized SVG renders in has no access to this app's
+// own stylesheet or its `var(--page-ink-color)`-style custom properties,
+// so without this step edges and hulls would rasterize as browser-default
+// black fills instead of the thin colored lines and soft stains they
+// actually are. getComputedStyle does the var() resolution either way
+// (a class rule, an inline var(), or an already-hex attribute all read
+// out the same finished value), which is what keeps this from needing a
+// hand-maintained shadow copy of NoteConstellation.css that could drift
+// from the real one. The rasterized graph is then composited over the
+// page's own paper color with the live WebGL ink pool (and the long-
+// exposure film, if it's on) painted in first, straight from their own
+// <canvas> elements — no serialization needed for those, a canvas is
+// already just pixels. A brief ink-colored flash (skipped to a near-
+// instant blink under reduced motion) and the same stamp cue export/
+// import/undo already use are the whole ceremony; the file itself is
+// the payoff.
+const PORTRAIT_STYLED_SELECTOR = [
+  ".note-constellation-edge", ".note-constellation-blob", ".note-constellation-hull",
+  ".note-constellation-label", ".note-constellation-cluster-label", ".note-constellation-moon",
+  ".note-constellation-pin-ring", ".note-constellation-anchor-ring", ".note-constellation-trail",
+  ".note-constellation-dew-drop", ".note-constellation-bridge", ".note-constellation-orbit-guide",
+  ".note-constellation-strata-band", ".note-constellation-strata-label", ".note-constellation-voronoi-cell",
+  ".note-constellation-focus-ring", ".note-constellation-lasso-ring", ".note-constellation-stream",
+  ".note-constellation-sonar-ring", ".note-constellation-aim",
+].join(", ");
+const PORTRAIT_STYLE_PROPS = ["fill", "stroke", "stroke-width", "stroke-dasharray", "stroke-linecap", "stroke-linejoin", "opacity", "fill-opacity", "filter"];
+const PORTRAIT_FLASH_DURATION = 0.5;
+const PORTRAIT_FLASH_OPACITY = 0.85;
+
 // The focus swimmer — keyboard navigation as physics. Arrow keys walk
 // the graph edge by edge: from the focused note, the neighbor whose
 // thread best matches the pressed direction wins (unit-vector dot
@@ -1155,6 +1283,7 @@ const GUIDE_SECTIONS = [
       { keys: ["Shift", "Tap water"], text: "Strike the pool's own drum modes.", motion: true },
       { keys: ["Shift", "Click note"], text: "Path anchor — two trace the shortest route." },
       { keys: ["Alt", "Click note"], text: "Pin a note where it sits." },
+      { keys: ["Ctrl/Cmd", "Drag water"], text: "Lasso-select notes — P pins the whole group." },
       { keys: ["Double-click"], text: "Dive to a cluster, or reset the view." },
       { keys: ["Wheel"], text: "Zoom at the cursor." },
     ],
@@ -1296,6 +1425,34 @@ const findShortestPath = (edges, startId, endId) => {
   return null; // no path — startId and endId sit in different connected components
 };
 
+// Module-level, not component state — the one thing that actually makes
+// "persists across the panel closing and reopening" true for pins, the
+// tag lens, and the chosen layout law. NoteConstellationPanel.jsx nests
+// this component INSIDE SheetPanel's own children, and SheetPanel wraps
+// its whole subtree in an `{ open && (...) }` gate of its own; the
+// instant `open` goes false, NoteConstellationPanel's very next render
+// already stops including this component in what it hands SheetPanel,
+// and SheetPanel's own AnimatePresence exit (a few hundred milliseconds)
+// only delays the actual removal — it doesn't prevent it. So this
+// component GENUINELY unmounts every time the panel closes, discarding
+// every ordinary useState it owns, well before any realistic "closed it,
+// did something else, came back" reopen. A plain variable at module
+// scope sidesteps that entirely: it isn't tied to any component
+// instance, so it survives exactly as long as the page itself does — a
+// session-scoped cache, the same "gone on a hard reload, nothing else"
+// lifetime already ordinary about everything in this app that isn't
+// explicitly written to utils/storage.js. Read once as each state's own
+// initial value below, and written back on every render via the same
+// plain-assignment-in-the-render-body trick this file already leans on
+// for every ref sync (see pinnedIdsRef's own line right below) —
+// deliberately NOT full localStorage persistence,
+// since these comments' own original intent ("a standing question about
+// the desk," "the same desk always crowns the same sun") reads as
+// per-visit, not something that ought to survive a closed browser tab.
+let persistedPinnedIds = [];
+let persistedActiveTag = null;
+let persistedMode = "web";
+
 const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }) => {
   const svgRef = useRef(null);
   const worldGroupRef = useRef(null);
@@ -1319,6 +1476,9 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // worldGroupRef), positioned every frame by the tick loop.
   const lensRingRef = useRef(null);
   const reheatControllerRef = useRef(null);
+  // The toss's own bridge into the physics closure (see the TOSS_GRAVITY
+  // constant block) — same controller-ref pattern as reheat/mode.
+  const tossControllerRef = useRef(null);
   // The search fly-to's own bridge into the physics closure (see
   // flyToWorldBox and the search JSX further down) — same controller-ref
   // pattern as morph/minimap/reheat.
@@ -1371,6 +1531,36 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // effect's closure; this is only where it gets blitted through the
   // camera.
   const exposureCanvasRef = useRef(null);
+  // The lasso's own in-progress stroke (see the LASSO_POINT_GAP constant
+  // block) — geometry written per frame by tick() while a ctrl-drag is
+  // live.
+  const lassoPathRef = useRef(null);
+  // The field guide's own toggle button (see the guide JSX) — the guide
+  // closing (via its X or its own local Escape handler) refocuses this,
+  // the standard "return focus to the invoking control" dialog pattern.
+  // Needed because the button lives outside the svg's own DOM subtree:
+  // clicking it to OPEN the guide leaves focus sitting on the button
+  // itself, not on the svg, so the svg-scoped handleKey never sees a
+  // subsequent Escape at all — it would otherwise bubble straight past
+  // this component to the panel's own window-level Escape and close the
+  // whole sheet instead of just the guide. The guide's own onKeyDown
+  // (see its JSX) plus autoFocus on its close button are the other half
+  // of this fix, mirroring exactly how the search pill already moves
+  // focus into its input when opened by a click for the same reason.
+  const guideToggleRef = useRef(null);
+  // The portrait's own flash overlay (see the PORTRAIT_FLASH_DURATION
+  // constant block) — a plain sibling div, deliberately OUTSIDE the
+  // <svg> being captured, driven by a direct GSAP tween inside
+  // capturePortrait rather than React state (the same one-off-moment
+  // discipline the dive effect's own imperative tweens already follow).
+  const portraitFlashRef = useRef(null);
+  // True for the duration of an in-flight capture — capturePortrait is
+  // async (one real await, the SVG rasterizing into an <img>), and a
+  // second click landing in that window would otherwise start an
+  // entirely independent second pipeline: harmless on its own (nothing
+  // shared mutates unsafely), but two competing downloads for one click
+  // is a rough edge worth just not having.
+  const capturingPortraitRef = useRef(false);
 
   const [graph, setGraph] = useState({ nodes: [], edges: [], clusters: [], orbits: [], strata: [] });
   const [hoveredId, setHoveredId] = useState(null);
@@ -1387,20 +1577,27 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // `pinned` flag on the physics side (see handleDown's own alt-click
   // branch), the same two-representation split hover already lives with
   // (hoveredId state for class toggling, hoveredIdRef for the tick loop).
-  const [pinnedIds, setPinnedIds] = useState([]);
+  // Seeded from persistedPinnedIds (see that module-level variable's own
+  // comment for why a plain useState default can't carry this across a
+  // panel close/reopen on its own) and written back below.
+  const [pinnedIds, setPinnedIds] = useState(persistedPinnedIds);
   // The tag lens's current tag, or null (see the LENS_MAX_TAGS constant
   // block) — persisted across panel close/reopen the same way pins are,
   // since a lens is a standing question about the desk, not about one
-  // mount of the graph.
-  const [activeTag, setActiveTag] = useState(null);
+  // mount of the graph (see persistedActiveTag).
+  const [activeTag, setActiveTag] = useState(persistedActiveTag);
   // The fisheye magnifier's on/off state (see the FISHEYE constants) —
   // React state for the button visual, mirrored as a ref for the tick loop,
   // the same two-representation split hover and pins already live with.
+  // Deliberately NOT in the persistedX family below: a whole-scene
+  // cursor-tracking distortion left silently on from a previous visit
+  // would be a stranger thing to inherit than a curated layout is.
   const [magnify, setMagnify] = useState(false);
   // The current layout law (see the LAYOUT_MODES block) — React state for
   // the switcher and the mode-gated layers, mirrored as a ref for step()
-  // and tick(). Persists across close/reopen like the lens and pins.
-  const [mode, setMode] = useState("web");
+  // and tick(). Persists across close/reopen like the lens and pins (see
+  // persistedMode).
+  const [mode, setMode] = useState(persistedMode);
   // Keyboard focus (see the FOCUS_SPRING constant block) — React state
   // for the aria-live announcement, mirrored as a ref for the keydown
   // handler and the swimmer's tick chase.
@@ -1427,6 +1624,11 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // it back.
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  // The lasso's current selection (see the LASSO_POINT_GAP constant
+  // block) — React state for the per-note halo rings and the status
+  // pill's own count, mirrored as a ref for the physics closure's own
+  // handleKey (Escape clears it, P group-pins it).
+  const [lassoIds, setLassoIds] = useState([]);
   // A stable service instance for this component's whole lifetime — same
   // useState-initializer convention SprintPanel.jsx's own interpret() call
   // already uses, so it isn't recreated every render.
@@ -1445,6 +1647,14 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   // rebuilds, so a pin set last visit still names a real node.
   const pinnedIdsRef = useRef(pinnedIds);
   pinnedIdsRef.current = pinnedIds;
+  // Written back on every render, the same plain-assignment-in-the-body
+  // pattern the ref line above already uses (safe for the same reason:
+  // idempotent, not read by anything else during THIS render, and this
+  // file already leans on the identical trick everywhere it mirrors
+  // state into a ref) — see persistedPinnedIds's own comment for why a
+  // module-level variable is what actually needs the value, not a ref.
+  persistedPinnedIds = pinnedIds;
+  persistedActiveTag = activeTag;
   // Read by handleDown's shift-click branch inside the [active]-only
   // physics effect (which never re-runs on pathAnchors changes) to tell a
   // fresh anchor from a removal — only a fresh one launches a signal ping.
@@ -1454,6 +1664,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   magnifyRef.current = magnify;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  persistedMode = mode;
   const focusIdRef = useRef(focusId);
   focusIdRef.current = focusId;
   const territoriesRef = useRef(territories);
@@ -1462,6 +1673,8 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
   exposureRef.current = exposure;
   const guideOpenRef = useRef(guideOpen);
   guideOpenRef.current = guideOpen;
+  const lassoIdsRef = useRef(lassoIds);
+  lassoIdsRef.current = lassoIds;
 
   const togglePathAnchor = (id) => {
     setPathAnchors((prev) => {
@@ -1496,6 +1709,120 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     modeRef.current = next;
     setMode(next);
     modeControllerRef.current?.transition();
+  };
+
+  // The portrait (see the PORTRAIT_STYLED_SELECTOR constant block) — a
+  // plain component-level function rather than another controller-ref
+  // bridge into the physics effect: everything it needs (the svg, the
+  // ink/exposure canvases, whether exposure is on) is already a public
+  // ref or piece of state up here, with nothing private to the physics
+  // closure required.
+  const capturePortrait = async () => {
+    const svg = svgRef.current;
+    if (!svg || capturingPortraitRef.current) return;
+    capturingPortraitRef.current = true;
+
+    // The WHOLE pipeline lives inside this one try — not just its async
+    // tail — specifically so the finally below is the one, unconditional
+    // place capturingPortraitRef gets released. A throw anywhere in the
+    // synchronous setup (getComputedStyle, cloneNode, XMLSerializer) left
+    // OUTSIDE the try would skip the finally entirely, leaving the guard
+    // stuck at true and silently disabling every future click for the
+    // rest of the session.
+    try {
+      playStamp();
+      if (portraitFlashRef.current) {
+        gsap.killTweensOf(portraitFlashRef.current);
+        gsap.fromTo(
+          portraitFlashRef.current,
+          { opacity: reduceMotion ? PORTRAIT_FLASH_OPACITY * 0.5 : PORTRAIT_FLASH_OPACITY },
+          { opacity: 0, duration: reduceMotion ? 0.15 : PORTRAIT_FLASH_DURATION, ease: "power2.out" }
+        );
+      }
+
+      const rect = svg.getBoundingClientRect();
+      const width = Math.max(1, Math.round(rect.width));
+      const height = Math.max(1, Math.round(rect.height));
+
+      // Every element that carries its visual identity through an
+      // external CSS class — rather than a prop already baked in as a
+      // literal fill/strokeWidth attribute — gets that identity resolved
+      // to its CURRENT computed value and written back onto the clone as
+      // an inline style, since the isolated context a serialized SVG
+      // rasterizes in has no access to this app's own stylesheet (see
+      // the constant block's own comment for why getComputedStyle
+      // rather than a hand-copied shadow stylesheet). Walked on a
+      // targeted selector, not the whole tree — skips the hundreds of
+      // currently-inert pooled elements (unused dew/bridge/sonar/stream
+      // slots sitting at opacity:0) a blind recursive walk would waste
+      // time resolving.
+      const svgClone = svg.cloneNode(true);
+      svgClone.setAttribute("width", width);
+      svgClone.setAttribute("height", height);
+      svgClone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      const liveStyled = svg.querySelectorAll(PORTRAIT_STYLED_SELECTOR);
+      const cloneStyled = svgClone.querySelectorAll(PORTRAIT_STYLED_SELECTOR);
+      liveStyled.forEach((liveEl, i) => {
+        const cloneEl = cloneStyled[i];
+        if (!cloneEl) return;
+        const computed = getComputedStyle(liveEl);
+        cloneEl.setAttribute("style", PORTRAIT_STYLE_PROPS.map((prop) => `${ prop }:${ computed.getPropertyValue(prop) }`).join(";"));
+      });
+
+      const bg = getComputedStyle(document.documentElement).getPropertyValue("--page-bg-color").trim() || "#fffeff";
+      const svgString = new XMLSerializer().serializeToString(svgClone);
+      const svgDataUri = `data:image/svg+xml;charset=utf-8,${ encodeURIComponent(svgString) }`;
+
+      const graphImg = new Image();
+      const graphLoaded = new Promise((resolve, reject) => {
+        graphImg.onload = resolve;
+        graphImg.onerror = reject;
+      });
+      graphImg.src = svgDataUri;
+      await graphLoaded;
+
+      // Everything from here on is synchronous on purpose, with no
+      // further await between the ink's own forceRender and the
+      // drawImage that reads it — see inkControllerRef's own forceRender
+      // comment for why that gap is exactly what would let the browser
+      // clear the buffer out from under this capture.
+      inkControllerRef.current?.forceRender();
+
+      const canvas = document.createElement("canvas");
+      // Capped the same way InkSurface itself already caps its own pixel
+      // ratio — sharp on a retina screen without an unbounded canvas size
+      // on the highest-density displays.
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(dpr, dpr);
+
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, width, height);
+      // The ink pool and the long-exposure film, when it's on, are
+      // already real <canvas> elements — drawImage reads their current
+      // pixels directly, no serialization needed for those the way the
+      // SVG graph itself needs one.
+      if (inkCanvasRef.current) ctx.drawImage(inkCanvasRef.current, 0, 0, width, height);
+      if (exposure && exposureCanvasRef.current) ctx.drawImage(exposureCanvasRef.current, 0, 0, width, height);
+      ctx.drawImage(graphImg, 0, 0, width, height);
+
+      const now = new Date();
+      const stamp = `${ now.getFullYear() }-${ String(now.getMonth() + 1).padStart(2, "0") }-${ String(now.getDate()).padStart(2, "0") }-${ String(now.getHours()).padStart(2, "0") }${ String(now.getMinutes()).padStart(2, "0") }`;
+      const link = document.createElement("a");
+      link.download = `note-constellation-${ stamp }.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch {
+      // A capture that fails (an unsupported browser, a transient canvas
+      // security restriction) is a missed keepsake, not a broken app —
+      // the stamp cue and flash already played, so failing silently here
+      // rather than surfacing an error is the honest choice: nothing
+      // else about the desk was at risk.
+    } finally {
+      capturingPortraitRef.current = false;
+    }
   };
 
   // See ConstellationState.js's own header comment for why onSelectNote is
@@ -1731,6 +2058,12 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         // constant block) can write gradient stops without re-deriving
         // the note's color per frame.
         colorCss: NOTE_COLORS[note.color] || "var(--page-ink-color)",
+        // True for the duration of a toss (see the TOSS_GRAVITY constant
+        // block) — step() reads this exactly like node.pinned, a signal
+        // to leave this node's own integration alone because something
+        // else (matter-js, for the toss's own brief window) is driving
+        // its position instead.
+        tossed: false,
       });
     });
 
@@ -2217,6 +2550,34 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         const node = byId.get(id);
         if (node) ink?.splash(node.x, node.y, amount);
       },
+      // Renders one fresh frame right now rather than waiting for the
+      // next tick() — see the portrait's own PORTRAIT_STYLED_SELECTOR
+      // constant block for why: the WebGL context is deliberately built
+      // WITHOUT preserveDrawingBuffer (keeping the app's own continuous
+      // 60fps ink rendering cheap — that flag forces an extra GPU copy
+      // EVERY frame, a real cost this file pays nowhere else), which
+      // means the browser is free to clear the canvas immediately after
+      // any render call, well before a user's own click on the Portrait
+      // button gets around to reading it with drawImage. Rendering
+      // again, synchronously, in the same moment as that read,
+      // sidesteps the problem without paying the preserveDrawingBuffer
+      // cost every other frame of every session for one occasional
+      // export. No shake offset (see the SHAKE constants) — a portrait
+      // shouldn't accidentally freeze mid-tremor from a collision that
+      // happened to land right before the click.
+      forceRender: () => {
+        if (!ink) return;
+        const rect = svg.getBoundingClientRect();
+        ink.render({
+          width: rect.width,
+          height: rect.height,
+          cameraX: camera.x,
+          cameraY: camera.y,
+          zoom: camera.zoom,
+          scaleX: rect.width / DOMAIN_W,
+          scaleY: rect.height / DOMAIN_H,
+        });
+      },
     };
 
     // One substep — repulsion (see the file header for the Barnes-Hut
@@ -2375,8 +2736,13 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
 
         // A pinned node is a fixed boundary condition — forces were still
         // accumulated against it above (its neighbors need to feel it),
-        // it just never integrates them.
-        if (node.pinned) return;
+        // it just never integrates them. A tossed node (see the
+        // TOSS_GRAVITY constant block) is the same story for a different
+        // reason: matter-js owns its position for the toss's own brief
+        // window, and tick() reads that back directly — the accumulated
+        // fx/fy above is simply discarded for it, same as a pinned
+        // node's own.
+        if (node.pinned || node.tossed) return;
 
         // Center pull, per law: the web needs it whole (its drifters have
         // nothing else holding them), the strata only along the axis
@@ -2775,6 +3141,94 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       },
     };
 
+    // The toss (see the TOSS_GRAVITY constant block) — a fresh matter-js
+    // world built right here, seeded from the graph's own CURRENT
+    // world-pixel positions and radii, thrown, and torn back down once
+    // it settles. Reduced motion and an already-running toss both no-op
+    // (the button itself is hidden under reduced motion — this is the
+    // second, defensive gate the same way most controller actions in
+    // this file carry one).
+    tossControllerRef.current = {
+      toss: () => {
+        if (reduceMotionRef.current || toss.active) return;
+
+        const rect = svg.getBoundingClientRect();
+        // rect.width/height ARE DOMAIN_W/DOMAIN_H's own world-pixel
+        // extent by construction (scaleX·DOMAIN_W = rect.width always),
+        // so they're also exactly the bounds the toss should bounce
+        // within — the full logical desk, not whatever the camera
+        // currently happens to be panned/zoomed to show.
+        const scaleX = rect.width / DOMAIN_W;
+        const scaleY = rect.height / DOMAIN_H;
+
+        const engine = Matter.Engine.create({ gravity: { x: 0, y: TOSS_GRAVITY } });
+
+        const t = TOSS_WALL_THICKNESS;
+        const floor = Matter.Bodies.rectangle(rect.width / 2, rect.height + t / 2, rect.width + t * 2, t, { isStatic: true, restitution: TOSS_RESTITUTION });
+        const left = Matter.Bodies.rectangle(-t / 2, rect.height / 2, t, rect.height * 3, { isStatic: true, restitution: TOSS_RESTITUTION });
+        const right = Matter.Bodies.rectangle(rect.width + t / 2, rect.height / 2, t, rect.height * 3, { isStatic: true, restitution: TOSS_RESTITUTION });
+        // Deliberately no ceiling — a real toss leaves the hand and can
+        // arc higher than the eye follows before gravity brings it back;
+        // TOSS_DURATION's own ceiling is what actually bounds how long
+        // that's allowed to take.
+        Matter.World.add(engine.world, [floor, left, right]);
+
+        byId.forEach((node, id) => {
+          if (node.pinned || node.dragging) return;
+          const body = Matter.Bodies.circle(node.x * scaleX, node.y * scaleY, node.radiusPx, {
+            restitution: TOSS_RESTITUTION,
+            friction: TOSS_FRICTION,
+            frictionAir: TOSS_FRICTION_AIR,
+          });
+          // node.mass (content length, deliberately decoupled from the
+          // radius that just built this body's own size — see the
+          // MASS_MAX_BONUS constant block) overrides matter-js's own
+          // radius-derived default, so a long note still throws and
+          // lands like something with real heft, exactly as it already
+          // feels sluggish under the ordinary force-directed physics.
+          // setMass rather than an options.density guess, since it
+          // correctly updates the body's own inertia too, not just its
+          // scalar mass.
+          Matter.Body.setMass(body, node.mass);
+          body.__noteId = id;
+          Matter.Body.setVelocity(body, {
+            x: (Math.random() - 0.5) * TOSS_KICK_VX,
+            y: -(TOSS_KICK_VY_MIN + Math.random() * TOSS_KICK_VY_SPAN),
+          });
+          Matter.World.add(engine.world, body);
+          toss.bodies.set(id, body);
+          node.tossed = true;
+          node.vx = 0;
+          node.vy = 0;
+        });
+
+        // Every real bounce feeds the exact same node.impact channel an
+        // ordinary collision already does — the jelly wobble and the
+        // audible thud both just happen, no second instrument built for
+        // this one.
+        toss.handleCollision = (e) => {
+          for (const pair of e.pairs) {
+            for (const body of [pair.bodyA, pair.bodyB]) {
+              const node = body.__noteId ? byId.get(body.__noteId) : null;
+              if (!node) continue;
+              const speed = Math.hypot(body.velocity.x, body.velocity.y);
+              if (speed < TOSS_IMPACT_MIN_SPEED) continue;
+              node.impact += speed * TOSS_IMPACT_GAIN;
+            }
+          }
+        };
+        Matter.Events.on(engine, "collisionStart", toss.handleCollision);
+
+        toss.engine = engine;
+        toss.active = true;
+        toss.endAt = simTime + TOSS_DURATION;
+        // The same detonation the reshuffle's own annealing kick
+        // announces itself with — a toss is every bit as big a
+        // statement about the desk.
+        ink?.splash(cx, cy, INK_RESHUFFLE_SPLASH);
+      },
+    };
+
     // The mode switch (see the LAYOUT_MODES block) — the caller has
     // already written modeRef, so all this owns is the journey: no random
     // kick (unlike the reshuffle, the new law's own forces supply all the
@@ -2938,6 +3392,19 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     const activePointers = new Map();
     const pinch = { active: false, lastDist: 0, lastMidX: 0, lastMidY: 0 };
 
+    // The lasso's own live state (see the LASSO_POINT_GAP constant block)
+    // — declared up here with pinch/stir/tow for the same temporal-
+    // dead-zone reason: handleDown below can reach it before a `const`
+    // declared nearer its own use would exist yet.
+    const lasso = { active: false, points: [] };
+
+    // The toss's own live state (see the TOSS_GRAVITY constant block) —
+    // the matter-js engine and its bodies exist only for the duration of
+    // one toss, created fresh each time rather than kept warm between
+    // uses (a few seconds every so often doesn't earn a persistent
+    // second physics world sitting idle the rest of the session).
+    const toss = { active: false, engine: null, bodies: new Map(), endAt: 0, handleCollision: null };
+
     // A drag that starts on empty space (no [data-note-id] under the
     // pointer) pans the camera instead of grabbing a node — tracked
     // separately from `drag` above since the two are mutually exclusive
@@ -3010,6 +3477,17 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         if (drag.id || tow.edge) return;
 
         const { x, y } = domainFromEvent(e);
+
+        // Ctrl/Cmd-drag on open water starts a lasso (see the
+        // LASSO_POINT_GAP constant block) instead of a pan or a tow —
+        // checked before the tow's own grab-radius test so intent to
+        // lasso never gets mistaken for brushing a nearby thread.
+        if (e.ctrlKey || e.metaKey) {
+          lasso.active = true;
+          lasso.points = [{ x, y }];
+          svg.style.cursor = "crosshair";
+          return;
+        }
 
         // A drag that starts ON a thread tows the thread itself (see the
         // TOW_GRAB_PX constant block) — closest chord within the grab
@@ -3143,6 +3621,19 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         pinch.lastDist = dist;
         pinch.lastMidX = midX + rect.left;
         pinch.lastMidY = midY + rect.top;
+        return;
+      }
+
+      // The lasso (see the LASSO_POINT_GAP constant block) — records a
+      // new point only once the cursor has actually moved a meaningful
+      // domain distance, so a slow drag doesn't flood the array; the
+      // in-progress stroke itself is drawn by tick() from this same
+      // list, the same raw-handlers-mutate-data / tick-owns-the-DOM
+      // split every other live gesture here already follows.
+      if (lasso.active) {
+        const { x, y } = domainFromEvent(e);
+        const last = lasso.points[lasso.points.length - 1];
+        if (Math.hypot(x - last.x, y - last.y) >= LASSO_POINT_GAP) lasso.points.push({ x, y });
         return;
       }
       // Tracked on every move regardless of what else this gesture is
@@ -3346,6 +3837,31 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       // declaration for why nothing is inherited by the survivor.
       if (pinch.active) {
         if (activePointers.size < 2) pinch.active = false;
+        return;
+      }
+
+      // Resolving the lasso (see the LASSO_POINT_GAP constant block) —
+      // too few recorded points is an accidental ctrl-click, not a real
+      // drag, and leaves whatever selection already existed alone rather
+      // than wiping it. A real drag tests every note's TRUE domain
+      // position against the traced loop with the exact same
+      // point-in-polygon utils/hull.js's cluster hit-test already uses.
+      if (lasso.active) {
+        lasso.active = false;
+        svg.style.cursor = "";
+        if (lassoPathRef.current) {
+          lassoPathRef.current.setAttribute("d", "");
+          lassoPathRef.current.setAttribute("opacity", "0");
+        }
+        if (lasso.points.length >= LASSO_MIN_POINTS) {
+          const polygon = lasso.points.map((p) => [p.x, p.y]);
+          const picked = [];
+          byId.forEach((node, id) => {
+            if (pointInPolygon(node.x, node.y, polygon)) picked.push(id);
+          });
+          setLassoIds(picked);
+        }
+        lasso.points = [];
         return;
       }
 
@@ -3694,6 +4210,15 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         if (focusIdRef.current) {
           e.stopPropagation();
           moveFocus(null);
+          return;
+        }
+        // The lasso's own layer (see the LASSO_POINT_GAP constant block)
+        // — added after focus, so with an early return on both branches
+        // above, one press only ever peels exactly one layer.
+        if (lassoIdsRef.current.length > 0) {
+          e.stopPropagation();
+          setLassoIds([]);
+          return;
         }
         return;
       }
@@ -3737,6 +4262,21 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       if (e.key === " " && focusIdRef.current) {
         e.preventDefault();
         startPing(focusIdRef.current);
+        return;
+      }
+      // P pins the lasso's whole group when one exists (see the
+      // LASSO_POINT_GAP constant block) — all-pin if any member is
+      // unpinned, else all-unpin, so one press never leaves the group in
+      // a mixed state — checked before the single-focus branch below so
+      // a lasso selection takes priority when both exist.
+      if ((e.key === "p" || e.key === "P") && lassoIdsRef.current.length > 0) {
+        e.preventDefault();
+        const ids = lassoIdsRef.current;
+        const allPinned = ids.every((id) => byId.get(id)?.pinned);
+        ids.forEach((id) => {
+          const node = byId.get(id);
+          if (node && node.pinned === allPinned) togglePin(id);
+        });
         return;
       }
       if ((e.key === "p" || e.key === "P") && focusIdRef.current) {
@@ -3835,7 +4375,19 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     const handlePointerCancel = (e) => {
       panDrag.pixelDistance = 999;
       stir.active = false;
-      if (svg.style.cursor === "grabbing") svg.style.cursor = "";
+      // Aborts an in-flight lasso outright rather than resolving a
+      // selection from a truncated gesture — set BEFORE handleUp runs,
+      // so its own `if (lasso.active)` branch below never fires for a
+      // cancel.
+      if (lasso.active) {
+        lasso.active = false;
+        lasso.points = [];
+        if (lassoPathRef.current) {
+          lassoPathRef.current.setAttribute("d", "");
+          lassoPathRef.current.setAttribute("opacity", "0");
+        }
+      }
+      if (svg.style.cursor === "grabbing" || svg.style.cursor === "crosshair") svg.style.cursor = "";
       handleUp(e);
     };
 
@@ -3936,6 +4488,52 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       // The stereo field's own yardstick (see stereoPanAt) — same
       // one-frame-stale-at-worst contract as renderScale.
       panRectW = rect.width;
+
+      // The toss's own frame (see the TOSS_GRAVITY constant block) —
+      // advance matter-js by a fixed 1000/60ms step (the same convention
+      // Pile/NotePile.jsx's own matter-js loop already uses, rather than
+      // this file's own variable dt: matter-js's solver is tuned for a
+      // steady timestep, and a toss is a few-second flourish where that
+      // small a mismatch against real elapsed time is never worth
+      // noticing), then read every body's position and velocity straight
+      // back into its node — converted out of world-pixel space here the
+      // exact same way it was converted in at toss-start — so the whole
+      // rest of this file (the render loop right below, the jelly
+      // squash/wobble it reads speed and impact from, the ink wake) sees
+      // a tossed node exactly like it would see any other moving one,
+      // with no idea matter-js is the one currently driving it.
+      if (toss.active) {
+        Matter.Engine.update(toss.engine, 1000 / 60);
+
+        let totalSpeed = 0;
+        toss.bodies.forEach((body, id) => {
+          const node = byId.get(id);
+          if (!node) return;
+          node.x = body.position.x / scaleX;
+          node.y = body.position.y / scaleY;
+          node.vx = (body.velocity.x / scaleX) * 60;
+          node.vy = (body.velocity.y / scaleY) * 60;
+          totalSpeed += Math.hypot(body.velocity.x, body.velocity.y);
+        });
+
+        const avgSpeed = toss.bodies.size > 0 ? totalSpeed / toss.bodies.size : 0;
+        if (simTime > toss.endAt || avgSpeed < TOSS_SETTLE_SPEED) {
+          // Handing back — clear the tossed flag first, so the very next
+          // step() call (already about to run next frame) picks every
+          // note back up into whichever law is currently active, exactly
+          // wherever the bounce left it.
+          toss.bodies.forEach((body, id) => {
+            const node = byId.get(id);
+            if (node) node.tossed = false;
+          });
+          Matter.Events.off(toss.engine, "collisionStart", toss.handleCollision);
+          Matter.World.clear(toss.engine.world, false);
+          Matter.Engine.clear(toss.engine);
+          toss.engine = null;
+          toss.bodies.clear();
+          toss.active = false;
+        }
+      }
 
       // Sonar fronts (see the SONAR_SPEED constant block) — each advances
       // at the wave speed, plucks every thread its annulus swept over
@@ -5030,6 +5628,25 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         }
       }
 
+      // The lasso's in-progress stroke (see the LASSO_POINT_GAP constant
+      // block) — domain points converted to world-pixel and closed
+      // straight back to their own start, so the live preview always
+      // shows the exact loop release will actually test against. Lives
+      // inside worldGroupRef (see the JSX), so the wrapping group's own
+      // transform handles panning/zooming it for free, the same as
+      // every other in-world overlay here.
+      if (lassoPathRef.current) {
+        if (lasso.active && lasso.points.length > 1) {
+          const pts = lasso.points.map((p) => ({ x: p.x * scaleX, y: p.y * scaleY }));
+          const first = pts[0];
+          lassoPathRef.current.setAttribute("d", `${ smoothPath(pts) } L ${ first.x } ${ first.y }`);
+          lassoPathRef.current.setAttribute("opacity", "1");
+        } else if (!lasso.active && lassoPathRef.current.getAttribute("opacity") !== "0") {
+          lassoPathRef.current.setAttribute("d", "");
+          lassoPathRef.current.setAttribute("opacity", "0");
+        }
+      }
+
       // The focus swimmer (see the FOCUS_SPRING constant block) — chases
       // the focused note's displayed position on its underdamped spring,
       // squashing along its own travel like everything else that moves
@@ -5103,9 +5720,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       gsap.killTweensOf(Array.from(byId.values()));
       gsap.killTweensOf(camera);
       blobMorphers.forEach(({ drive }) => gsap.killTweensOf(drive));
+      // An in-flight toss's own matter-js world (see the TOSS_GRAVITY
+      // constant block) — without this, closing the panel mid-toss would
+      // leak the whole engine: its event listener, every body, all of
+      // it, since nothing else ever tears it down once the RAF loop
+      // above has already stopped ticking.
+      if (toss.engine) {
+        Matter.Events.off(toss.engine, "collisionStart", toss.handleCollision);
+        Matter.World.clear(toss.engine.world, false);
+        Matter.Engine.clear(toss.engine);
+      }
       morphControllerRef.current = null;
       minimapControllerRef.current = null;
       reheatControllerRef.current = null;
+      tossControllerRef.current = null;
       searchControllerRef.current = null;
       inkControllerRef.current = null;
       modeControllerRef.current = null;
@@ -5188,6 +5816,16 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         tone: "found",
       }
       : { text: "No path between these notes", tone: "warn" };
+  } else if (lassoIds.length > 0) {
+    // The lasso's own readout (see the LASSO_POINT_GAP constant block) —
+    // right after the path branches (a fresh drag is a deliberate
+    // statement, same tier as a traced path) and ahead of the lens,
+    // since a mouse-drawn selection is fresher than a standing tag
+    // toggle, the same reasoning the dimming priority chain already uses.
+    pathStatus = {
+      text: `${ lassoIds.length } ${ lassoIds.length === 1 ? "note" : "notes" } selected · P pins them all`,
+      tone: "found",
+    };
   } else if (lensTag && lensNodeIds) {
     // The lens borrows the same pill — with no path being traced it's the
     // most deliberate statement on screen, and its member count is the
@@ -5486,6 +6124,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                 const onPath = pathNodeIds?.has(note.id) ?? false;
                 const isAnchor = pathAnchors.includes(note.id);
                 const isPinned = pinnedIds.includes(note.id);
+                const isSelected = lassoIds.includes(note.id);
                 // Priority path > search > lens > hover — see the edge
                 // pass above for why search outranks the lens.
                 const dimmed = pathNodeIds
@@ -5507,6 +6146,21 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                     onPointerEnter={ () => { setHoveredId(note.id); morphControllerRef.current?.enter(note.id); } }
                     onPointerLeave={ () => { setHoveredId((c) => (c === note.id ? null : c)); morphControllerRef.current?.leave(note.id); } }
                   >
+                    {
+                      // The lasso's own halo — see the LASSO_HALO_PAD
+                      // constant block. A soft filled wash, not a ring,
+                      // rendered first (bottom of this node's own stack)
+                      // so the anchor/pin rings' crisper line art always
+                      // stays legible over it if a note happens to carry
+                      // more than one of these states at once.
+                      isSelected && (
+                        <circle
+                          className="note-constellation-lasso-ring"
+                          r={ radius + LASSO_HALO_PAD }
+                          fillOpacity={ LASSO_HALO_OPACITY }
+                        />
+                      )
+                    }
                     {
                       isAnchor && (
                         <circle
@@ -5600,6 +6254,10 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               sink under what it's aiming through. Geometry and fade are
               written every frame by the tick loop. */}
           <path ref={ aimPathRef } className="note-constellation-aim" opacity={ 0 } />
+          {/* The lasso's own in-progress stroke — see the LASSO_POINT_GAP
+              constant block. Geometry and fade written every frame by
+              the tick loop while a ctrl-drag is live. */}
+          <path ref={ lassoPathRef } className="note-constellation-lasso" opacity={ 0 } />
           {/* The focus swimmer's ring — see the FOCUS_SPRING constant
               block. Topmost in the world: focus is the most deliberate
               statement the keyboard can make, and its ring should never
@@ -5757,11 +6415,29 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         )
       }
       {
+        graph.nodes.length > 0 && phase !== "diving" && !reduceMotion && (
+          // The toss — see the TOSS_GRAVITY constant block. Continues
+          // the left-side column past Exposure, the same 44px rhythm;
+          // hidden under reduced motion like Magnify/Exposure, since a
+          // real rigid-body bounce is autonomous, large-amplitude motion
+          // by definition, with no reduced rendition worth offering.
+          <button
+            type="button"
+            className="note-constellation-toss"
+            onClick={ () => tossControllerRef.current?.toss() }
+          >
+            <FaDice aria-hidden="true" />
+            Toss
+          </button>
+        )
+      }
+      {
         graph.nodes.length > 0 && phase !== "diving" && (
           // The field guide's summons — bottom-right, seated just above
           // the minimap it shares the corner with; "?" reaches the same
           // place from the keyboard.
           <button
+            ref={ guideToggleRef }
             type="button"
             className={ `note-constellation-guide-toggle ${ guideOpen ? "active" : "" }` }
             aria-pressed={ guideOpen }
@@ -5773,6 +6449,22 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           </button>
         )
       }
+      {
+        graph.nodes.length > 0 && phase !== "diving" && (
+          // The portrait — see the PORTRAIT_STYLED_SELECTOR constant
+          // block. Continues the right-side column past Guide, the same
+          // 44px rhythm the left-side column already keeps.
+          <button
+            type="button"
+            className="note-constellation-portrait"
+            aria-label="Save a portrait of the constellation"
+            onClick={ capturePortrait }
+          >
+            <FaImagePortrait aria-hidden="true" />
+            Portrait
+          </button>
+        )
+      }
       <AnimatePresence>
         {
           guideOpen && (
@@ -5781,6 +6473,12 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             // stage answers to grouped by which hands it asks for.
             // Reduced motion filters out the rows describing gestures
             // that stand down there, rather than listing dead promises.
+            // Its own local Escape handler (stopPropagation, same fix
+            // the search input already needed) keeps a press from
+            // bubbling past this component to the panel's own
+            // window-level Escape — see guideToggleRef's own comment for
+            // why that would otherwise close the whole sheet instead of
+            // just this overlay.
             <motion.aside
               className="note-constellation-guide"
               role="dialog"
@@ -5789,6 +6487,13 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 18, transition: { duration: .15 } }}
               transition={ SNAPPY }
+              onKeyDown={ (e) => {
+                if (e.key !== "Escape") return;
+                e.preventDefault();
+                e.stopPropagation();
+                setGuideOpen(false);
+                guideToggleRef.current?.focus();
+              } }
             >
               <div className="note-constellation-guide-header">
                 <span className="note-constellation-guide-title">Field guide</span>
@@ -5796,7 +6501,8 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                   type="button"
                   className="note-constellation-guide-close"
                   aria-label="Close guide"
-                  onClick={ () => setGuideOpen(false) }
+                  autoFocus
+                  onClick={ () => { setGuideOpen(false); guideToggleRef.current?.focus(); } }
                 >
                   <FaXmark />
                 </button>
@@ -6017,6 +6723,13 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           )
         }
       </AnimatePresence>
+      {/* The portrait's own flash — see the PORTRAIT_FLASH_DURATION
+          constant block. Deliberately OUTSIDE the svg being captured (so
+          the flash itself is never part of the image), topmost of
+          everything, driven by a direct GSAP tween inside
+          capturePortrait rather than React state. Mounted at opacity 0
+          and stays there until a capture actually fires. */}
+      <div ref={ portraitFlashRef } className="note-constellation-portrait-flash" aria-hidden="true" />
     </>
   );
 };
