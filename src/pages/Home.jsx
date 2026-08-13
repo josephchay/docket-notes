@@ -1527,6 +1527,7 @@ const Home = () => {
                 depth={ visibleDeleted.length - 1 - index }
                 onUndo={ restoreNote }
                 onDismiss={ dismissUndo }
+                reduceMotion={ reduceMotion }
               />
             ))
           }

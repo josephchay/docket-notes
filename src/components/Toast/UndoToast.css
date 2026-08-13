@@ -38,6 +38,7 @@
   height: 34px;
   border-radius: 50%;
   flex-shrink: 0;
+  will-change: transform, filter;
 }
 
 .undo-toast-swatch .undo-toast-trash {
