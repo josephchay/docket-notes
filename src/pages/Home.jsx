@@ -1028,6 +1028,12 @@ const Home = () => {
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const dragDepthRef = useRef(0);
 
+  // Ticks up only on an actual successful drop (never a drag-cancel) — the
+  // overlay's own blobs read the rising edge to throw a one-shot splash
+  // impulse, distinct from the ambient wobble they run the whole time the
+  // overlay's open.
+  const [dropPulse, setDropPulse] = useState(0);
+
   useEffect(() => {
     const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
 
@@ -1056,7 +1062,10 @@ const Home = () => {
       setIsDraggingFile(false);
 
       const file = e.dataTransfer.files?.[0];
-      if (file) importNotesRef.current(file);
+      if (file) {
+        importNotesRef.current(file);
+        setDropPulse((n) => n + 1);
+      }
     };
 
     window.addEventListener("dragenter", handleDragEnter);
@@ -1516,7 +1525,7 @@ const Home = () => {
       <InkCelebration celebration={ celebration } />
       <ActionStamp stamp={ stamp } />
       <ScrollProgress containerRef={ homeRef } markers={ scrollMarkers } />
-      <DropZoneOverlay active={ isDraggingFile } />
+      <DropZoneOverlay active={ isDraggingFile } dropPulse={ dropPulse } reduceMotion={ reduceMotion } />
       <div className="undo-toast-layer">
         <AnimatePresence>
           {

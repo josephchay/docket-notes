@@ -610,6 +610,7 @@ const INK_POUR_SPLASH = 1.6; // the opening pour's own first-impression detonati
 const LABEL_HANG = 16; // px of tether beyond the node's radius — matches the old static offset exactly
 const LABEL_GRAVITY = 2400; // px/s² — scaled for pixel space; heavier than 9.8 reads right at UI size
 const LABEL_DAMPING = 0.9; // per-step implied-velocity retention — a few visible swings, then rest
+const LABEL_CURRENT_GAIN = 70; // px/s² of lateral push per unit of the ambient current (see CURRENT_STRENGTH) — a light fraction of LABEL_GRAVITY, enough to sway a hanging tag without ever fighting the tether's own taut hang
 
 // Parallax depth — the graph gets a depth axis read from structure: a
 // node's degree maps to how near the focal plane's front it floats, and
@@ -935,7 +936,6 @@ const LAYOUT_MODES = [
   { id: "flock", label: "Flock", Icon: FaDove },
 ];
 const MODE_TEMPERATURE = 42; // domain units/s — the migration's opening speed cap
-const MODE_SPLASH = 0.9; // the pool's center detonation on switch
 
 const ORRERY_SPREAD = 34; // Vogel spiral's outer radius, domain units (y foreshortened by the domain's own H/W)
 const ORRERY_BASE_A = 9; // hop-1 shell's semi-major axis
@@ -1299,6 +1299,7 @@ const LASSO_HALO_OPACITY = 0.22;
 const PORTRAIT_STYLED_SELECTOR = [
   ".note-constellation-edge", ".note-constellation-blob", ".note-constellation-hull",
   ".note-constellation-label", ".note-constellation-cluster-label", ".note-constellation-moon",
+  ".note-constellation-moon-orbit",
   ".note-constellation-pin-ring", ".note-constellation-anchor-ring", ".note-constellation-trail",
   ".note-constellation-dew-drop", ".note-constellation-bridge", ".note-constellation-orbit-guide",
   ".note-constellation-strata-band", ".note-constellation-strata-label", ".note-constellation-voronoi-cell",
@@ -3838,7 +3839,69 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           return;
         }
         temperature = MODE_TEMPERATURE;
-        ink?.splash(cx, cy, MODE_SPLASH);
+
+        // Each law rings its own note — the pool strikes the same
+        // standing eigenmode the Shift+Tap "drum" gesture reaches (see
+        // strikeChladni below), matched 1:1 by index against
+        // LAYOUT_MODES instead of that gesture's own round-robin cycle,
+        // so switching TO a given law always rings the same signature
+        // chord rather than whichever mode happens to be next in line.
+        // No sound unless the strike itself actually landed — the same
+        // rule CHLADNI_MODES' own comment already states elsewhere.
+        const next = modeRef.current;
+        const modeIndex = LAYOUT_MODES.findIndex((m) => m.id === next);
+        const [chladniM, chladniN] = CHLADNI_MODES[modeIndex];
+        if (ink) {
+          ink.strikeMode(chladniM, chladniN, CHLADNI_AMP);
+          const freqRatio = Math.hypot(chladniM / DOMAIN_W, chladniN / DOMAIN_H) / Math.hypot(1 / DOMAIN_W, 1 / DOMAIN_H);
+          playMembrane(CHLADNI_FREQ_BASE * freqRatio, 0.7, stereoPanAt(cx));
+        }
+
+        // A small, one-time seed on top of whatever velocity each node
+        // already carries — the destination law's own per-frame forces
+        // (ORRERY_SPRING, STRATA_SPRING, SPECTRUM_SPRING, FLOCK_ALIGN_GAIN)
+        // already pull every node toward its correct new target
+        // regardless; this only nudges the very first visible frame so
+        // the migration reads as already knowing where it's headed,
+        // rather than a beat of isotropic drift before the new law's own
+        // pull takes over.
+        const seedGain = MODE_TEMPERATURE * 0.4;
+
+        if (next === "orrery") {
+          // A shared tangential bias — the whole graph starts swirling
+          // the same way a moment before each node's own Kepler spring
+          // takes over its exact orbit.
+          byId.forEach((node) => {
+            const dx = node.x - cx;
+            const dy = node.y - cy;
+            const dist = Math.max(1, Math.hypot(dx, dy));
+            node.vx += (-dy / dist) * seedGain;
+            node.vy += (dx / dist) * seedGain;
+          });
+        } else if (next === "strata") {
+          // Sediment falls — a shared downward bias, settling under its
+          // own weight before each note's own shelf spring sorts it onto
+          // the month it actually belongs to.
+          byId.forEach((node) => { node.vy += seedGain * 0.6; });
+        } else if (next === "flock") {
+          // The flock agrees on a heading before it's even finished
+          // forming up — one shared bearing, picked fresh per
+          // transition, rather than each node's own alignment rule being
+          // the only thing that ever points them the same way.
+          const heading = Math.random() * Math.PI * 2;
+          const hx = Math.cos(heading) * seedGain;
+          const hy = Math.sin(heading) * seedGain;
+          byId.forEach((node) => { node.vx += hx; node.vy += hy; });
+        } else if (next === "spectrum") {
+          // Each note leans toward its own color's wedge a beat early —
+          // the same sector lookup the real spectrum force uses for its
+          // target, just read here for direction only.
+          byId.forEach((node) => {
+            const sector = SPECTRUM_SECTORS.find((s) => s.key === (node.color || "none")) || SPECTRUM_SECTORS[SPECTRUM_SECTORS.length - 1];
+            node.vx += Math.cos(sector.centerAngle) * seedGain;
+            node.vy += Math.sin(sector.centerAngle) * seedGain * (DOMAIN_H / DOMAIN_W);
+          });
+        }
       },
     };
 
@@ -5495,7 +5558,13 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             labelEl.setAttribute("transform", `translate(0,${ rest })`);
           } else {
             if (!node.labelP) node.labelP = createPoint(dispX, dispY + rest);
-            integratePoint(node.labelP, dt, 0, LABEL_GRAVITY, LABEL_DAMPING);
+            // The same ambient current every node already feels (see the
+            // CURRENT_STRENGTH constant block) reaches the label's own
+            // tether too, at a much lighter gain — a note can sit
+            // perfectly still while the tag hanging off it still sways,
+            // the way a light tag catches air a heavier body wouldn't.
+            const labelFlow = curlNoise2(node.x / CURRENT_SCALE, node.y / CURRENT_SCALE, simTime * CURRENT_TIME_SCALE);
+            integratePoint(node.labelP, dt, labelFlow.x * LABEL_CURRENT_GAIN, LABEL_GRAVITY, LABEL_DAMPING);
             labelAnchor.x = dispX;
             labelAnchor.y = dispY;
             satisfyConstraint(labelAnchor, node.labelP, rest);
@@ -6586,6 +6655,8 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
     pathStatus = { text: "Notes settle onto the shelf of their own month — oldest at the bottom", tone: "subtle" };
   } else if (mode === "spectrum" && graph.nodes.length > 0) {
     pathStatus = { text: "Notes gather into their own color's wedge of the wheel", tone: "subtle" };
+  } else if (mode === "flock" && graph.nodes.length > 0) {
+    pathStatus = { text: "Notes steer by their nearest neighbors · Shared tags flock closer together", tone: "subtle" };
   } else if (graph.edges.length > 0) {
     // The stir hint only where the gesture actually exists — under
     // reduced motion right-drag does nothing (see the STIR constants),
@@ -6961,6 +7032,28 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                       fill={ color }
                     />
                     {
+                      // The moon's own orbit, drawn once as plain static
+                      // geometry rather than anything the tick loop has to
+                      // touch — the shape never changes, only the moon's
+                      // angle around it does. Same polar-conic-to-ellipse
+                      // conversion the orrery's own orbit guides already
+                      // use (focus at the node's own center, so the
+                      // ellipse's true center sits offset by -a·e — see
+                      // guideCx/guideRy above for the identical formula),
+                      // just at the moon's own much smaller scale and
+                      // unconditional on mode: a favorite's moon orbits in
+                      // every law, not only orrery.
+                      note.favorite && (
+                        <ellipse
+                          className="note-constellation-moon-orbit"
+                          cx={ -(radius + MOON_ORBIT_MARGIN) * MOON_ECCENTRICITY }
+                          cy={ 0 }
+                          rx={ radius + MOON_ORBIT_MARGIN }
+                          ry={ (radius + MOON_ORBIT_MARGIN) * Math.sqrt(1 - MOON_ECCENTRICITY * MOON_ECCENTRICITY) * MOON_TILT }
+                        />
+                      )
+                    }
+                    {
                       // The favorite's orbiting ink droplet — position
                       // written every frame by tick()'s own Kepler math.
                       // Drawn after the blob (always in front): the honest
@@ -7110,14 +7203,19 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           // left, mirroring the minimap's bottom-right corner; reaches the
           // physics through the same controller-ref bridge the minimap's
           // own click already uses.
-          <button
+          <motion.button
             type="button"
             className="note-constellation-reshuffle"
+            initial={ reduceMotion ? false : { opacity: 0, x: -14 } }
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ ...SNAPPY, delay: reduceMotion ? 0 : 0 * 0.045 }}
+            whileHover={ reduceMotion ? undefined : { scale: 1.05 } }
+            whileTap={ reduceMotion ? undefined : { scale: .94 } }
             onClick={ () => reheatControllerRef.current?.reheat() }
           >
             <FaArrowsRotate aria-hidden="true" />
             Reshuffle
-          </button>
+          </motion.button>
         )
       }
       {
@@ -7127,15 +7225,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           // entirely under reduced motion rather than disabled: a
           // cursor-tracking whole-scene distortion has no reduced-motion
           // rendition worth pretending to offer.
-          <button
+          <motion.button
             type="button"
             className={ `note-constellation-magnify ${ magnify ? "active" : "" }` }
             aria-pressed={ magnify }
+            initial={{ opacity: 0, x: -14 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ ...SNAPPY, delay: reduceMotion ? 0 : 1 * 0.045 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: .94 }}
             onClick={ () => { playTick(); setMagnify((prev) => !prev); } }
           >
             <FaMagnifyingGlass aria-hidden="true" />
             Magnify
-          </button>
+          </motion.button>
         )
       }
       {
@@ -7153,10 +7256,15 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           // oscillator holds its last volume forever once nothing is
           // re-aiming it, so simply withholding future updates would
           // leave it humming right where it was, not fading out.
-          <button
+          <motion.button
             type="button"
             className={ `note-constellation-voice ${ poolVoiceOn ? "active" : "" }` }
             aria-pressed={ poolVoiceOn }
+            initial={{ opacity: 0, x: -14 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ ...SNAPPY, delay: 2 * 0.045 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: .94 }}
             onClick={ () => {
               playTick();
               setPoolVoiceOn((prev) => {
@@ -7168,7 +7276,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           >
             <FaEarListen aria-hidden="true" />
             Listen
-          </button>
+          </motion.button>
         )
       }
       {
@@ -7178,15 +7286,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           // reshuffle and magnify. Shown under reduced motion too: a
           // static tessellation of a static layout is a perfectly good
           // reading there.
-          <button
+          <motion.button
             type="button"
             className={ `note-constellation-cells ${ territories ? "active" : "" }` }
             aria-pressed={ territories }
+            initial={ reduceMotion ? false : { opacity: 0, x: -14 } }
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ ...SNAPPY, delay: reduceMotion ? 0 : 3 * 0.045 }}
+            whileHover={ reduceMotion ? undefined : { scale: 1.05 } }
+            whileTap={ reduceMotion ? undefined : { scale: .94 } }
             onClick={ () => { playTick(); setTerritories((prev) => !prev); } }
           >
             <FaTableCells aria-hidden="true" />
             Cells
-          </button>
+          </motion.button>
         )
       }
       {
@@ -7194,15 +7307,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           // The skeleton toggle (see the Kruskal block in the build
           // effect) — meaningless without edges, so it only appears when
           // there are threads to strip back.
-          <button
+          <motion.button
             type="button"
             className={ `note-constellation-skeleton ${ skeleton ? "active" : "" }` }
             aria-pressed={ skeleton }
+            initial={ reduceMotion ? false : { opacity: 0, x: -14 } }
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ ...SNAPPY, delay: reduceMotion ? 0 : 4 * 0.045 }}
+            whileHover={ reduceMotion ? undefined : { scale: 1.05 } }
+            whileTap={ reduceMotion ? undefined : { scale: .94 } }
             onClick={ () => { playTick(); setSkeleton((prev) => !prev); } }
           >
             <FaShareNodes aria-hidden="true" />
             Skeleton
-          </button>
+          </motion.button>
         )
       }
       {
@@ -7211,15 +7329,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           // hidden entirely under reduced motion, like magnify: a long
           // exposure of a still scene is just a smudge, not a rendition
           // worth offering.
-          <button
+          <motion.button
             type="button"
             className={ `note-constellation-exposure-toggle ${ exposure ? "active" : "" }` }
             aria-pressed={ exposure }
+            initial={{ opacity: 0, x: -14 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ ...SNAPPY, delay: 5 * 0.045 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: .94 }}
             onClick={ () => { playTick(); setExposure((prev) => !prev); } }
           >
             <FaCamera aria-hidden="true" />
             Exposure
-          </button>
+          </motion.button>
         )
       }
       {
@@ -7229,14 +7352,19 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           // hidden under reduced motion like Magnify/Exposure, since a
           // real rigid-body bounce is autonomous, large-amplitude motion
           // by definition, with no reduced rendition worth offering.
-          <button
+          <motion.button
             type="button"
             className="note-constellation-toss"
+            initial={{ opacity: 0, x: -14 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ ...SNAPPY, delay: 6 * 0.045 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: .94 }}
             onClick={ () => tossControllerRef.current?.toss() }
           >
             <FaDice aria-hidden="true" />
             Toss
-          </button>
+          </motion.button>
         )
       }
       {
@@ -7244,17 +7372,22 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           // The field guide's summons — bottom-right, seated just above
           // the minimap it shares the corner with; "?" reaches the same
           // place from the keyboard.
-          <button
+          <motion.button
             ref={ guideToggleRef }
             type="button"
             className={ `note-constellation-guide-toggle ${ guideOpen ? "active" : "" }` }
             aria-pressed={ guideOpen }
             aria-label="Gesture guide"
+            initial={ reduceMotion ? false : { opacity: 0, x: 14 } }
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ ...SNAPPY, delay: reduceMotion ? 0 : 0 * 0.045 }}
+            whileHover={ reduceMotion ? undefined : { scale: 1.05 } }
+            whileTap={ reduceMotion ? undefined : { scale: .94 } }
             onClick={ () => { playTick(); setGuideOpen((prev) => !prev); } }
           >
             <FaCircleQuestion aria-hidden="true" />
             Guide
-          </button>
+          </motion.button>
         )
       }
       {
@@ -7262,15 +7395,20 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           // The portrait — see the PORTRAIT_STYLED_SELECTOR constant
           // block. Continues the right-side column past Guide, the same
           // 44px rhythm the left-side column already keeps.
-          <button
+          <motion.button
             type="button"
             className="note-constellation-portrait"
             aria-label="Save a portrait of the constellation"
+            initial={ reduceMotion ? false : { opacity: 0, x: 14 } }
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ ...SNAPPY, delay: reduceMotion ? 0 : 1 * 0.045 }}
+            whileHover={ reduceMotion ? undefined : { scale: 1.05 } }
+            whileTap={ reduceMotion ? undefined : { scale: .94 } }
             onClick={ capturePortrait }
           >
             <FaImagePortrait aria-hidden="true" />
             Portrait
-          </button>
+          </motion.button>
         )
       }
       <AnimatePresence>
@@ -7363,8 +7501,25 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                   aria-pressed={ mode === id }
                   onClick={ () => switchMode(id) }
                 >
-                  <Icon aria-hidden="true" />
-                  { label }
+                  {
+                    // The active law's own indicator — one shared element
+                    // (see the layoutId) that physically slides from chip
+                    // to chip as the mode changes, the same technique
+                    // NoteEditor's own editorPaletteRing already uses for
+                    // its color dots, rather than each chip only fading
+                    // its own background in place.
+                    mode === id && (
+                      <motion.span
+                        layoutId="constellationModePill"
+                        className="note-constellation-mode-pill"
+                        transition={ SNAPPY }
+                      />
+                    )
+                  }
+                  <span className="note-constellation-mode-chip-content">
+                    <Icon aria-hidden="true" />
+                    { label }
+                  </span>
                 </button>
               ))
             }

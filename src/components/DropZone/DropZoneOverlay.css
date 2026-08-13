@@ -54,6 +54,17 @@
   will-change: transform;
 }
 
+/* The one-shot splash node (see DropZoneBlob's `splash` controls) — sits
+   between the imperative position write above and the scale-pulse below,
+   sized to fill the wrap exactly like a transparent pass-through so it
+   never changes the blob's own layout, only adds its own transform. */
+.drop-zone-blob-splash {
+  display: block;
+  width: 100%;
+  height: 100%;
+  will-change: transform;
+}
+
 /* The scale-pulsing node, fully declarative (framer's own animate prop) —
    kept as its own nested element specifically so it never has to share one
    transform with the imperative position write above. */
@@ -64,6 +75,8 @@
   will-change: transform;
 }
 
+/* filter: the icon's own living-ink wobble — see DropZoneOverlay.jsx's
+   iconDisplaceRef for the GSAP tween driving #drop-zone-icon-ripple. */
 .drop-zone-frame .drop-zone-icon {
   position: relative;
   z-index: 1;
@@ -71,6 +84,7 @@
   font-size: 34px;
   color: var(--page-ink-color);
   margin-bottom: 6px;
+  filter: url(#drop-zone-icon-ripple);
   transition: color 0.4s ease-in-out;
 }
 

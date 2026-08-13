@@ -358,6 +358,21 @@
   stroke-dasharray: 1 7;
 }
 
+/* A favorite's own moon orbit — the same quiet dashed-guide language as
+   the orrery's own orbit guides above, just fainter and tighter for the
+   much smaller scale, and never mode-gated: a moon's orbit is a standing
+   fact about that note, not something only orrery gets to show. */
+.note-constellation-moon-orbit {
+  fill: none;
+  stroke: var(--page-ink-color);
+  stroke-width: 1px;
+  stroke-dasharray: 1 3;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  opacity: .22;
+  pointer-events: none;
+}
+
 /* Voronoi territories — see NoteConstellation.jsx's own VORONOI constant
    block. Crisp hairline cell walls (non-scaling, like every other
    instrument line here) over a whisper of each note's own color; the
@@ -1213,9 +1228,7 @@
 }
 
 .note-constellation-mode-chip {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+  position: relative;
   padding: 6px 14px;
   border: none;
   border-radius: 999px;
@@ -1234,7 +1247,25 @@
 
 .note-constellation-mode-chip.active {
   color: var(--page-bg-color);
+}
+
+/* The sliding indicator itself (see the layoutId in NoteConstellation.jsx)
+   — one shared element framer physically animates from chip to chip,
+   sitting behind the label/icon rather than the chip's own background. */
+.note-constellation-mode-pill {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 999px;
   background-color: var(--page-ink-color);
+}
+
+.note-constellation-mode-chip-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .note-constellation-mode-chip svg {
