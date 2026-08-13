@@ -32,40 +32,12 @@
   justify-content: center;
 }
 
-/* Paper tension's own wrapper (see NoteEditor.jsx's tensionRef) — sized
-   purely by its .note-editor child (inline-flex rather than block, so it
-   shrink-wraps that child exactly instead of stretching to the jelly
-   parent's own flex line), which is what keeps the skew's default
-   transform-origin centered on the paper itself rather than some larger,
-   empty box around it. */
-.note-editor-tension {
-  display: inline-flex;
-}
-
 /* tabIndex={-1} in the JSX makes this the focus trap's fallback landing
    spot (see useFocusTrap.js) for a locked note, which has no text field to
    put the caret in instead — a visible outline around the whole shell
    isn't useful the way one around an actual control is. */
 .note-editor-shell {
   outline: none;
-}
-
-/* The unfurl's own light sheen (see NoteEditor.jsx's UNFURL_OPEN_DURATION
-   and requestClose) — a thin band GSAP slides down (open) or up (close)
-   in lockstep with the clip-path reveal on this same shell, catching the
-   light the way a real curling sheet's own fold does. Inert to pointer
-   events and starts fully transparent (opacity is GSAP's own to drive) so
-   it's invisible whenever reduced motion skips the whole timeline. */
-.note-editor-unfurl-sheen {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 46px;
-  margin-top: -23px;
-  background: linear-gradient(180deg, transparent, var(--white-color) 50%, transparent);
-  opacity: 0;
-  pointer-events: none;
-  z-index: 3;
 }
 
 /* The paper itself. Width and height are driven by the size spring in JS;
@@ -88,13 +60,9 @@
     0 0 0 4px var(--white-transclucent-color),
     0 40px 90px -30px rgba(25, 25, 25, 0.55);
   /* The preset classes (.cozy/.grand/.epic below) only change padding and
-    border-radius, not width/height (those are widthMV/heightMV, live
-    motion values — see NoteEditor.jsx). `size` itself DOES update
-    continuously while the corner handle is actually being dragged (see
-    handleResizeMove), which is exactly why this still needs the
-    transition below: without it, padding/radius would visibly snap at
-    every preset boundary the drag passes through, instead of easing the
-    same way the width/height under it already are. */
+    border-radius, and only ever at the end of a drag-resize (see
+    handleResizeEnd in NoteEditor.jsx) rather than continuously through
+    it — this just softens that one jump instead of a hard cut. */
   transition: padding 0.25s ease-in-out, border-radius 0.25s ease-in-out;
 }
 
@@ -239,15 +207,6 @@
 
 .note-editor-title::placeholder {
   color: var(--black-more-transclucent-color);
-}
-
-/* The title's own liquid wobble (see LiquidTextFilter.jsx for the shared
-   filter this references) — living ink while the title just sits there,
-   steadied off the instant you're actually placing a caret in it: typing
-   into text that's also wobbling would fight the very precision typing
-   needs, so focus (not a separate toggle) is what turns it off and back on. */
-.note-editor-title.liquid-text:focus {
-  filter: none;
 }
 
 /* The tag rack: pinned tags as small pills, a bare-underline field to add
@@ -400,38 +359,6 @@
 .note-editor-count.muted {
   color: var(--black-color);
   background: var(--black-even-more-transclucent-color);
-}
-
-/* The corner drag handle (see handleResizeDown in NoteEditor.jsx) — three
-   short diagonal strokes in the classic "resize grip" language, sitting
-   flush in the paper's own bottom-right corner. A plain CSS hover/active
-   scale rather than a Framer Motion whileHover/whileTap: this element's
-   own pointer handlers already drive real physics every move, and layering
-   a second, independent animation system on the same element would just
-   be two things fighting over one transform. */
-.note-editor-resize-handle {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  width: 22px;
-  height: 22px;
-  cursor: nwse-resize;
-  touch-action: none;
-  background:
-    linear-gradient(135deg, transparent 0 40%, var(--black-more-transclucent-color) 40% 46%, transparent 46% 60%, var(--black-more-transclucent-color) 60% 66%, transparent 66% 80%, var(--black-more-transclucent-color) 80% 86%, transparent 86%);
-  opacity: .55;
-  transition: opacity .15s ease-in-out, transform .15s ease-in-out;
-  z-index: 2;
-}
-
-.note-editor-resize-handle:hover {
-  opacity: .9;
-  transform: scale(1.12);
-}
-
-.note-editor-resize-handle:active {
-  opacity: 1;
-  transform: scale(.94);
 }
 
 /* The type scales with the paper. */
