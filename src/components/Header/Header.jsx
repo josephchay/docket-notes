@@ -4,20 +4,18 @@ import gsap from "gsap";
 import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan, FaClockRotateLeft, FaGear, FaLayerGroup } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
-import { MILESTONES } from "../../constants/milestones";
 import { COMMAND_EVENT } from "../Command/CommandPalette";
 import { INSIGHTS_EVENT } from "../Insights/InsightsPanel";
 import { TRASH_EVENT } from "../Trash/TrashPanel";
 import { HISTORY_EVENT } from "../History/HistoryPanel";
 import { SETTINGS_EVENT } from "../Settings/SettingsPanel";
+import { INK_LEVELS_EVENT } from "./InkLevelsPanel";
 import searchIcon from '../../assets/icons/search.svg';
 import useJellyTap from "../../hooks/useJellyTap";
 import useInkPulse from "../../hooks/useInkPulse";
 import useMagnetic from "../../hooks/useMagnetic";
 import { playStar } from "../../utils/sound";
-import LiquidMeter from "../Meter/LiquidMeter";
 import SparkBurst from "../Spark/SparkBurst";
-import InkVial from "./InkVial";
 import FilterScatter from "./FilterScatter";
 import { SNAPPY, POP, RAIL_SLIDE, enterExitStagger, iconSpin } from "../Motion";
 
@@ -122,6 +120,7 @@ const Header = ({
   // has some spring in it. Each gets its own jelly, played on its own inner
   // icon span so it never fights the button's own hover/tap scale.
   const starJelly = useJellyTap();
+  const inkJelly = useJellyTap();
   const insightsJelly = useJellyTap();
   const historyJelly = useJellyTap();
   const commandJelly = useJellyTap();
@@ -220,38 +219,12 @@ const Header = ({
     setNotesSortByFavorite();
   }
 
-  // The ink-levels chart: how much of each ink the desk holds, as springy
-  // bars. Clicking a bar borrows the color filter, so the chart doubles as
-  // a control. Closes on any press outside it.
-  const [inkOpen, setInkOpen] = useState(false);
-  const inkRef = useRef(null);
-
-  useEffect(() => {
-    if (!inkOpen) return;
-
-    const close = (e) => {
-      if (inkRef.current && !inkRef.current.contains(e.target)) setInkOpen(false);
-    };
-
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, [inkOpen]);
-
+  // How much of each ink the desk holds, and overall progress toward the
+  // next milestone, now live in their own full panel (see
+  // InkLevelsPanel.jsx) rather than a toolbar popover — this button just
+  // summons it, the same event-dispatch convention every other panel
+  // trigger below already uses.
   const paletteNames = Object.keys(NOTE_COLORS);
-  const maxCount = Math.max(1, ...paletteNames.map((name) => colorCounts?.[name] ?? 0));
-
-  // The ink vial's fill: how far the desk has come from the last milestone
-  // toward the next one (not just totalCount/nextMilestone from zero —
-  // that would look nearly full for most of the app's life once a few
-  // milestones have passed). Maxed out once every milestone is behind it.
-  const nextMilestone = MILESTONES.find((m) => m > totalCount) ?? null;
-  const prevMilestone = [...MILESTONES].reverse().find((m) => m <= totalCount) ?? 0;
-  const milestoneRatio = nextMilestone
-    ? (totalCount - prevMilestone) / (nextMilestone - prevMilestone)
-    : 1;
-  const milestoneLabel = nextMilestone
-    ? `${ totalCount } / ${ nextMilestone } to the next milestone`
-    : `${ totalCount } notes — every milestone reached`;
 
   // The ink wash washes out from wherever the theme button actually sits,
   // not the pointer — so it looks the same whether it was clicked, tapped,
@@ -487,111 +460,7 @@ const Header = ({
           )
         }
       </AnimatePresence>
-      <div
-        className="ink-levels"
-        ref={ inkRef }
-      >
-        <motion.button
-          type="button"
-          aria-expanded={ inkOpen }
-          aria-label="Show how much of each ink the desk holds"
-          title="Ink levels"
-          className={ `ink-button ${ inkOpen ? "open" : "" }` }
-          whileHover={{ scale: 1.14 }}
-          whileTap={{ scale: .9 }}
-          transition={ springy }
-          onClick={ () => setInkOpen((prev) => !prev) }
-        >
-          <span ref={ toolbarMagnetic.registerItem(1) } style={{ display: "inline-flex" }}>
-            <FaChartSimple className="ink-button-icon" />
-          </span>
-        </motion.button>
-        <AnimatePresence>
-          {
-            inkOpen && (
-              <motion.div
-                key="inkPopover"
-                className="ink-popover"
-                style={{ originX: .85, originY: 0 }}
-                initial={{ opacity: 0, scale: .2, translateY: -8, borderRadius: 40 }}
-                animate={{ opacity: 1, scale: 1, translateY: 0, borderRadius: 16 }}
-                exit={{
-                  opacity: 0,
-                  scale: .3,
-                  translateY: -8,
-                  borderRadius: 40,
-                  transition: { duration: .18, ease: "easeIn" },
-                }}
-                transition={{ type: "spring", stiffness: 240, damping: 15 }}
-              >
-                <div className="ink-meter-row">
-                  <LiquidMeter ratio={ milestoneRatio } color="var(--page-ink-color)" label={ milestoneLabel } reduceMotion={ reduceMotion } celebration={ celebration } />
-                </div>
-                <div className="ink-row">
-                  {
-                    paletteNames.map((name, index) => {
-                      const count = colorCounts?.[name] ?? 0;
-                      const label = `${ count } ${ name } ${ count === 1 ? "note" : "notes" }`;
-
-                      return (
-                        <button
-                          key={ name }
-                          type="button"
-                          title={ label }
-                          aria-label={
-                            sortColor === name
-                              ? `${ label } — showing only these; press to show every color`
-                              : `${ label } — press to show only these`
-                          }
-                          aria-pressed={ sortColor === name }
-                          className={ `ink-column ${ sortColor === name ? "active" : "" }` }
-                          onClick={ () => setSortColor(sortColor === name ? null : name) }
-                        >
-                          <motion.span
-                            key={ `${ name }-${ count }` }
-                            className="ink-count"
-                            initial={{ opacity: 0, scale: .5 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{
-                              type: "spring",
-                              stiffness: 500,
-                              damping: 20,
-                              delay: .1 + index * .045,
-                            }}
-                          >
-                            { count }
-                          </motion.span>
-                          <motion.span
-                            className="ink-vial-wrap"
-                            style={{ originY: 1 }}
-                            initial={{ scaleY: 0 }}
-                            animate={{ scaleY: 1 }}
-                            transition={{
-                              type: "spring",
-                              stiffness: 320,
-                              damping: 13,
-                              delay: .06 + index * .045,
-                            }}
-                          >
-                            <InkVial
-                              count={ count }
-                              height={ 8 + Math.round((count / maxCount) * 56) }
-                              colorName={ name }
-                              open={ inkOpen }
-                              reduceMotion={ reduceMotion }
-                            />
-                          </motion.span>
-                        </button>
-                      );
-                    })
-                  }
-                </div>
-              </motion.div>
-            )
-          }
-        </AnimatePresence>
-      </div>
-      {/* insights -> settings all pop in as one staggered wave once the
+      {/* ink-levels -> settings all pop in as one staggered wave once the
           toolbar has landed, picking up right where .color-filters' own
           wave leaves off. display:contents (the same trick QuickDock's own
           item row uses) lets this group share one variants context without
@@ -603,6 +472,16 @@ const Header = ({
         initial="hidden"
         animate="shown"
       >
+      <WandButton
+        ariaLabel="Show how much of each ink the desk holds"
+        title="Ink levels"
+        rotate={ 10 }
+        jelly={ inkJelly }
+        magnetRef={ toolbarMagnetic.registerItem(1) }
+        onClick={ () => window.dispatchEvent(new CustomEvent(INK_LEVELS_EVENT)) }
+        className="ink-trigger"
+        icon={ FaChartSimple }
+      />
       <WandButton
         ariaLabel="Show desk insights"
         title="Desk insights"

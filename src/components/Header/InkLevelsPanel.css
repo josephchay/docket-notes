@@ -1,0 +1,205 @@
+.ink-levels-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+
+.ink-levels-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(25, 25, 25, 0.28);
+}
+
+:root[data-theme="dark"] .ink-levels-backdrop {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* border-radius is animated by framer during the drop-to-sheet morph, so it
+   is deliberately not set here. */
+.ink-levels-panel {
+  position: relative;
+  width: min(420px, 92vw);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
+  will-change: transform;
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+  /* tabIndex={-1} in the JSX makes this the focus trap's landing spot on
+     open (see useFocusTrap.js) — a visible outline around the entire
+     panel isn't useful the way one around an actual control is. */
+  outline: none;
+}
+
+.ink-levels-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--page-line-color);
+  transition: border-color 0.4s ease-in-out;
+}
+
+.ink-levels-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.ink-levels-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 9px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.ink-levels-body {
+  padding: 6px 20px 22px;
+}
+
+.ink-levels-section {
+  margin-top: 22px;
+}
+
+.ink-levels-section:first-child {
+  margin-top: 8px;
+}
+
+.ink-levels-section h4 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--page-ink-color);
+  opacity: .55;
+  transition: color 0.4s ease-in-out;
+}
+
+/* Bars sit on a shared baseline with a gap between them, the same
+   .insights-bars layout Desk insights' own "Notes by color" section
+   uses — no scrollbar, a busy palette just wraps onto another row. */
+.ink-levels-bars {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  padding-bottom: 2px;
+}
+
+.ink-levels-column {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+  min-width: 34px;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 4px 2px 0;
+  border-radius: 10px;
+}
+
+/* Replaces the old plain ink-column's native title tooltip with the
+   same ink-tab language Desk insights' own .insights-tooltip uses —
+   anchored below rather than above, same reasoning: this section can
+   sit near the top of a scrolled panel with nowhere to grow upward
+   into before getting clipped. */
+.ink-levels-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-top: 7px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -4px);
+  transition: opacity 0.15s ease-out, transform 0.15s ease-out, background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+  z-index: 5;
+}
+
+.ink-levels-column:hover .ink-levels-tooltip,
+.ink-levels-column:focus-visible .ink-levels-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* Counts and labels stay in ink, never the vial's own color — same rule
+   Desk insights' own .insights-bar-count/.insights-bar-label keep. */
+.ink-levels-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.ink-levels-vial-wrap {
+  display: block;
+}
+
+/* InkVial.jsx's own SVG — a real liquid surface, wearing the same
+   opacity/hover language Desk insights' own .insights-bar does, just
+   applied to a vial shape instead of a flat rectangle. */
+.ink-levels-column .ink-vial {
+  display: block;
+  opacity: .85;
+  transition: opacity 0.25s ease-in-out;
+}
+
+.ink-levels-column .ink-vial-fill {
+  stroke: transparent;
+  stroke-width: 2px;
+  paint-order: stroke;
+  transition: stroke 0.25s ease-in-out;
+}
+
+.ink-levels-button:hover .ink-vial {
+  opacity: 1;
+}
+
+.ink-levels-button.active .ink-vial {
+  opacity: 1;
+}
+
+/* box-shadow doesn't reach an SVG shape's own edge the way it would a
+   DOM box — same limitation Desk insights' own active-bar ring would
+   hit here, so this uses a real stroke around the liquid shape's own
+   outline instead, same as the vial always has. */
+.ink-levels-button.active .ink-vial-fill {
+  stroke: var(--page-ink-color);
+}
+
+.ink-levels-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--page-ink-color);
+  opacity: .55;
+  white-space: nowrap;
+  transition: color 0.4s ease-in-out;
+}

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, useAnimationControls } from "framer-motion";
 import {
   FaXmark, FaPlus, FaExpand, FaHourglassHalf, FaMagnifyingGlass,
   FaWandMagicSparkles, FaRotateLeft, FaArrowRotateRight, FaArrowsUpDown,
@@ -7,8 +7,9 @@ import {
 } from "react-icons/fa6";
 
 import SheetPanel from "../Sheet/SheetPanel";
+import SparkBurst from "../Spark/SparkBurst";
 import useJellyTap from "../../hooks/useJellyTap";
-import { LIST_ROW_SPRING, listRowDelay } from "../Motion";
+import { LIST_ROW_SPRING, listRowDelay, EXIT_SPRING, SETTLE } from "../Motion";
 
 import "./ShortcutsSheet.css";
 
@@ -29,6 +30,8 @@ const SHORTCUTS = [
   { keys: ["Esc"], label: "Close whatever's open", icon: FaXmark },
   { keys: ["?"], label: "Show this sheet", icon: FaQuestion },
 ];
+
+const ROW_COUNT = SHORTCUTS.length;
 
 // Maps a KeyboardEvent's own `.key` to whatever label this sheet shows for
 // it — most keys already match once upper-cased, a handful of named ones
@@ -54,36 +57,86 @@ const labelForKey = (key) => KEY_ALIASES[key] ?? (key.length === 1 ? key.toUpper
 // while this sheet is open, not just decoratively on hover. Its own
 // component (rather than inlined in the map below) since useJellyTap needs
 // one controller per row, and hooks can't run in a loop.
-const ShortcutRow = ({ row, index, pressedKeys }) => {
+//
+// `matchIndex`/`matchTick` come from the same pressedKeys, one level up —
+// whenever holding the sheet's own keys actually completes a whole row's
+// combo, every row hears about it via the shared tick. The matched row
+// (distance 0) gets to celebrate for real: its hover-jelly squash echoed
+// back as confirmation, plus a small SparkBurst flick off its icon — the
+// same "something landed" ink language every other consequential button in
+// the app already uses, never a confetti shower. Every other row instead
+// feels the keystroke secondhand, as a decaying ripple (amplitude and delay
+// both falling off with distance) rather than staying inert — a physical
+// "tap the desk" response instead of an isolated change.
+const ShortcutRow = ({ row, index, pressedKeys, matchIndex, matchTick }) => {
   const iconJelly = useJellyTap();
+  const rippleControls = useAnimationControls();
+  const [burst, setBurst] = useState(false);
+  const seenTick = useRef(matchTick);
   const Icon = row.icon;
+
+  useEffect(() => {
+    if (matchTick === seenTick.current || matchIndex < 0) return;
+    seenTick.current = matchTick;
+
+    const distance = index - matchIndex;
+    if (distance === 0) {
+      iconJelly.squash();
+      setBurst(true);
+      const clear = setTimeout(() => setBurst(false), 650);
+      return () => clearTimeout(clear);
+    }
+
+    const amplitude = Math.max(0, 5 - Math.abs(distance) * 1.8);
+    if (amplitude <= 0) return;
+    const dir = distance > 0 ? 1 : -1;
+
+    rippleControls.start({
+      translateY: [0, dir * amplitude, dir * -amplitude * .35, 0],
+      transition: {
+        duration: .5,
+        delay: Math.abs(distance) * .04,
+        times: [0, .3, .65, 1],
+        ease: "easeOut",
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchTick]);
 
   return (
     <motion.div
       className="shortcuts-row"
       initial={{ opacity: 0, translateX: -16 }}
       animate={{ opacity: 1, translateX: 0 }}
+      exit={{
+        opacity: 0,
+        translateX: 16,
+        transition: { ...EXIT_SPRING, delay: listRowDelay(ROW_COUNT - 1 - index, { base: .02, step: .03 }) },
+      }}
       transition={{ ...LIST_ROW_SPRING, delay: listRowDelay(index, { step: .04 }) }}
       onHoverStart={ iconJelly.squash }
     >
-      <span className="shortcuts-row-main">
-        <motion.span className="shortcuts-row-icon" animate={ iconJelly.jelly }>
-          <Icon />
-        </motion.span>
-        <span className="shortcuts-row-label">{ row.label }</span>
-      </span>
-      <span className="shortcuts-row-keys">
-        {
-          row.keys.map((key) => (
-            <kbd
-              key={ key }
-              className={ `shortcuts-key ${ pressedKeys.has(key) ? "is-pressed" : "" }` }
-            >
-              { key }
-            </kbd>
-          ))
-        }
-      </span>
+      <motion.div className="shortcuts-row-inner" animate={ rippleControls }>
+        <span className="shortcuts-row-main">
+          <motion.span className="shortcuts-row-icon" animate={ iconJelly.jelly }>
+            <Icon />
+            <SparkBurst active={ burst } count={ 5 } radius={ 16 } className="shortcuts-row-burst" />
+          </motion.span>
+          <span className="shortcuts-row-label">{ row.label }</span>
+        </span>
+        <span className="shortcuts-row-keys">
+          {
+            row.keys.map((key) => (
+              <kbd
+                key={ key }
+                className={ `shortcuts-key ${ pressedKeys.has(key) ? "is-pressed" : "" }` }
+              >
+                { key }
+              </kbd>
+            ))
+          }
+        </span>
+      </motion.div>
     </motion.div>
   );
 };
@@ -126,10 +179,13 @@ const ShortcutsSheet = () => {
   // Cleared on close and on window blur (alt-tabbing away mid-hold would
   // otherwise leave a key stuck lit — keyup never fires once focus is gone).
   const [pressedKeys, setPressedKeys] = useState(() => new Set());
+  const matchedRowRef = useRef(-1);
+  const [match, setMatch] = useState({ index: -1, tick: 0 });
 
   useEffect(() => {
     if (!open) {
       setPressedKeys(new Set());
+      matchedRowRef.current = -1;
       return;
     }
 
@@ -158,6 +214,22 @@ const ShortcutsSheet = () => {
     };
   }, [open]);
 
+  // Whenever the held keys actually complete one row's whole combo, stamp a
+  // fresh tick so every row can react exactly once — the matched row
+  // confirms, its neighbors ripple (see ShortcutRow above). Read off a ref
+  // rather than re-derived state so this only fires on the rising edge of
+  // finishing a combo, never again for every extra key held past it.
+  useEffect(() => {
+    if (!open) return;
+    const index = SHORTCUTS.findIndex((row) => row.keys.every((key) => pressedKeys.has(key)));
+    if (index !== -1 && index !== matchedRowRef.current) {
+      matchedRowRef.current = index;
+      setMatch({ index, tick: Date.now() });
+    } else if (index === -1) {
+      matchedRowRef.current = -1;
+    }
+  }, [pressedKeys, open]);
+
   return (
     <SheetPanel
       open={ open }
@@ -170,7 +242,22 @@ const ShortcutsSheet = () => {
       ariaLabel="Keyboard shortcuts"
     >
               <div className="shortcuts-header">
-                <h3>Shortcuts</h3>
+                {/* The shared #liquid-text filter (LiquidTextFilter.jsx,
+                    mounted once in Home.jsx) gives this its constant wet
+                    wobble, the same ambient idle every other liquid-text
+                    element wears — layered here with a one-off "welling up"
+                    entrance (a soft blur resolving into focus alongside the
+                    usual settle spring) so the title actually arrives wet,
+                    rather than just idling that way once it's already on
+                    screen. */}
+                <motion.h3
+                  className="liquid-text"
+                  initial={{ opacity: 0, scale: .85, filter: "blur(3px)" }}
+                  animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                  transition={{ ...SETTLE, delay: .1 }}
+                >
+                  Shortcuts
+                </motion.h3>
                 <motion.button
                   type="button"
                   aria-label="Close"
@@ -186,7 +273,14 @@ const ShortcutsSheet = () => {
               <div className="shortcuts-list">
                 {
                   SHORTCUTS.map((row, index) => (
-                    <ShortcutRow key={ row.label } row={ row } index={ index } pressedKeys={ pressedKeys } />
+                    <ShortcutRow
+                      key={ row.label }
+                      row={ row }
+                      index={ index }
+                      pressedKeys={ pressedKeys }
+                      matchIndex={ match.index }
+                      matchTick={ match.tick }
+                    />
                   ))
                 }
               </div>

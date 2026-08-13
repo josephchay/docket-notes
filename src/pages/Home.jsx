@@ -13,6 +13,7 @@ import {
   FaMagnifyingGlass,
   FaQuestion,
   FaChartLine,
+  FaChartSimple,
   FaClockRotateLeft,
   FaArrowRotateRight,
   FaCompress,
@@ -62,6 +63,7 @@ import TourGuide, { TOUR_EVENT } from "../components/Tour/TourGuide";
 import ShotReplay, { REPLAY_EVENT } from "../components/Replay/ShotReplay";
 import BulkActionBar from "../components/Bulk/BulkActionBar";
 import InsightsPanel, { INSIGHTS_EVENT } from "../components/Insights/InsightsPanel";
+import InkLevelsPanel, { INK_LEVELS_EVENT } from "../components/Header/InkLevelsPanel";
 import TrashPanel, { TRASH_EVENT } from "../components/Trash/TrashPanel";
 import HistoryPanel, { HISTORY_EVENT } from "../components/History/HistoryPanel";
 import SettingsPanel, { SETTINGS_EVENT } from "../components/Settings/SettingsPanel";
@@ -1228,6 +1230,12 @@ const Home = () => {
       perform: () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)),
     },
     {
+      key: "ink-levels",
+      label: "Show ink levels",
+      icon: <FaChartSimple />,
+      perform: () => window.dispatchEvent(new CustomEvent(INK_LEVELS_EVENT)),
+    },
+    {
       key: "gravity-field",
       label: "Show the gravity field",
       icon: <FaMeteor />,
@@ -1432,6 +1440,15 @@ const Home = () => {
         avgChars={ insights.avgChars }
         sortColor={ notesSortColor }
         setSortColor={ setNotesSortColor }
+        reduceMotion={ reduceMotion }
+      />
+      <InkLevelsPanel
+        totalCount={ notes.length }
+        colorCounts={ colorCounts }
+        sortColor={ notesSortColor }
+        setSortColor={ setNotesSortColor }
+        reduceMotion={ reduceMotion }
+        celebration={ celebration }
       />
       <GravityFieldPanel reduceMotion={ reduceMotion } />
       <FluidFieldPanel reduceMotion={ reduceMotion } />

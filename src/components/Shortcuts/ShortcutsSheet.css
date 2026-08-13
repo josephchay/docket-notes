@@ -76,9 +76,6 @@
 }
 
 .shortcuts-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   padding: 10px 12px;
   border-radius: 10px;
   transition: background-color 0.2s ease-in-out;
@@ -86,6 +83,18 @@
 
 .shortcuts-row:hover {
   background-color: var(--page-surface-color);
+}
+
+/* The inner flex layout lives one level down from .shortcuts-row itself —
+   this is the node the neighbor-ripple's translateY actually animates (see
+   ShortcutRow's rippleControls in ShortcutsSheet.jsx), kept separate from
+   the row's own entrance/exit transform so the two never fight over one
+   element's animate prop. */
+.shortcuts-row-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
 }
 
 .shortcuts-row-main {
@@ -96,6 +105,7 @@
 }
 
 .shortcuts-row-icon {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -107,6 +117,20 @@
   color: var(--page-ink-color);
   background-color: var(--page-surface-color);
   transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+/* The flick of ink off a row's icon when its shortcut is actually pressed
+   for real (see ShortcutRow's `burst` state) — same anchoring recipe as
+   Header's own .star-burst, absolutely centered over the icon it's
+   colored to match via currentColor. */
+.shortcuts-row-burst {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  color: var(--page-ink-color);
 }
 
 .shortcuts-row:hover .shortcuts-row-icon {
