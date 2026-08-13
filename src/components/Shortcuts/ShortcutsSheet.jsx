@@ -249,14 +249,22 @@ const ShortcutsSheet = () => {
                     entrance (a soft blur resolving into focus alongside the
                     usual settle spring) so the title actually arrives wet,
                     rather than just idling that way once it's already on
-                    screen. */}
+                    screen. Split across two nodes rather than one: framer
+                    writes this entrance's own `filter: blur()` as a plain
+                    inline style, which never clears once the animation
+                    settles — on the SAME element as .liquid-text, that
+                    leftover inline `blur(0px)` would permanently outrank
+                    (and hide) the class's own stylesheet `filter:
+                    url(#liquid-text)` for good. The outer h3 owns the
+                    entrance's blur/scale/opacity; the inner span alone
+                    wears .liquid-text, untouched by any inline style, so
+                    the ambient wobble actually keeps running after. */}
                 <motion.h3
-                  className="liquid-text"
                   initial={{ opacity: 0, scale: .85, filter: "blur(3px)" }}
                   animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
                   transition={{ ...SETTLE, delay: .1 }}
                 >
-                  Shortcuts
+                  <span className="liquid-text">Shortcuts</span>
                 </motion.h3>
                 <motion.button
                   type="button"

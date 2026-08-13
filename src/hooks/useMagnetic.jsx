@@ -16,6 +16,14 @@ const useMagnetic = ({ range = 96, maxLift = 16, maxScale = 1.55, axis = "x", re
   const itemRefs = useRef([]);
   const quickTweens = useRef([]);
 
+  // The pointer's own real exit velocity (see handleLeave below) — a couple
+  // of recent samples is enough for a usable px/ms estimate without the
+  // cost of keeping a longer history like the throw-projection ones
+  // (ColorSelector.jsx's own drag samples) bother with, since this only
+  // ever needs "how fast was it moving just now," not a whole gesture.
+  const lastSampleRef = useRef(null);
+  const velocityRef = useRef({ vx: 0, vy: 0 });
+
   // Handed to an element's `ref` prop as `registerItem(index)`.
   const registerItem = (index) => (el) => {
     itemRefs.current[index] = el;
@@ -33,6 +41,19 @@ const useMagnetic = ({ range = 96, maxLift = 16, maxScale = 1.55, axis = "x", re
 
   const handleMove = (e) => {
     if (reduceMotion) return;
+
+    const now = performance.now();
+    const last = lastSampleRef.current;
+    if (last) {
+      const dt = now - last.t;
+      if (dt > 0) {
+        velocityRef.current = {
+          vx: (e.clientX - last.x) / dt,
+          vy: (e.clientY - last.y) / dt,
+        };
+      }
+    }
+    lastSampleRef.current = { x: e.clientX, y: e.clientY, t: now };
 
     itemRefs.current.forEach((el, index) => {
       if (!el) return;
@@ -60,11 +81,34 @@ const useMagnetic = ({ range = 96, maxLift = 16, maxScale = 1.55, axis = "x", re
   };
 
   const handleLeave = () => {
+    // How hard the pointer was actually moving the instant it left — a
+    // real exit velocity, read straight off the last couple of handleMove
+    // samples, rather than every release playing the exact same fixed
+    // snap-back regardless of whether the hand whipped past or drifted
+    // off. At zero velocity this reduces to exactly the original release
+    // (amplitude 1, no kick) — a pointer that was already still leaves the
+    // row exactly as it did before this existed.
+    const { vx, vy } = velocityRef.current;
+    const speed = Math.min(Math.hypot(vx, vy), 3); // px/ms, clamped — a flick, not a teleport
+    const amplitude = (1 + Math.min(speed / 1.2, 1.3)).toFixed(2);
+    const dirX = axis === "y" ? 0 : Math.sign(vx) || 0;
+    const kick = Math.min(speed * 5, 14);
+
     itemRefs.current.forEach((el, index) => {
       if (!el) return;
       quickTweens.current[index] = null;
-      gsap.to(el, { scale: 1, y: 0, duration: .6, ease: "elastic.out(1, 0.45)" });
+
+      const timeline = gsap.timeline();
+      // A fast exit keeps carrying the row a touch further along the
+      // pointer's own direction before the spring reels it back — the
+      // same "continues past release" read ColorSelector's own flick-throw
+      // gives a poured note, applied here to the whole row's snap instead.
+      if (kick > 1) timeline.to(el, { x: dirX * kick, duration: .07, ease: "power1.out" });
+      timeline.to(el, { x: 0, scale: 1, y: 0, duration: .6, ease: `elastic.out(${ amplitude}, 0.45)` });
     });
+
+    lastSampleRef.current = null;
+    velocityRef.current = { vx: 0, vy: 0 };
   };
 
   return { registerItem, handleMove, handleLeave };

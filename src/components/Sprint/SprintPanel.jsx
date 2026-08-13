@@ -7,6 +7,7 @@ import { FaPlay, FaPause, FaRotateLeft, FaForward, FaXmark, FaMugHot, FaFeatherP
 import { sprintMachine, SPRINT_PRESETS } from "./SprintState";
 import useInkPulse from "../../hooks/useInkPulse";
 import SheetPanel from "../Sheet/SheetPanel";
+import { blobPath, createBlobMorph } from "../../utils/blob";
 
 import "./SprintPanel.css";
 
@@ -16,6 +17,23 @@ export const SPRINT_EVENT = "docket:sprint";
 
 const RING_R = 70;
 const CIRCUMFERENCE = 2 * Math.PI * RING_R;
+const BLOB_SIZE = 148; // matches .sprint-blob's own inset: 14px on the 176px ring-wrap
+
+// Dragging the ring itself while idle (see handleRingPointerDown below)
+// dials a custom length continuously between these two bounds, snapped to
+// the nearest minute — the three presets stay for a quick pick, this is
+// for anything in between.
+const LENGTH_DRAG_MIN_MINUTES = 5;
+const LENGTH_DRAG_MAX_MINUTES = 90;
+
+// The blob's own morph speed reacts to how little time is actually left
+// (see the ring-drain effect below) — once remainingRatio drops under
+// this fraction of the current phase's total, the loop starts playing
+// back faster, peaking at URGENCY_MAX_SPEED right at zero. A real
+// feedback loop (rate of visual change as a function of state), not a
+// fixed wobble regardless of how close the sprint actually is to done.
+const URGENCY_RATIO = .15;
+const URGENCY_MAX_SPEED = 2.4;
 
 const formatClock = (totalSeconds) => {
   const seconds = Math.max(0, Math.round(totalSeconds));
@@ -86,11 +104,25 @@ const SprintPanel = ({ reduceMotion }) => {
   }, []);
 
   const totalForPhase = context.phase === "break" ? context.breakSeconds : context.sprintSeconds;
-  const remainingRatio = totalForPhase > 0 ? context.secondsLeft / totalForPhase : 0;
+  // Idle reads the ring differently than every other phase: secondsLeft
+  // and sprintSeconds are always equal at rest (SET_LENGTH sets both
+  // together), so a plain secondsLeft/total ratio would just be a
+  // permanent 1 regardless of the chosen length. Instead this maps the
+  // CHOSEN length itself onto the [MIN,MAX] drag range (see
+  // LENGTH_DRAG_MIN/MAX_MINUTES) — the fill becomes "how long a sprint
+  // you're about to start," which is what dragging the ring below is
+  // actually dialing in.
+  const remainingRatio = phase === "idle"
+    ? Math.max(0, Math.min(1,
+      (context.sprintSeconds / 60 - LENGTH_DRAG_MIN_MINUTES) / (LENGTH_DRAG_MAX_MINUTES - LENGTH_DRAG_MIN_MINUTES),
+    ))
+    : totalForPhase > 0 ? context.secondsLeft / totalForPhase : 0;
 
   // The ring itself — a GSAP tween per tick rather than a declarative
   // target, so the drain reads as one continuous pour rather than a
-  // once-a-second jump cut.
+  // once-a-second jump cut. Idle's own duration stays 0 (an instant
+  // update) — that's what makes dragging the ring below read as live
+  // rather than lagging a tween behind the pointer.
   const ringRef = useRef(null);
 
   useEffect(() => {
@@ -102,31 +134,58 @@ const SprintPanel = ({ reduceMotion }) => {
       ease: "power1.out",
       overwrite: "auto",
     });
+
+    // The blob's own morph speed reacts to the same remainingRatio this
+    // ring just drained by — see URGENCY_RATIO's own comment.
+    if (blobTweenRef.current) {
+      const urgent = phase !== "idle" && remainingRatio < URGENCY_RATIO;
+      const timeScale = urgent ? 1 + (1 - remainingRatio / URGENCY_RATIO) * (URGENCY_MAX_SPEED - 1) : 1;
+      blobTweenRef.current.timeScale(timeScale);
+    }
   }, [remainingRatio, phase]);
 
   // The blob sitting behind the ring wobbles through a loose loop of organic
   // shapes the whole time a sprint or break is actually counting down, and
   // freezes mid-shape (rather than snapping back to a circle) the moment it
   // is paused — the same "soaking in" quality Note.jsx's delete-blob has.
-  // An infinite loop (repeat: -1) is exactly the large, continuous motion
-  // reduceMotion gates everywhere else in this app — and this one can run
-  // for the length of an entire focus sprint, not just a few seconds — so
-  // under it the tween never starts at all; the blob just sits at its
-  // default resting shape instead.
+  // A real flubber shape morph now (utils/blob.js — the exact machinery
+  // useBlobClipMorph.js already established for panel entrances) rather
+  // than the CSS border-radius percentage-string approximation this used
+  // to animate: an actual hand-drawn silhouette interpolating between real
+  // organic outlines, not four corner-radii faking one. An infinite loop
+  // (repeat: -1) is exactly the large, continuous motion reduceMotion gates
+  // everywhere else in this app — and this one can run for the length of
+  // an entire focus sprint, not just a few seconds — so under it the tween
+  // never starts at all; the blob just sits at its default resting shape.
   const blobRef = useRef(null);
+  const blobPathRef = useRef(null);
+  const blobMorphRef = useRef(null);
+  const blobProgressRef = useRef({ t: 0 });
   const blobTweenRef = useRef(null);
 
   useEffect(() => {
-    if (!blobRef.current || reduceMotion) return;
+    if (!blobPathRef.current) return;
+    const shapes = [
+      blobPath(BLOB_SIZE, BLOB_SIZE, 9, .3),
+      blobPath(BLOB_SIZE, BLOB_SIZE, 9, .4),
+      blobPath(BLOB_SIZE, BLOB_SIZE, 9, .32),
+    ];
+    blobMorphRef.current = createBlobMorph(blobPathRef.current, shapes);
+    blobMorphRef.current.set(0);
+  }, []);
+
+  useEffect(() => {
+    if (!blobRef.current || !blobMorphRef.current || reduceMotion) return;
     const active = phase === "running" || phase === "break";
 
     if (active && !blobTweenRef.current) {
-      blobTweenRef.current = gsap.to(blobRef.current, {
+      blobTweenRef.current = gsap.to(blobProgressRef.current, {
+        t: blobMorphRef.current.stageCount,
         duration: 4.5,
         repeat: -1,
         yoyo: true,
         ease: "sine.inOut",
-        borderRadius: "38% 62% 58% 42% / 48% 40% 60% 52%",
+        onUpdate: () => blobMorphRef.current?.set(blobProgressRef.current.t),
       });
     } else if (!active && blobTweenRef.current) {
       blobTweenRef.current.pause();
@@ -139,23 +198,43 @@ const SprintPanel = ({ reduceMotion }) => {
 
   // Every phase change throws one starchy squash-and-stretch across the
   // whole ring group, so starting, pausing, and tipping into a break each
-  // read as a distinct little jolt rather than a flat state swap.
+  // read as a distinct little jolt rather than a flat state swap. A
+  // running→break transition specifically — a sprint actually finished,
+  // not paused or reset — gets a bigger version of that same jolt plus a
+  // quick scale-bloom on the blob itself, the ink visibly breathing out in
+  // relief. Reuses only the ring/blob's own existing elastic language
+  // (bigger amplitude, not a new effect) — no confetti/particle burst, the
+  // same restraint InkCelebration.jsx already commits this app to for
+  // every other milestone moment.
   const ringGroupRef = useRef(null);
   const mountedRef = useRef(false);
+  const prevPhaseRef = useRef(phase);
 
   useEffect(() => {
     if (!mountedRef.current) {
       mountedRef.current = true;
+      prevPhaseRef.current = phase;
       return;
     }
     if (!ringGroupRef.current) return;
 
+    const completedSprint = prevPhaseRef.current === "running" && phase === "break";
+    prevPhaseRef.current = phase;
+
     gsap.fromTo(
       ringGroupRef.current,
-      { scale: 0.86, rotate: phase === "break" ? -4 : 4 },
-      { scale: 1, rotate: 0, duration: 0.7, ease: "elastic.out(1, 0.45)" }
+      { scale: completedSprint ? .82 : 0.86, rotate: phase === "break" ? -4 : 4 },
+      {
+        scale: 1, rotate: 0,
+        duration: completedSprint ? .9 : .7,
+        ease: completedSprint ? "elastic.out(1, .4)" : "elastic.out(1, 0.45)",
+      }
     );
-  }, [phase]);
+
+    if (completedSprint && blobRef.current && !reduceMotion) {
+      gsap.fromTo(blobRef.current, { scale: 1 }, { scale: 1.4, duration: .3, ease: "power2.out", yoyo: true, repeat: 1 });
+    }
+  }, [phase, reduceMotion]);
 
   const start = () => {
     service.send("START");
@@ -166,6 +245,44 @@ const SprintPanel = ({ reduceMotion }) => {
   const reset = () => service.send("RESET");
   const skip = () => service.send("SKIP");
   const setLength = (seconds) => service.send({ type: "SET_LENGTH", seconds });
+
+  // Grab the ring itself while idle and drag around it to dial in a custom
+  // length, rather than only ever tapping the three fixed presets — the
+  // angle from ring-center to pointer maps directly onto
+  // [LENGTH_DRAG_MIN_MINUTES, LENGTH_DRAG_MAX_MINUTES], snapped to the
+  // nearest minute. Every SET_LENGTH this dispatches sets secondsLeft
+  // alongside sprintSeconds (same reducer the presets already use), so the
+  // digital clock and the ring's own fill (see remainingRatio's idle
+  // branch above) both update live as the pointer moves, not just on
+  // release.
+  const ringDragRef = useRef(false);
+
+  const angleToMinutes = (clientX, clientY, rect) => {
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    let angle = Math.atan2(clientY - cy, clientX - cx) + Math.PI / 2;
+    if (angle < 0) angle += Math.PI * 2;
+    const t = angle / (Math.PI * 2);
+    return Math.round(LENGTH_DRAG_MIN_MINUTES + t * (LENGTH_DRAG_MAX_MINUTES - LENGTH_DRAG_MIN_MINUTES));
+  };
+
+  const handleRingPointerDown = (e) => {
+    if (phase !== "idle") return;
+    ringDragRef.current = true;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    setLength(angleToMinutes(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()) * 60);
+  };
+
+  const handleRingPointerMove = (e) => {
+    if (!ringDragRef.current) return;
+    setLength(angleToMinutes(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()) * 60);
+  };
+
+  const handleRingPointerUp = (e) => {
+    if (!ringDragRef.current) return;
+    ringDragRef.current = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
 
   const idle = phase === "idle";
   const running = phase === "running";
@@ -201,8 +318,20 @@ const SprintPanel = ({ reduceMotion }) => {
                 </div>
 
                 <div className="sprint-ring-wrap" ref={ ringGroupRef }>
-                  <span ref={ blobRef } className={ `sprint-blob ${ onBreak ? "break" : "sprint" }` } aria-hidden="true" />
-                  <svg className="sprint-ring" viewBox="0 0 160 160">
+                  <span ref={ blobRef } className={ `sprint-blob ${ onBreak ? "break" : "sprint" }` } aria-hidden="true">
+                    <svg viewBox={ `0 0 ${ BLOB_SIZE } ${ BLOB_SIZE }` }>
+                      <path ref={ blobPathRef } className="sprint-blob-path" />
+                    </svg>
+                  </span>
+                  <svg
+                    className={ `sprint-ring ${ idle ? "draggable" : "" }` }
+                    viewBox="0 0 160 160"
+                    onPointerDown={ handleRingPointerDown }
+                    onPointerMove={ handleRingPointerMove }
+                    onPointerUp={ handleRingPointerUp }
+                    onPointerCancel={ handleRingPointerUp }
+                    style={{ touchAction: "none" }}
+                  >
                     <circle className="sprint-ring-track" cx="80" cy="80" r={ RING_R } />
                     <circle
                       ref={ ringRef }

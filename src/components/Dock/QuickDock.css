@@ -18,10 +18,25 @@
   transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
 }
 
-/* Keeps the buttons as .quick-dock's own direct flex items for layout —
-   see the comment in QuickDock.jsx on why this wrapper exists at all. */
+/* quick-dock-items is now the Reorder.Group itself (see QuickDock.jsx) — a
+   real flex row rather than `display: contents` like the old plain wrapper
+   div, since a drag needs an actual laid-out box to reorder within. */
 .quick-dock-items {
-  display: contents;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+/* The Reorder.Item slot — owns the drag/reorder transform and the
+   entrance stagger; the button inside owns everything else (tap, hover,
+   the goo, magnetic) independently, the same split BulkActionBar's own
+   command-row-slot/command-item pairing already uses. touch-action: none
+   is required for framer's drag to take over touch scrolling here rather
+   than fighting it. */
+.quick-dock-slot {
+  display: flex;
+  touch-action: none;
+  cursor: grab;
 }
 
 .quick-dock-item {
@@ -48,15 +63,25 @@
   filter: url(#gooey-effect);
 }
 
+/* Now just position/size trackers for framer's own layoutId projection —
+   same convention -core already used (its own visible fill lives on the
+   inner .quick-dock-highlight span, not this shell). -trail now matches:
+   its real fill is .quick-dock-trail-fill below, kept on a separate inner
+   element so GSAP's own travel-stretch tween (QuickDock.jsx) never has to
+   share a transform with framer's layoutId animation on this element. */
 .quick-dock-blob {
   position: absolute;
   inset: 0;
   border-radius: 14px;
 }
 
-.quick-dock-blob-trail {
+.quick-dock-trail-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
   background-color: var(--page-surface-color);
   opacity: .85;
+  transform-origin: center;
 }
 
 .quick-dock-highlight {
@@ -72,6 +97,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  transform-origin: 50% 100%;
+}
+
+/* The impact ripple's own transform host (see the quick-dock-impact
+   listener in QuickDock.jsx) — wraps icon-wrap rather than reusing it, so
+   GSAP's own recoil tween never shares a transform with the magnetic
+   quickTo tweens already continuously driving icon-wrap's scale/y. Nested
+   transforms compose normally, so hovering and rippling the same icon at
+   once just visually combines both rather than one fighting the other. */
+.quick-dock-impact-wrap {
+  display: flex;
   transform-origin: 50% 100%;
 }
 

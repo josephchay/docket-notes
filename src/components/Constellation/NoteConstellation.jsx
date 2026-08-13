@@ -17,7 +17,7 @@ import { playDrip, playImpact, playMembrane, playStamp, playThreadPluck, playTic
 import { voronoiCells } from "../../utils/voronoi";
 import { smoothPath } from "../../utils/svgPath";
 import { createPoint, integratePoint, satisfyConstraint } from "../../utils/verlet";
-import { SNAPPY } from "../Motion";
+import { SNAPPY, SETTLE, POP } from "../Motion";
 import { constellationMachine, DIVE_DURATION_MS } from "./ConstellationState";
 
 import "./NoteConstellation.css";
@@ -1270,6 +1270,9 @@ const LASSO_MIN_POINTS = 4; // fewer than this and release resolves to nothing �
 const LASSO_MAX_POINTS = 400;
 const LASSO_HALO_PAD = 8; // px beyond the blob's own radius
 const LASSO_HALO_OPACITY = 0.22;
+const LASSO_SPLASH = 0.4; // per-member pool tap when a lasso closes — the same confirmation LENS_SPLASH already gives a tag click, since a hand-drawn loop is at least as deliberate
+const PIN_SPLASH = 0.35; // a single note's own quieter tap when it's freshly pinned — never on unpinning, which reads as a release, not an arrival
+const SEARCH_SPLASH = 0.4; // per-match tap when a search actually flies to its results, same tier as LASSO_SPLASH
 
 // The portrait — a keepsake, not another physics system. Every round so
 // far has added a way to STIR the desk; this is the one way to WALK AWAY
@@ -4538,6 +4541,13 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           byId.forEach((node, id) => {
             if (pointInPolygon(node.x, node.y, polygon)) picked.push(id);
           });
+          // A hand-drawn loop is at least as deliberate a selection as a
+          // tag click (see LENS_SPLASH's own confirmation), so it earns
+          // the same scatter of taps across exactly what it caught.
+          picked.forEach((id) => {
+            const node = byId.get(id);
+            if (node) ink?.splash(node.x, node.y, LASSO_SPLASH);
+          });
           setLassoIds(picked);
         }
         lasso.points = [];
@@ -4783,6 +4793,10 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
         ids.forEach((id) => {
           const node = byId.get(id);
           if (!node) return;
+          // Flying to a result set is exactly the kind of deliberate
+          // "here's what I found" moment LENS_SPLASH already marks for a
+          // tag click — the same confirmation, once per match.
+          ink?.splash(node.x, node.y, SEARCH_SPLASH);
           const mx = node.x * scaleX;
           const my = node.y * scaleY;
           if (mx < minX) minX = mx;
@@ -4868,6 +4882,10 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
       node.pinned = !node.pinned;
       node.vx = 0;
       node.vy = 0;
+      // Only on the way to pinned — an arrival worth marking, the same
+      // way diving into a note or a lens switching on already are.
+      // Unpinning is a release, not an arrival, so it stays quiet.
+      if (node.pinned) ink?.splash(node.x, node.y, PIN_SPLASH);
       setPinnedIds((prev) => (node.pinned ? [...prev, id] : prev.filter((pinnedId) => pinnedId !== id)));
     };
 
@@ -7442,16 +7460,38 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               } }
             >
               <div className="note-constellation-guide-header">
-                <span className="note-constellation-guide-title">Field guide</span>
-                <button
+                {/* The shared #liquid-text filter (mounted once in
+                    Home.jsx) for its constant wet wobble, the same idle
+                    ShortcutsSheet's own title already wears, layered with
+                    a one-off blur-resolving entrance so the title actually
+                    arrives wet rather than just idling that way once on
+                    screen. Split across two nodes on purpose — framer's
+                    own entrance leaves its `filter: blur()` as a lingering
+                    inline style once settled, which on the SAME element as
+                    .liquid-text would permanently outrank (and hide) that
+                    class's own stylesheet filter for good. The outer span
+                    owns the entrance; only the untouched inner span wears
+                    .liquid-text, so the ambient wobble keeps running after. */}
+                <motion.span
+                  className="note-constellation-guide-title"
+                  initial={ reduceMotion ? false : { opacity: 0, scale: .85, filter: "blur(3px)" } }
+                  animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                  transition={{ ...SETTLE, delay: reduceMotion ? 0 : .1 }}
+                >
+                  <span className="liquid-text">Field guide</span>
+                </motion.span>
+                <motion.button
                   type="button"
                   className="note-constellation-guide-close"
                   aria-label="Close guide"
                   autoFocus
+                  whileHover={ reduceMotion ? undefined : { scale: 1.15, rotate: 90 } }
+                  whileTap={ reduceMotion ? undefined : { scale: .9 } }
+                  transition={{ type: "spring", stiffness: 420, damping: 16 }}
                   onClick={ () => { setGuideOpen(false); guideToggleRef.current?.focus(); } }
                 >
                   <FaXmark />
-                </button>
+                </motion.button>
               </div>
               {
                 GUIDE_SECTIONS.map((section) => {
@@ -7494,11 +7534,14 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
           <div className="note-constellation-modes" role="group" aria-label="Layout mode">
             {
               LAYOUT_MODES.map(({ id, label, Icon }) => (
-                <button
+                <motion.button
                   key={ id }
                   type="button"
                   className={ `note-constellation-mode-chip ${ mode === id ? "active" : "" }` }
                   aria-pressed={ mode === id }
+                  whileHover={ reduceMotion ? undefined : { scale: 1.05 } }
+                  whileTap={ reduceMotion ? undefined : { scale: .94 } }
+                  transition={ SNAPPY }
                   onClick={ () => switchMode(id) }
                 >
                   {
@@ -7520,7 +7563,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
                     <Icon aria-hidden="true" />
                     { label }
                   </span>
-                </button>
+                </motion.button>
               ))
             }
           </div>
@@ -7574,10 +7617,13 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
             animate={{ width: searchOpen ? 268 : 40 }}
             transition={ SNAPPY }
           >
-            <button
+            <motion.button
               type="button"
               className="note-constellation-search-icon"
               aria-label={ searchOpen ? "Search notes" : "Open search" }
+              whileHover={ reduceMotion ? undefined : { scale: 1.1 } }
+              whileTap={ reduceMotion ? undefined : { scale: .9 } }
+              transition={ SNAPPY }
               onClick={ () => {
                 if (searchOpen) {
                   searchControllerRef.current?.flyToMatches(searchNodeIds);
@@ -7589,7 +7635,7 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               } }
             >
               <FaMagnifyingGlassLocation aria-hidden="true" />
-            </button>
+            </motion.button>
             <input
               ref={ searchInputRef }
               type="text"
@@ -7614,10 +7660,22 @@ const NoteConstellation = ({ active, notes, onSelectNote, reduceMotion = false }
               } }
             />
             {
+              // A plain mount-time pop (no AnimatePresence — this only
+              // ever needs an entrance, not an exit) rather than the
+              // instant appearance it had before. Fires once when the
+              // count first shows up, not on every keystroke after: React
+              // keeps this same span mounted across a refined query, so
+              // `initial` never re-triggers just because the number
+              // inside it changed.
               searchNodeIds && (
-                <span className="note-constellation-search-count">
+                <motion.span
+                  className="note-constellation-search-count"
+                  initial={ reduceMotion ? false : { opacity: 0, scale: .6 } }
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={ POP }
+                >
                   { searchNodeIds.size === 0 ? "No matches" : `${ searchNodeIds.size } found` }
-                </span>
+                </motion.span>
               )
             }
           </motion.div>

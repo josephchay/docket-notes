@@ -59,8 +59,47 @@
 }
 
 .bulk-bar .bulk-bar-actions .bulk-bar-danger {
+  position: relative;
   background-color: var(--red-color);
   color: var(--black-color);
+}
+
+/* The hold-to-confirm ring (see BulkActionBar.jsx's useHoldToConfirm) —
+   traces the danger button's own rounded-rect silhouette, filling via
+   pathLength while held rather than a generic circular spinner, so it
+   reads as the button itself charging up rather than an unrelated loader
+   borrowed on top of it. */
+.bulk-hold-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.bulk-hold-ring rect {
+  fill: none;
+  stroke: var(--black-color);
+  stroke-width: 2;
+}
+
+/* The recolor action's own traveling ink drops (see recolorCascade) — the
+   exact same plain-element-plus-GSAP technique Navigation.jsx's own
+   spawnDataStream uses for its export/import bursts, standing in here for
+   ink leaving the bar and arriving at each selected note. */
+.bulk-recolor-drop {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 750;
+  box-shadow: 0 4px 10px -2px rgba(25, 25, 25, 0.35);
 }
 
 .bulk-bar .bulk-bar-done {

@@ -179,6 +179,33 @@
   transition: stroke 0.25s ease-in-out;
 }
 
+/* The tube the ink actually sits in (see InkVial.jsx) — faint enough to
+   read as the edge of a vessel rather than as UI chrome, but present
+   enough that the capillary meniscus inside it has something visible to
+   climb. */
+.ink-levels-column .ink-vial-glass {
+  fill: none;
+  stroke: var(--page-ink-color);
+  stroke-width: 1;
+  opacity: .16;
+  transition: opacity 0.25s ease-in-out, stroke 0.4s ease-in-out;
+}
+
+.ink-levels-button:hover .ink-vial-glass,
+.ink-levels-button.active .ink-vial-glass {
+  opacity: .3;
+}
+
+/* The specular sheen down the tube's near side — paper-colored rather
+   than white so it stays a highlight on glass in BOTH themes instead of
+   a bright smear in the dark one. */
+.ink-levels-column .ink-vial-shine {
+  fill: var(--page-bg-color);
+  opacity: .3;
+  pointer-events: none;
+  transition: fill 0.4s ease-in-out;
+}
+
 .ink-levels-button:hover .ink-vial {
   opacity: 1;
 }
@@ -202,4 +229,62 @@
   opacity: .55;
   white-space: nowrap;
   transition: color 0.4s ease-in-out;
+}
+
+/* The connecting necks between adjacent same-row vials (see
+   InkLevelsPanel.jsx's bridge-computation effect) — portaled to
+   document.body for the same reason Navigation's own pot-bridges and
+   BulkTethers already are: page-absolute coordinates, escaping this
+   panel's own SheetPanel stacking context entirely rather than fighting
+   it. Sits below the panel itself (SheetPanel's own layer is z-index 950)
+   so the necks read as running BEHIND the vials they connect. */
+.ink-levels-bridge-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 940;
+  pointer-events: none;
+}
+
+/* Drag-to-pour's own ghost (see InkLevelsPanel.jsx's ensureGhost) — the
+   same plain-element-appended-to-body technique ColorSelector's own
+   nav-rail pots already use for the identical gesture. */
+.ink-levels-pour-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 990;
+  box-shadow: 0 10px 22px -8px rgba(25, 25, 25, 0.4);
+  transition: width .18s ease-out, height .18s ease-out, margin .18s ease-out, border-radius .18s ease-out;
+}
+
+/* Held over another vial, the travelling drop stretches into a falling
+   pour rather than staying a bead — the gesture tells you it's about to
+   decant a whole color before you let go, not after. */
+.ink-levels-pour-ghost.decanting {
+  width: 13px;
+  height: 26px;
+  margin: -13px 0 0 -6.5px;
+  border-radius: 7px 7px 6px 6px;
+}
+
+/* The vial about to receive a decant. box-shadow can't reach an SVG
+   shape's own edge, so — exactly as .active already does for the same
+   reason — this rings the liquid itself via a real stroke rather than a
+   glow around the button box. */
+.ink-levels-column.decant-target .ink-vial-fill {
+  stroke: var(--page-ink-color);
+}
+
+.ink-levels-column.decant-target .ink-vial {
+  opacity: 1;
+}
+
+.ink-levels-column.decant-target .ink-vial-glass {
+  opacity: .45;
 }

@@ -203,10 +203,21 @@
   cursor: pointer;
 }
 
-.settings-segmented-thumb {
+/* The gooey core/trail pair (see the JSX above) — a fast core blob and a
+   slower-chasing trail blob sharing the option's own layoutId target, the
+   same two-speed split QuickDock's own dock highlight already uses, fused
+   into one stretched drip by the shared #gooey-effect filter while
+   they're offset mid-travel. */
+.settings-segmented-goo {
   position: absolute;
   inset: 0;
   z-index: -1;
+  filter: url(#gooey-effect);
+}
+
+.settings-segmented-blob {
+  position: absolute;
+  inset: 0;
   border-radius: inherit;
   background-color: var(--page-ink-color);
 }

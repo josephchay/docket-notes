@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import anime from "animejs";
 import { FaXmark, FaMoon, FaSun, FaLock, FaLockOpen, FaFeather, FaArrowPointer, FaVolumeHigh, FaVolumeXmark } from "react-icons/fa6";
 
 import { loadSettings, saveSettings } from "../../utils/storage";
@@ -79,6 +80,37 @@ const SettingsPanel = ({
     window.dispatchEvent(new CustomEvent(CURSOR_STYLE_EVENT, { detail: next }));
   };
 
+  // Turning reduce motion back OFF demonstrates itself: the other rows —
+  // not the one just pressed, which already gets its own drag/elastic
+  // feedback from SettingsToggle — throw a small staggered wake-up bounce,
+  // literally showing the motion that setting just re-enabled rather than
+  // just describing it. Turning it ON stays plainly, immediately still;
+  // one last flourish on the way out would undercut the very thing being
+  // asked for.
+  const rowRefs = useRef([]);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    if (reduceMotion) return;
+
+    rowRefs.current.forEach((el, index) => {
+      if (!el) return;
+      anime.remove(el);
+      anime({
+        targets: el,
+        translateY: [0, -6, 0],
+        scale: [1, 1.03, 1],
+        duration: 520,
+        easing: "easeOutElastic(1, .55)",
+        delay: index * 60,
+      });
+    });
+  }, [reduceMotion]);
+
   return (
     <SheetPanel
       open={ open }
@@ -118,7 +150,10 @@ const SettingsPanel = ({
                   <ParticleCuboid active={ open } reduceMotion={ reduceMotion } />
                 </div>
 
-                <div ref={ themeRowRef } className="settings-row">
+                <div
+                  ref={ (el) => { themeRowRef.current = el; rowRefs.current[0] = el; } }
+                  className="settings-row"
+                >
                   <span className="settings-row-icon">
                     <AnimatePresence mode="wait" initial={ false }>
                       <motion.span
@@ -143,7 +178,7 @@ const SettingsPanel = ({
                   />
                 </div>
 
-                <div className="settings-row">
+                <div ref={ (el) => { rowRefs.current[1] = el; } } className="settings-row">
                   <span className="settings-row-icon">
                     <AnimatePresence mode="wait" initial={ false }>
                       <motion.span
@@ -194,7 +229,7 @@ const SettingsPanel = ({
                   />
                 </div>
 
-                <div className="settings-row">
+                <div ref={ (el) => { rowRefs.current[2] = el; } } className="settings-row">
                   <span className="settings-row-icon">
                     <AnimatePresence mode="wait" initial={ false }>
                       <motion.span
@@ -219,7 +254,7 @@ const SettingsPanel = ({
                   />
                 </div>
 
-                <div className="settings-row">
+                <div ref={ (el) => { rowRefs.current[3] = el; } } className="settings-row">
                   <span className="settings-row-icon">
                     <FaArrowPointer />
                   </span>
@@ -244,13 +279,26 @@ const SettingsPanel = ({
                           className={ `settings-segmented-option ${ cursorStyle === option.key ? "active" : "" }` }
                           onClick={ () => chooseCursor(option.key) }
                         >
+                          {/* A fast "core" and a slower-chasing "trail" under
+                              the shared #gooey-effect filter, the same
+                              two-speed merge QuickDock's own dock highlight
+                              uses — switching Pen/Comet now stretches a real
+                              drip between the two options instead of a flat
+                              rect sliding across. */}
                           {
                             cursorStyle === option.key && (
-                              <motion.span
-                                layoutId="settingsSegmentedThumb"
-                                className="settings-segmented-thumb"
-                                transition={{ type: "spring", stiffness: 480, damping: 30 }}
-                              />
+                              <span className="settings-segmented-goo" aria-hidden="true">
+                                <motion.span
+                                  layoutId="settingsSegmentedTrail"
+                                  className="settings-segmented-blob settings-segmented-blob-trail"
+                                  transition={{ type: "spring", stiffness: 170, damping: 15 }}
+                                />
+                                <motion.span
+                                  layoutId="settingsSegmentedCore"
+                                  className="settings-segmented-blob settings-segmented-blob-core"
+                                  transition={{ type: "spring", stiffness: 480, damping: 26 }}
+                                />
+                              </span>
                             )
                           }
                           <span className="settings-segmented-label">{ option.label }</span>

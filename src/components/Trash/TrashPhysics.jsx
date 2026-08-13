@@ -93,6 +93,28 @@ const SHRED_STRIP_MIN_WIDTH = 2.5; // px — thinner than this stops looking lik
 // default for something no longer held.
 const RESTORE_VELOCITY_THRESHOLD = -7; // px/Matter-tick of upward speed a release needs to clear to read as a toss-back
 const TOSS_VELOCITY_MAX = 26; // px/Matter-tick cap, so a very fast mouse move can't launch a piece absurdly far
+
+// A hard collision — not the gentle settle every landing already kicks the
+// squash spring for (MIN_IMPACT_SPEED below) — throws the same dissolve
+// ember ring settling normally fades out with (see triggerDissolve/
+// handleCollisionStart), reused as-is rather than a second shader for the
+// same visual language.
+const IMPACT_SPARK_SPEED = 9;
+
+// How far the bin itself can lean under an uneven pile (see the tick
+// loop's own center-of-mass read and TrashPanel.jsx's onPileTilt), and how
+// often that read is actually taken — a real torque reading doesn't need
+// updating every single frame to look continuous once GSAP eases between
+// samples.
+const MAX_PILE_TILT_DEG = 5;
+const PILE_TILT_THROTTLE_MS = 140;
+
+// A real shredder's blades don't all engage in the same instant — each
+// strip's own spawn is offset by this many ms per strip (see
+// spawnShredStrips), the same setTimeout-volley technique
+// TrashPanel.jsx's own handleEmptyAll already uses across multiple drops,
+// just applied one level deeper within a single shred.
+const STRIP_STAGGER_MS = 14;
 // A restored piece fades on its own short fixed clock instead of the
 // normal settle-then-fade window (SETTLE_HOLD_MS/FADE_MS) — it was
 // thrown clear specifically so it wouldn't sit in the pile, so nothing
@@ -120,14 +142,21 @@ const MIN_IMPACT_SPEED = 2;
 // transform is written directly to style each tick (no React re-render per
 // physics step) — the same imperative-driver pattern QuickDock's magnetic
 // quickTo tweens and InkGoo's per-frame uniforms already use elsewhere.
-const TrashPhysics = forwardRef(({ reduceMotion }, ref) => {
+const TrashPhysics = forwardRef(({ reduceMotion, onPileTilt }, ref) => {
   const layerRef = useRef(null);
   const engineRef = useRef(null);
   const bodiesRef = useRef([]);   // { body, el, bornAt, squash, squashVel, color, dissolved, restoreFlight? }
-  const wallsRef = useRef(null);  // { floor, left, right }
+  const wallsRef = useRef(null);  // { floor, left, right, halfWidth }
   const grabbedRef = useRef(new Map()); // id -> live-held piece mid drag-to-toss (see grab/moveGrabbed/releaseGrabbed)
   const dissolveCanvasRef = useRef(null);
   const dissolveDrawRef = useRef(null);
+  // Always the latest prop, read from inside the tick loop's own closure
+  // below (which only ever mounts once — see its own exhaustive-deps
+  // opt-out) — the same "sync a ref every render, read the ref in the
+  // long-lived effect" pattern this file already can't avoid for reduceMotion.
+  const onPileTiltRef = useRef(onPileTilt);
+  useEffect(() => { onPileTiltRef.current = onPileTilt; });
+  const lastTiltEmitRef = useRef(0);
   // Fixed-size bank of burst slots (see MAX_DISSOLVES) — plain objects
   // reused in place rather than an array that grows/shrinks, so a long
   // session's worth of shredding never allocates more than these six.
@@ -271,6 +300,13 @@ const TrashPhysics = forwardRef(({ reduceMotion }, ref) => {
           if (speed < MIN_IMPACT_SPEED) continue;
 
           piece.squashVel += Math.min(1, speed / 12) * 1.5;
+
+          // A genuinely hard clack, well past what a gentle settle already
+          // reads as above — the same ember ring a piece throws leaving
+          // for good, borrowed here for the moment it actually lands hard.
+          if (speed >= IMPACT_SPARK_SPEED) {
+            triggerDissolve(candidate.position.x, candidate.position.y, piece.color);
+          }
         }
       }
     };
@@ -285,6 +321,12 @@ const TrashPhysics = forwardRef(({ reduceMotion }, ref) => {
       const now = performance.now();
       const survivors = [];
       const dt = 1 / 60;
+      // The pile's own center of mass (see the throttled onPileTilt emit
+      // below) — accumulated in the same pass rather than a second loop
+      // over survivors, restoreFlight pieces excluded since they're
+      // leaving the pile, not weighting it.
+      let pileSumX = 0;
+      let pileCount = 0;
 
       for (const piece of bodiesRef.current) {
         const { body, el, bornAt } = piece;
@@ -346,10 +388,24 @@ const TrashPhysics = forwardRef(({ reduceMotion }, ref) => {
           }
         }
 
+        pileSumX += body.position.x;
+        pileCount++;
         survivors.push(piece);
       }
 
       bodiesRef.current = survivors;
+
+      // How far the pile's own center of mass sits off the bin's center —
+      // a real net moment, not a cosmetic wobble: an uneven pile visibly
+      // leans the bin toward whichever side is actually heavier. Throttled
+      // rather than emitted every frame since GSAP eases smoothly between
+      // whatever samples TrashPanel.jsx actually receives.
+      if (pileCount > 0 && wallsRef.current && now - lastTiltEmitRef.current > PILE_TILT_THROTTLE_MS) {
+        lastTiltEmitRef.current = now;
+        const offset = (pileSumX / pileCount) - wallsRef.current.floor.position.x;
+        const ratio = Math.max(-1, Math.min(1, offset / wallsRef.current.halfWidth));
+        onPileTiltRef.current?.(ratio * MAX_PILE_TILT_DEG);
+      }
 
       // The dissolve bank's own progress — every active slot ages at the
       // same FADE_MS rate its piece's own opacity just faded at above, so
@@ -415,7 +471,7 @@ const TrashPhysics = forwardRef(({ reduceMotion }, ref) => {
     );
 
     Matter.World.add(engine.world, [floor, left, right]);
-    wallsRef.current = { floor, left, right };
+    wallsRef.current = { floor, left, right, halfWidth: panelRect.width / 2 };
   };
 
   // One physics body + its DOM element, wired into the shared world and
@@ -455,9 +511,13 @@ const TrashPhysics = forwardRef(({ reduceMotion }, ref) => {
     const stripW = (w - SHRED_STRIP_GAP * (stripCount - 1)) / stripCount;
     const startX = x - w / 2 + stripW / 2;
 
+    // Strip 0 cuts immediately; every strip after it is offset by another
+    // STRIP_STAGGER_MS (see the constant's own comment) so the cut reads
+    // as blades slicing left-to-right rather than one square that's
+    // already five pieces on frame one.
     for (let i = 0; i < stripCount; i++) {
       const fan = (i - (stripCount - 1) / 2) / stripCount;
-      spawnPiece(
+      const spawn = () => spawnPiece(
         engine, layer,
         startX + i * (stripW + SHRED_STRIP_GAP), y,
         stripW, h, color, "trash-physics-strip",
@@ -466,6 +526,9 @@ const TrashPhysics = forwardRef(({ reduceMotion }, ref) => {
         biasVy - (0.5 + Math.random() * 1.2),
         (Math.random() - .5) * .5,
       );
+
+      if (i === 0) spawn();
+      else setTimeout(spawn, i * STRIP_STAGGER_MS);
     }
   };
 
@@ -555,7 +618,9 @@ const TrashPhysics = forwardRef(({ reduceMotion }, ref) => {
       const body = Matter.Bodies.rectangle(x, y, w, h, { isStatic: true, restitution: .5, friction: .35 });
       Matter.World.add(engine.world, body);
 
-      grabbedRef.current.set(id, { body, el, w, h, color, lastX: x, lastY: y, lastT: performance.now(), vx: 0, vy: 0 });
+      grabbedRef.current.set(id, {
+        body, el, w, h, color, lastX: x, lastY: y, lastT: performance.now(), vx: 0, vy: 0, wouldRestore: false,
+      });
     },
 
     // Direct manipulation, not tick-loop-driven — the DOM transform is
@@ -581,6 +646,16 @@ const TrashPhysics = forwardRef(({ reduceMotion }, ref) => {
 
       Matter.Body.setPosition(piece.body, { x, y });
       piece.el.style.transform = `translate(${ x }px, ${ y }px) translate(-50%, -50%)`;
+
+      // The exact same check releaseGrabbed makes below, read live instead
+      // of only ever finding out after the fact — the grabbed chip lights
+      // up the instant this throw would already register as a restore if
+      // let go right now.
+      const wouldRestore = piece.vy < RESTORE_VELOCITY_THRESHOLD;
+      if (wouldRestore !== piece.wouldRestore) {
+        piece.wouldRestore = wouldRestore;
+        piece.el.classList.toggle("trash-physics-would-restore", wouldRestore);
+      }
     },
 
     // Reads whichever velocity moveGrabbed last tracked to decide the

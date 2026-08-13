@@ -8,14 +8,26 @@
   padding-top: 16vh;
 }
 
+/* A radial wash rather than the flat fill this used to be — a uniform
+   color has no internal edge for the boil filter below to actually
+   displace (warping a flat field just gives back the same flat field), so
+   the gradient's own soft rings are what the turbulence has something to
+   visibly work on. */
 .command-backdrop {
   position: absolute;
   inset: 0;
-  background-color: rgba(25, 25, 25, 0.28);
+  background: radial-gradient(circle at 50% 30%, rgba(25, 25, 25, 0.34), rgba(25, 25, 25, 0.22) 60%, rgba(25, 25, 25, 0.28) 100%);
 }
 
 :root[data-theme="dark"] .command-backdrop {
-  background-color: rgba(0, 0, 0, 0.5);
+  background: radial-gradient(circle at 50% 30%, rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0.42) 60%, rgba(0, 0, 0, 0.5) 100%);
+}
+
+/* The wet-ink boil itself (see CommandPalette.jsx's backdropTurbRef) — a
+   separate modifier class, applied only outside reduced motion, rather
+   than baked into .command-backdrop directly. */
+.command-backdrop-boil {
+  filter: url(#command-backdrop-boil);
 }
 
 /* border-radius is animated by framer during the drop-to-sheet morph, so it

@@ -271,6 +271,28 @@ header.header {
   display: contents;
 }
 
+/* The drag-to-reorder Reorder.Group (see Header.jsx) — a real flex box,
+   unlike .header-wand-row's own display:contents, since a drag needs an
+   actual laid-out element to reorder within. Carries the auto-margin that
+   used to sit on .wand.ink-trigger specifically, now that whichever wand
+   is visually first can change with a drag — one stable place for the
+   push-right rather than re-deriving it from "whichever key happens to be
+   first" on every reorder. gap matches .header-toolbar's own 12px so nothing
+   about the spacing between wands changes now that they sit inside a real
+   box instead of flowing directly into the toolbar. */
+.header-wand-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.header-wand-slot {
+  display: flex;
+  touch-action: none;
+  cursor: grab;
+}
+
 .header .wand {
   display: flex;
   align-items: center;
@@ -290,15 +312,6 @@ header.header {
   font-size: 15px;
   color: var(--page-ink-color);
   transition: color 0.4s ease-in-out;
-}
-
-/* The ink-levels trigger is display:contents' first real child (see
-   .header-wand-row above), so it's the one that has to carry the
-   auto-margin that pushes the whole ink-levels -> settings cluster to
-   the toolbar's right edge — the old standalone .ink-levels wrapper
-   this used to live on is gone now that it's just another wand button. */
-.header .wand.ink-trigger {
-  margin-left: auto;
 }
 
 .header .wand.trash-trigger {

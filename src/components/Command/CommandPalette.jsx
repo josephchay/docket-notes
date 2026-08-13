@@ -23,20 +23,60 @@ export const COMMAND_EVENT = "docket:command";
 // hand regardless of which way it's headed.
 const SWIPE_THRESHOLD = 90;
 const SWIPE_RANGE = 140;
+// How much of framer's own reported release velocity (px/s) counts toward
+// the pin/hide commit, alongside the plain offset the original check used
+// alone — a real flick that barely travels past the threshold before
+// release still commits, the same "offset isn't the whole story, momentum
+// counts too" reasoning this session's other velocity-aware releases
+// (ColorSelector's throw, useMagnetic's own exit fling) already apply,
+// just fed here from a value framer already computes rather than a
+// hand-rolled pointer-sample history.
+const FLING_VELOCITY_WEIGHT = .12;
+
+// How far the casting-gather effect (see CommandRow's own gather math
+// below) still reaches from the row that actually fired, and how much
+// each step out fades by — the rest of the list visibly yields to the one
+// that just ran rather than sitting inert while it does.
+const CAST_GATHER_REACH = 3;
+const CAST_GATHER_DECAY = .35;
 
 // A single swipeable row — its own component (rather than inline in the
 // list below) purely so its drag motion values and the two live icon
 // opacities derived from them (useTransform) get a fresh instance per
 // row instead of one shared pair every row would otherwise fight over.
-const CommandRow = ({ action, index, highlight, pulse, onSelect, onRun, onPin, onHide, renderLabel }) => {
+const CommandRow = ({ action, index, highlight, pulse, onSelect, onRun, onPin, onHide, renderLabel, casting, castIndex }) => {
   const dragX = useMotionValue(0);
   const pinOpacity = useTransform(dragX, [0, SWIPE_THRESHOLD], [0, 1], { clamp: true });
   const hideOpacity = useTransform(dragX, [0, -SWIPE_THRESHOLD], [0, 1], { clamp: true });
 
   const handleDragEnd = (e, info) => {
-    if (info.offset.x > SWIPE_THRESHOLD) onPin(action.key);
-    else if (info.offset.x < -SWIPE_THRESHOLD) onHide(action.key);
+    // The release's own momentum, not just where it happened to land —
+    // see FLING_VELOCITY_WEIGHT's own comment.
+    const effective = info.offset.x + info.velocity.x * FLING_VELOCITY_WEIGHT;
+    if (effective > SWIPE_THRESHOLD) onPin(action.key);
+    else if (effective < -SWIPE_THRESHOLD) onHide(action.key);
   };
+
+  // The rest of the list's own brief acknowledgment that one row just
+  // fired (see the casting-gather comment on run() below) — a small
+  // vertical nudge toward whichever row actually cast, decaying with
+  // distance and capped at CAST_GATHER_REACH, plus a slight recede in
+  // scale/opacity so the eye reads the cast row as the one thing that
+  // still has full weight. translateY rather than translateX so this
+  // never reads as the same axis the swipe gesture above already owns.
+  const isCastTarget = casting && index === castIndex;
+  const castDistance = casting && castIndex != null ? Math.abs(index - castIndex) : Infinity;
+  const gather = !isCastTarget && castDistance <= CAST_GATHER_REACH
+    ? Math.max(0, 1 - castDistance * CAST_GATHER_DECAY)
+    : 0;
+
+  const slotAnimate = casting
+    ? {
+      opacity: isCastTarget ? 1 : 1 - gather * .5,
+      translateY: isCastTarget ? 0 : Math.sign(castIndex - index) * 4 * gather,
+      scale: isCastTarget ? 1.03 : 1 - gather * .06,
+    }
+    : { opacity: 1, translateX: 0, translateY: 0, scale: 1 };
 
   return (
     // command-row-slot is the static backing every row's own drag reveals
@@ -50,9 +90,13 @@ const CommandRow = ({ action, index, highlight, pulse, onSelect, onRun, onPin, o
       layout
       className="command-row-slot"
       initial={{ opacity: 0, translateX: -16 }}
-      animate={{ opacity: 1, translateX: 0 }}
+      animate={ slotAnimate }
       exit={{ opacity: 0, translateX: -16, scale: .96, transition: { duration: .16, ease: "easeIn" } }}
-      transition={{ ...LIST_ROW_SPRING, delay: listRowDelay(index) }}
+      transition={
+        casting
+          ? { type: "spring", stiffness: 500, damping: 30 }
+          : { ...LIST_ROW_SPRING, delay: listRowDelay(index) }
+      }
     >
       {/* The swipe's own live hint — pin to the right, hide to the left —
           fixed here in the static backing rather than inside the button
@@ -111,11 +155,16 @@ const CommandRow = ({ action, index, highlight, pulse, onSelect, onRun, onPin, o
 // tiny, round, and starchy — into a full sheet of paper. Typing filters the
 // commands, the selection thumb slides stickily between rows, and casting a
 // command squashes the panel like pressed jelly before it folds away.
-const CommandPalette = ({ actions }) => {
+const CommandPalette = ({ actions, reduceMotion }) => {
   const [service] = useState(() => interpret(commandMachine));
   const [phase, setPhase] = useState("closed");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
+  // Which row actually fired, for the casting-gather effect (see
+  // CommandRow's own gather math and run() below) — stale outside the
+  // brief casting window is harmless since every row only ever reads it
+  // gated on phase === "casting".
+  const [castIndex, setCastIndex] = useState(null);
 
   // Which commands have been swiped pinned or hidden (see CommandRow's own
   // onPin/onHide below) — routed through the exact same loadSettings/
@@ -193,17 +242,43 @@ const CommandPalette = ({ actions }) => {
   }, [open]);
 
   const trimmedQuery = query.trim();
+
+  // How well a label matches the current query, once it's already cleared
+  // the plain substring filter below — earlier in the label ranks higher,
+  // and matching right at a word boundary ("Focus sprint" for "sprint")
+  // ranks higher still than the same substring landing mid-word, the same
+  // relevance a real fuzzy-finder rewards. Purely a SORT signal, not a
+  // second filter — the substring test below stays the only thing that
+  // decides whether a row appears at all, so renderLabel's own contiguous
+  // <mark> highlight (built on that same indexOf) never has to reconcile
+  // with a looser, non-contiguous match.
+  const scoreMatch = (label, q) => {
+    const lower = label.toLowerCase();
+    const idx = lower.indexOf(q);
+    if (idx === -1) return -Infinity;
+    const wordBoundary = idx === 0 || /\s/.test(label[idx - 1]);
+    return (wordBoundary ? 100 : 0) - idx;
+  };
+
   // Hidden commands drop out entirely; pinned ones float to the top, in
   // the order they were pinned (most recent pin first — see pinAction's
-  // own [key, ...prev] unshift), everything else keeping its original
-  // order after them.
+  // own [key, ...prev] unshift). Among the rest, an active query actively
+  // re-ranks by real relevance (scoreMatch above) rather than sitting in
+  // whatever order `actions` happened to declare them — command-row-slot's
+  // own `layout` prop (plus the list's popLayout AnimatePresence) is what
+  // turns that re-rank into rows physically springing into their new
+  // positions as you type, not just an instant re-sort.
+  const lowerQuery = trimmedQuery.toLowerCase();
   const filtered = actions
     .filter((action) => !hidden.includes(action.key))
-    .filter((action) => action.label.toLowerCase().includes(trimmedQuery.toLowerCase()))
+    .filter((action) => action.label.toLowerCase().includes(lowerQuery))
     .sort((a, b) => {
       const pa = pinned.indexOf(a.key);
       const pb = pinned.indexOf(b.key);
-      if (pa === -1 && pb === -1) return 0;
+      if (pa === -1 && pb === -1) {
+        if (!trimmedQuery) return 0;
+        return scoreMatch(b.label, lowerQuery) - scoreMatch(a.label, lowerQuery);
+      }
       if (pa === -1) return 1;
       if (pb === -1) return -1;
       return pa - pb;
@@ -237,6 +312,12 @@ const CommandPalette = ({ actions }) => {
 
   const run = (action) => {
     if (phase !== "open") return;
+    // Looked up fresh rather than trusting `highlight` — a click can land
+    // on a row that was never hovered (touch, or a fast move straight to
+    // the target), so `highlight` isn't guaranteed to already agree with
+    // whichever row is actually casting.
+    const index = filtered.findIndex((a) => a.key === action.key);
+    setCastIndex(index === -1 ? null : index);
     action.perform();
     service.send("RUN");
   };
@@ -259,6 +340,22 @@ const CommandPalette = ({ actions }) => {
   const commandPulse = useInkPulse(highlight);
 
   const panelRef = useRef(null);
+
+  // The backdrop's own slow boil (see the SVG filter in the JSX below) —
+  // the same feTurbulence/feDisplacementMap "re-roll the seed a few times
+  // a second" trick the tour's own SketchRing uses to keep a still line
+  // reading as freshly sketched, applied here to an ambient radial wash
+  // instead of a stroked path. Only runs while the palette is actually
+  // open, and not at all under reduced motion.
+  const backdropTurbRef = useRef(null);
+  useEffect(() => {
+    if (!open || reduceMotion) return undefined;
+
+    const interval = setInterval(() => {
+      backdropTurbRef.current?.setAttribute("seed", String((Math.random() * 100) | 0));
+    }, 220);
+    return () => clearInterval(interval);
+  }, [open, reduceMotion]);
 
   // Casting a command still gets its own quick squash pulse rather than the
   // shared entrance shape — a distinct micro-interaction (confirming a cast
@@ -289,22 +386,46 @@ const CommandPalette = ({ actions }) => {
   };
 
   return (
-    <SheetPanel
-      open={ open }
-      onClose={ () => service.send("CLOSE") }
-      panelRef={ panelRef }
-      radius={ 18 }
-      layerClassName="command-layer"
-      backdropClassName="command-backdrop"
-      panelClassName="command-panel"
-      ariaLabel="Command palette"
-      animate={ panelAnimate }
-      // The search input has its own autoFocus below (so typing works the
-      // instant the palette opens, core to a command palette's whole
-      // point) — SheetPanel's usual focus-the-panel-root step would just
-      // steal that back a frame later.
-      focusOnOpen={ false }
-    >
+    <>
+      {/* The backdrop boil's own filter def — a hidden 0x0 SVG rather than
+          inline styles, since CSS `filter: url(#id)` needs a real <filter>
+          element to reference somewhere in the document, the same setup
+          SketchRing.jsx uses for its own boiling line. */}
+      {
+        !reduceMotion && (
+          <svg style={{ position: "absolute", width: 0, height: 0 }} aria-hidden="true">
+            <defs>
+              <filter id="command-backdrop-boil" x="-20%" y="-20%" width="140%" height="140%">
+                <feTurbulence
+                  ref={ backdropTurbRef }
+                  type="fractalNoise"
+                  baseFrequency="0.012"
+                  numOctaves="2"
+                  seed="1"
+                  result="noise"
+                />
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="10" />
+              </filter>
+            </defs>
+          </svg>
+        )
+      }
+      <SheetPanel
+        open={ open }
+        onClose={ () => service.send("CLOSE") }
+        panelRef={ panelRef }
+        radius={ 18 }
+        layerClassName="command-layer"
+        backdropClassName={ `command-backdrop ${ reduceMotion ? "" : "command-backdrop-boil" }` }
+        panelClassName="command-panel"
+        ariaLabel="Command palette"
+        animate={ panelAnimate }
+        // The search input has its own autoFocus below (so typing works the
+        // instant the palette opens, core to a command palette's whole
+        // point) — SheetPanel's usual focus-the-panel-root step would just
+        // steal that back a frame later.
+        focusOnOpen={ false }
+      >
       <input
         autoFocus
         type="text"
@@ -334,6 +455,8 @@ const CommandPalette = ({ actions }) => {
                 onPin={ pinAction }
                 onHide={ hideAction }
                 renderLabel={ renderLabel }
+                casting={ phase === "casting" }
+                castIndex={ castIndex }
               />
             ))
           }
@@ -361,7 +484,8 @@ const CommandPalette = ({ actions }) => {
           )
         }
       </div>
-    </SheetPanel>
+      </SheetPanel>
+    </>
   );
 }
 

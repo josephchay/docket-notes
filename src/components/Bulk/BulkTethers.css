@@ -1,0 +1,22 @@
+/* Portaled to document.body (see BulkTethers.jsx) rather than absolute
+   inside the notes grid like .tag-threads — both endpoints are viewport-
+   space coordinates, the bar end because the bar itself is `position:
+   fixed`. Sits below the bar's own layer (bulk-bar-layer, z-index 700) so
+   the threads read as running INTO the bar rather than over it. */
+.bulk-tethers-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 690;
+  pointer-events: none;
+}
+
+.bulk-tether-line {
+  fill: none;
+  stroke-width: 2px;
+  stroke-linecap: round;
+  opacity: .85;
+}
+
+.bulk-tether-node {
+  opacity: .9;
+}

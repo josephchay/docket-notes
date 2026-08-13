@@ -56,6 +56,11 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
   // This wraps the panel's own content instead, one layer further in,
   // where nothing else has ever claimed the transform.
   const shakeRef = useRef(null);
+  // The pile's own last-known lean (see handlePileTilt) — shakeEmpty's own
+  // final settle keyframe below returns to THIS rather than a hardcoded 0,
+  // so a shake decays back into whatever the pile's actual resting lean
+  // already is instead of snapping the bin artificially flat.
+  const lastTiltRef = useRef(0);
   // The one live drag-to-toss in flight, if any — { note, startX, startY,
   // active }. `active` flips true only once the press clears
   // DRAG_THRESHOLD, the same "don't hand off to physics for a plain
@@ -72,7 +77,20 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
       .to(shakeRef.current, { x: 6, rotate: 1.1, duration: .08, ease: "power1.inOut" })
       .to(shakeRef.current, { x: -5, rotate: -.8, duration: .08, ease: "power1.inOut" })
       .to(shakeRef.current, { x: 3, rotate: .4, duration: .09, ease: "power1.inOut" })
-      .to(shakeRef.current, { x: 0, rotate: 0, duration: .16, ease: "power2.out" });
+      .to(shakeRef.current, { x: 0, rotate: lastTiltRef.current, duration: .16, ease: "power2.out" });
+  };
+
+  // The bin's own real center-of-mass read (see TrashPhysics.jsx's tick
+  // loop) — an uneven pile visibly leans it toward whichever side is
+  // actually heavier, eased onto shakeRef rather than panelRef for the
+  // same reason shakeEmpty already avoids panelRef: that node is
+  // SheetPanel's own, already carrying framer's entrance/exit transform
+  // plus useBlobClipMorph's clip-path.
+  const handlePileTilt = (deg) => {
+    lastTiltRef.current = deg;
+    if (reduceMotion || !shakeRef.current) return;
+
+    gsap.to(shakeRef.current, { rotate: deg, duration: .5, ease: "power2.out", overwrite: "auto" });
   };
 
   const dropPhysics = (note) => {
@@ -255,7 +273,7 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
       {/* Mounted unconditionally (not gated on `open`) so pieces already
           tumbling keep settling and fading even if the panel closes
           mid-shred, rather than being yanked away with it. */}
-      <TrashPhysics ref={ physicsRef } reduceMotion={ reduceMotion } />
+      <TrashPhysics ref={ physicsRef } reduceMotion={ reduceMotion } onPileTilt={ handlePileTilt } />
       <SheetPanel
         open={ open }
         onClose={ () => setOpen(false) }

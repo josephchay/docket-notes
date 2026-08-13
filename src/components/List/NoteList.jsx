@@ -9,6 +9,7 @@ import { FaShuffle, FaSquareCheck, FaCheckDouble } from "react-icons/fa6";
 import Note from "../Note/Note";
 import QuoteCard from "../Quote/QuoteCard";
 import TagThreads from "./TagThreads";
+import BulkTethers from "../Bulk/BulkTethers";
 import NotePile from "../Pile/NotePile";
 import EmptyStateWash from "./EmptyStateWash";
 import { NOTE_COLORS } from "../../constants/colors";
@@ -738,7 +739,7 @@ const NoteList = ({
         )
       }
       <div ref={ quoteParallaxRef } className="quote-parallax">
-        <QuoteCard />
+        <QuoteCard reduceMotion={ reduceMotion } />
       </div>
       <div
         ref={ ref }
@@ -965,6 +966,12 @@ const NoteList = ({
           reduceMotion={ reduceMotion }
         />
       </div>
+      <BulkTethers
+        notes={ notes }
+        selectedIds={ selectedIds }
+        containerRef={ ref }
+        reduceMotion={ reduceMotion }
+      />
       {
         createPortal(
           <AnimatePresence>

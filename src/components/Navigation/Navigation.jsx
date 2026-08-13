@@ -443,6 +443,7 @@ const Navigation = ({
                 dataTo={ selector.dataTo }
                 addNote={ addNote }
                 reduceMotion={ reduceMotion }
+                index={ index }
                 registerRef={ (el) => { potRefs.current[index] = el; } }
                 onHoverStart={ () => setHoveredPot(index) }
                 onHoverEnd={ () => setHoveredPot((prev) => (prev === index ? null : prev)) }

@@ -38,4 +38,13 @@
    the surface" read NotePile.jsx's own .dragging card gets. */
 .trash-physics-grabbed {
   box-shadow: 0 20px 34px -12px rgba(25, 25, 25, 0.55);
+  transition: box-shadow .12s ease-out;
+}
+
+/* The live throw-threshold preview (see TrashPhysics.jsx's moveGrabbed) —
+   a bright ring lights up the instant the current toss would already
+   register as a restore if released right now, on top of -grabbed's own
+   lift shadow rather than replacing it. */
+.trash-physics-grabbed.trash-physics-would-restore {
+  box-shadow: 0 0 0 3px var(--page-ink-color), 0 20px 34px -12px rgba(25, 25, 25, 0.55);
 }

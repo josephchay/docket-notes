@@ -263,6 +263,33 @@
   box-shadow: 0 10px 22px -8px rgba(25, 25, 25, 0.4);
 }
 
+/* The drag ghost's own viscous tail (see ColorSelector.jsx's ensureTrail/
+   dragLoop) — two lagging dots plain-appended the same way the ghost
+   itself is, sitting just under it in z-index so the metaball necks
+   bridging ghost → dot0 → dot1 (nav-pot-drag-trail-layer, below) read as
+   flowing out from underneath rather than floating on top. */
+.nav-pot-ghost-trail {
+  position: fixed;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 985;
+  background-color: var(--page-ink-color);
+}
+
+/* The metaball necks joining the ghost to its own trail — same fixed
+   full-viewport portal as nav-pot-bridge-layer, but a distinct layer since
+   this one repaints every drag frame while that one only recomputes on
+   hover-state change. */
+.nav-pot-drag-trail-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 984;
+  pointer-events: none;
+}
+
 /* The export/import data-stream's own drops (see spawnDataStream in
    Navigation.jsx) — plain ink-colored dots, GSAP-positioned via x/y
    directly rather than left/top, since that's the transform GSAP already

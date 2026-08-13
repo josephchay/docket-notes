@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, Reorder } from 'framer-motion';
 import gsap from "gsap";
 import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan, FaClockRotateLeft, FaGear, FaLayerGroup } from "react-icons/fa6";
 
@@ -14,7 +14,9 @@ import searchIcon from '../../assets/icons/search.svg';
 import useJellyTap from "../../hooks/useJellyTap";
 import useInkPulse from "../../hooks/useInkPulse";
 import useMagnetic from "../../hooks/useMagnetic";
+import useOdometer from "../../hooks/useOdometer";
 import { playStar } from "../../utils/sound";
+import { loadSettings, saveSettings } from "../../utils/storage";
 import SparkBurst from "../Spark/SparkBurst";
 import FilterScatter from "./FilterScatter";
 import { SNAPPY, POP, RAIL_SLIDE, enterExitStagger, iconSpin } from "../Motion";
@@ -22,6 +24,16 @@ import { SNAPPY, POP, RAIL_SLIDE, enterExitStagger, iconSpin } from "../Motion";
 import './Header.css';
 
 const springy = SNAPPY;
+
+// The wand row's own drag-to-reorder (see the Reorder.Group/Reorder.Item
+// below) — theme/persist/settings stay fixed at the toolbar's own end
+// rather than joining this set, since reordering them would mean either
+// letting a plain toggle land in the middle of a row of action wands, or
+// restructuring the whole contents-based flex trick this row already
+// relies on (see .header-wand-row's own comment) just to keep them
+// adjacent. This default order matches today's fixed DOM order exactly,
+// so a visitor who's never dragged anything sees no change at all.
+const HEADER_WAND_KEYS = ["ink", "insights", "history", "trash", "command", "focus", "pile"];
 
 // The color squares bounce in one after another, each with a starchy
 // overshoot, once the toolbar itself has landed.
@@ -114,6 +126,33 @@ const Header = ({
 }) => {
   const filtersActive = searchText !== "" || notesSortByFavorite || sortColor !== null;
 
+  // The tally's own digits now roll rather than the whole span re-springing
+  // from scratch on every single count change (the old `key={...}` remount
+  // trick) — the same useOdometer hook BulkActionBar's own selection count
+  // already uses, reused here rather than a second rolling-number recipe.
+  // Two independent instances since notesCount and totalCount can each
+  // change on their own (a filter narrows one, a note added/removed moves
+  // both).
+  const displayedNotesCount = useOdometer(notesCount);
+  const displayedTotalCount = useOdometer(totalCount);
+
+  // The tally's own small settle-pop the instant a clear actually finishes
+  // narrowing back out to the full desk — layered on top of the odometer's
+  // own roll (which already carries the digits back up) rather than
+  // replacing it, so the whole clear reads as one continuous event: the
+  // color chips physically scatter (see FilterScatter/handleClearFilters
+  // below), the count rolls back up, and it gives a satisfied little pop
+  // the instant it's back to whole.
+  const tallyRef = useRef(null);
+  const wasFilteredRef = useRef(filtersActive);
+  useEffect(() => {
+    if (wasFilteredRef.current && !filtersActive && tallyRef.current && !reduceMotion) {
+      gsap.killTweensOf(tallyRef.current);
+      gsap.fromTo(tallyRef.current, { scale: 1 }, { scale: 1.2, duration: .16, ease: "power2.out", yoyo: true, repeat: 1 });
+    }
+    wasFilteredRef.current = filtersActive;
+  }, [filtersActive, reduceMotion]);
+
   // The toolbar's plain icon buttons (star, and the three bare wand icons)
   // were the one flat corner of the desk — a uniform whileHover/whileTap
   // scale with no squash, no stretch, while everything else on the page
@@ -144,6 +183,25 @@ const Header = ({
   // one transform.
   const toolbarMagnetic = useMagnetic({ range: 80, maxLift: 10, maxScale: 1.28, axis: "xy", reduceMotion });
 
+  // The wand row's own persisted drag order — routed through the exact
+  // same loadSettings/saveSettings pair CommandPalette's pin/hide and
+  // QuickDock's own dockOrder already use, under its own key so the two
+  // rows' orders never collide. Any key missing from a stale stored order
+  // (an older save from before a wand existed) is appended at the end
+  // rather than dropped.
+  const [wandOrder, setWandOrder] = useState(() => {
+    const stored = loadSettings().headerWandOrder;
+    if (!Array.isArray(stored)) return HEADER_WAND_KEYS;
+    const valid = stored.filter((key) => HEADER_WAND_KEYS.includes(key));
+    const missing = HEADER_WAND_KEYS.filter((key) => !valid.includes(key));
+    return [...valid, ...missing];
+  });
+
+  const handleWandReorder = (nextOrder) => {
+    setWandOrder(nextOrder);
+    saveSettings({ headerWandOrder: nextOrder });
+  };
+
   // The search field's own ripple (see the <filter id="search-ripple">
   // defs below) — a SEPARATE feDisplacementMap from the shared
   // #liquid-text filter LiquidTextFilter.jsx already drives (that one's
@@ -172,6 +230,26 @@ const Header = ({
       e.target.blur();
     }
   }
+
+  // The exact same #search-ripple filter handleSearch already drives above
+  // — reused here with a second, distinct trigger: the moment a search
+  // actually lands on zero matches, rather than every keystroke. A single
+  // stronger, slower "dry" shudder (nearly 2.5x the per-keystroke scale,
+  // holding longer) reads as the field itself coming up empty, layered on
+  // top of whatever per-keystroke ripple is already mid-flight rather than
+  // fighting it — killTweensOf clears that first, same discipline every
+  // other retriggerable GSAP tween in this app already follows.
+  const wasZeroResultsRef = useRef(false);
+  useEffect(() => {
+    const isZeroResults = searchText !== "" && notesCount === 0;
+    if (isZeroResults && !wasZeroResultsRef.current && !reduceMotion && searchDisplaceRef.current) {
+      gsap.killTweensOf(searchDisplaceRef.current);
+      gsap.timeline()
+        .to(searchDisplaceRef.current, { attr: { scale: 22 }, duration: .1, ease: "power2.out" })
+        .to(searchDisplaceRef.current, { attr: { scale: 0 }, duration: .7, ease: "power2.out" });
+    }
+    wasZeroResultsRef.current = isZeroResults;
+  }, [searchText, notesCount, reduceMotion]);
 
   // The color row's own physical sweep on clear (see FilterScatter.jsx) —
   // chipRefs is a plain array (registered the same way toolbarMagnetic's
@@ -234,6 +312,122 @@ const Header = ({
     const rect = themeRef.current?.getBoundingClientRect();
     toggleTheme(rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : undefined);
   }
+
+  // One builder per reorderable wand (see HEADER_WAND_KEYS/wandOrder above)
+  // rather than static JSX — each still needs its own magnetic index, and
+  // that index now has to reflect wherever this wand currently sits in the
+  // dragged order (1 + its position, star already owning 0), not a fixed
+  // slot the way it could when the row's order never changed. `pile` stays
+  // null under reduced motion so it drops out of orderedWandKeys below the
+  // same way its old conditional render did.
+  const wandBuilders = {
+    ink: (magnetIndex) => (
+      <WandButton
+        ariaLabel="Show how much of each ink the desk holds"
+        title="Ink levels"
+        rotate={ 10 }
+        jelly={ inkJelly }
+        magnetRef={ toolbarMagnetic.registerItem(magnetIndex) }
+        onClick={ () => window.dispatchEvent(new CustomEvent(INK_LEVELS_EVENT)) }
+        className="ink-trigger"
+        icon={ FaChartSimple }
+      />
+    ),
+    insights: (magnetIndex) => (
+      <WandButton
+        ariaLabel="Show desk insights"
+        title="Desk insights"
+        rotate={ 10 }
+        jelly={ insightsJelly }
+        magnetRef={ toolbarMagnetic.registerItem(magnetIndex) }
+        onClick={ () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)) }
+        className="insights-trigger"
+        icon={ FaChartLine }
+      />
+    ),
+    history: (magnetIndex) => (
+      <WandButton
+        ariaLabel="Show edit history"
+        title="Edit history"
+        rotate={ 10 }
+        jelly={ historyJelly }
+        magnetRef={ toolbarMagnetic.registerItem(magnetIndex) }
+        onClick={ () => window.dispatchEvent(new CustomEvent(HISTORY_EVENT)) }
+        className="history-trigger"
+        icon={ FaClockRotateLeft }
+      />
+    ),
+    trash: (magnetIndex) => (
+      <WandButton
+        ariaLabel={ trashCount > 0 ? `Open the trash — ${ trashCount } ${ trashCount === 1 ? "note" : "notes" }` : "Open the trash" }
+        title="Trash"
+        rotate={ -10 }
+        jelly={ trashJelly }
+        magnetRef={ toolbarMagnetic.registerItem(magnetIndex) }
+        onClick={ () => window.dispatchEvent(new CustomEvent(TRASH_EVENT)) }
+        className="trash-trigger"
+        icon={ FaTrashCan }
+      >
+        <AnimatePresence>
+          {
+            trashCount > 0 && (
+              <motion.span
+                key="badge"
+                className="trash-badge"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0, opacity: 0 }}
+                transition={ POP }
+              >
+                { trashCount }
+              </motion.span>
+            )
+          }
+        </AnimatePresence>
+      </WandButton>
+    ),
+    command: (magnetIndex) => (
+      <WandButton
+        ariaLabel="Open the command palette"
+        title="Command ink (Ctrl K)"
+        rotate={ -10 }
+        jelly={ commandJelly }
+        magnetRef={ toolbarMagnetic.registerItem(magnetIndex) }
+        onClick={ () => window.dispatchEvent(new CustomEvent(COMMAND_EVENT)) }
+        className="command-trigger"
+        icon={ FaWandMagicSparkles }
+      />
+    ),
+    focus: (magnetIndex) => (
+      <WandButton
+        ariaLabel="Enter focus mode"
+        title="Focus mode (F)"
+        rotate={ -14 }
+        jelly={ focusJelly }
+        magnetRef={ toolbarMagnetic.registerItem(magnetIndex) }
+        onClick={ toggleFocusMode }
+        className="focus-trigger"
+        icon={ FaExpand }
+      />
+    ),
+    // Tosses the desk into a real physics pile (see NotePile.jsx) — a
+    // decorative, opt-in view with no reduced-motion variant, so the
+    // button itself only ever appears when motion is on.
+    pile: reduceMotion ? null : (magnetIndex) => (
+      <WandButton
+        ariaLabel={ pileView ? "Restore the grid" : "Toss notes into a pile" }
+        title={ pileView ? "Restore the grid" : "Toss notes into a pile" }
+        rotate={ -10 }
+        jelly={ pileJelly }
+        magnetRef={ toolbarMagnetic.registerItem(magnetIndex) }
+        onClick={ togglePileView }
+        className={ `pile-toggle ${ pileView ? "active" : "" }` }
+        icon={ FaLayerGroup }
+        pressed={ !!pileView }
+      />
+    ),
+  };
+  const orderedWandKeys = wandOrder.filter((key) => wandBuilders[key]);
 
   return (
     <motion.header
@@ -355,10 +549,12 @@ const Header = ({
           />
         </motion.button>
       </div>
-      {/* The tally pops with a spring every time a note joins, leaves, or a
-          filter narrows the desk; filtered views read "shown / total". */}
+      {/* The digits themselves roll via useOdometer above rather than this
+          span re-springing on every change — its own initial/animate now
+          only ever plays once, on mount, plus the settle-pop effect above
+          right as a clear finishes narrowing back out to the full desk. */}
       <motion.span
-        key={ `${ notesCount }/${ totalCount }` }
+        ref={ tallyRef }
         className="notes-count"
         title={
           filtersActive
@@ -381,10 +577,10 @@ const Header = ({
           damping: 13,
         }}
       >
-        { notesCount }
+        { displayedNotesCount }
         {
           filtersActive && (
-            <small>/ { totalCount }</small>
+            <small>/ { displayedTotalCount }</small>
           )
         }
       </motion.span>
@@ -472,101 +668,35 @@ const Header = ({
         initial="hidden"
         animate="shown"
       >
-      <WandButton
-        ariaLabel="Show how much of each ink the desk holds"
-        title="Ink levels"
-        rotate={ 10 }
-        jelly={ inkJelly }
-        magnetRef={ toolbarMagnetic.registerItem(1) }
-        onClick={ () => window.dispatchEvent(new CustomEvent(INK_LEVELS_EVENT)) }
-        className="ink-trigger"
-        icon={ FaChartSimple }
-      />
-      <WandButton
-        ariaLabel="Show desk insights"
-        title="Desk insights"
-        rotate={ 10 }
-        jelly={ insightsJelly }
-        magnetRef={ toolbarMagnetic.registerItem(2) }
-        onClick={ () => window.dispatchEvent(new CustomEvent(INSIGHTS_EVENT)) }
-        className="insights-trigger"
-        icon={ FaChartLine }
-      />
-      <WandButton
-        ariaLabel="Show edit history"
-        title="Edit history"
-        rotate={ 10 }
-        jelly={ historyJelly }
-        magnetRef={ toolbarMagnetic.registerItem(3) }
-        onClick={ () => window.dispatchEvent(new CustomEvent(HISTORY_EVENT)) }
-        className="history-trigger"
-        icon={ FaClockRotateLeft }
-      />
-      <WandButton
-        ariaLabel={ trashCount > 0 ? `Open the trash — ${ trashCount } ${ trashCount === 1 ? "note" : "notes" }` : "Open the trash" }
-        title="Trash"
-        rotate={ -10 }
-        jelly={ trashJelly }
-        magnetRef={ toolbarMagnetic.registerItem(4) }
-        onClick={ () => window.dispatchEvent(new CustomEvent(TRASH_EVENT)) }
-        className="trash-trigger"
-        icon={ FaTrashCan }
+      {/* The reorderable wands (see HEADER_WAND_KEYS/wandBuilders above) get
+          their own real flex box — Reorder.Group needs an actual laid-out
+          element to drag within, unlike the display:contents wrapper around
+          it — with margin-left: auto moved onto IT instead of onto
+          .wand.ink-trigger specifically, since "ink" is no longer
+          guaranteed to be the first child once a visitor has dragged
+          something ahead of it. */}
+      <Reorder.Group
+        as="div"
+        axis="x"
+        className="header-wand-group"
+        values={ orderedWandKeys }
+        onReorder={ handleWandReorder }
       >
-        <AnimatePresence>
-          {
-            trashCount > 0 && (
-              <motion.span
-                key="badge"
-                className="trash-badge"
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0, opacity: 0 }}
-                transition={ POP }
-              >
-                { trashCount }
-              </motion.span>
-            )
-          }
-        </AnimatePresence>
-      </WandButton>
-      <WandButton
-        ariaLabel="Open the command palette"
-        title="Command ink (Ctrl K)"
-        rotate={ -10 }
-        jelly={ commandJelly }
-        magnetRef={ toolbarMagnetic.registerItem(5) }
-        onClick={ () => window.dispatchEvent(new CustomEvent(COMMAND_EVENT)) }
-        className="command-trigger"
-        icon={ FaWandMagicSparkles }
-      />
-      <WandButton
-        ariaLabel="Enter focus mode"
-        title="Focus mode (F)"
-        rotate={ -14 }
-        jelly={ focusJelly }
-        magnetRef={ toolbarMagnetic.registerItem(6) }
-        onClick={ toggleFocusMode }
-        className="focus-trigger"
-        icon={ FaExpand }
-      />
-      {/* Tosses the desk into a real physics pile (see NotePile.jsx) — a
-          decorative, opt-in view with no reduced-motion variant, so the
-          button itself only ever appears when motion is on. */}
-      {
-        !reduceMotion && (
-          <WandButton
-            ariaLabel={ pileView ? "Restore the grid" : "Toss notes into a pile" }
-            title={ pileView ? "Restore the grid" : "Toss notes into a pile" }
-            rotate={ -10 }
-            jelly={ pileJelly }
-            magnetRef={ toolbarMagnetic.registerItem(7) }
-            onClick={ togglePileView }
-            className={ `pile-toggle ${ pileView ? "active" : "" }` }
-            icon={ FaLayerGroup }
-            pressed={ !!pileView }
-          />
-        )
-      }
+        {
+          orderedWandKeys.map((key, index) => (
+            <Reorder.Item
+              key={ key }
+              value={ key }
+              as="div"
+              className="header-wand-slot"
+              variants={ filterChipVariants }
+              whileDrag={{ scale: 1.15, zIndex: 5, cursor: "grabbing" }}
+            >
+              { wandBuilders[key](1 + index) }
+            </Reorder.Item>
+          ))
+        }
+      </Reorder.Group>
       <motion.div
         ref={ themeRef }
         role="button"

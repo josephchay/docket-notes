@@ -24,10 +24,12 @@
   transition: background-color 0.4s ease-in-out;
 }
 
-/* A bead of ink at the bar's own leading edge — plain shape/color rather
-   than the app's shared gooey SVG filter (see GooeyEffectSvg.jsx): that
-   filter's blur radius is tuned for shapes much larger than this 3px-tall
-   bar, and would blur it into mush rather than a clean droplet merge. */
+/* A bead of ink at the bar's own leading edge — the reduced-motion
+   fallback only (see ScrollProgress.jsx): plain shape/color rather than
+   the app's shared gooey SVG filter (see GooeyEffectSvg.jsx), whose blur
+   radius is tuned for shapes much larger than this 3px-tall bar. Outside
+   reduced motion this is replaced entirely by the WebGL metaball drip
+   below, which owns its own shape via the shader instead of CSS. */
 .scroll-progress-drip {
   position: absolute;
   top: 50%;
@@ -39,6 +41,41 @@
   background-color: var(--page-ink-color);
   pointer-events: none;
   transition: background-color 0.4s ease-in-out;
+}
+
+/* The real WebGL droplet (see ScrollProgress.jsx's drip canvas effect) —
+   sized bigger than the visual dot the shader actually draws so it also
+   doubles as a comfortable drag hit-target (see handleDripPointerDown).
+   pointer-events auto here specifically, against the track's own
+   pointer-events: none default, the same opt-in .scroll-progress-marker
+   already makes. */
+.scroll-progress-drip-gl {
+  position: absolute;
+  top: 50%;
+  margin-left: -12px;
+  margin-top: -12px;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+
+.scroll-progress-drip-gl:active {
+  cursor: grabbing;
+}
+
+/* The traveling highlight a marker click sends along the track (see
+   jumpTo) — a soft glow distinct from the plain ink bar/drip, purely
+   decorative and never intercepting pointer events of its own. */
+.scroll-progress-travel-pulse {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background-color: var(--yellow-color);
+  filter: blur(4px);
+  pointer-events: none;
 }
 
 .scroll-progress-marker {

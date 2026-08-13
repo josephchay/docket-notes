@@ -37,14 +37,28 @@
 /* border-radius is animated by framer during the fold morph, so it is
    deliberately not set here. */
 .quote-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
   max-width: 660px;
   padding: 16px 20px;
   background-color: var(--page-surface-color);
   transition: background-color 0.4s ease-in-out;
   will-change: transform;
+}
+
+/* The swipe-to-deal's own drag surface — a separate inner layer from
+   .quote-card itself (see the comment in QuoteCard.jsx) so framer's drag
+   transform never shares an element with the card's own fold-in/out
+   transform. Carries the flex layout .quote-card used to own directly,
+   now that it wraps this instead of the line/button pair itself. */
+.quote-card-drag {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  cursor: grab;
+  touch-action: pan-y;
+}
+
+.quote-card-drag:active {
+  cursor: grabbing;
 }
 
 .quote-card .quote-line {
@@ -53,6 +67,13 @@
   line-height: 1.5;
   color: var(--page-ink-color);
   transition: color 0.4s ease-in-out;
+}
+
+/* The settled line's own per-word ink-soak reveal (see QuoteCard.jsx) —
+   inline-block so each word can carry its own translateY/blur without
+   breaking the paragraph's natural wrapping. */
+.quote-word {
+  display: inline-block;
 }
 
 .quote-card .quote-deal {
