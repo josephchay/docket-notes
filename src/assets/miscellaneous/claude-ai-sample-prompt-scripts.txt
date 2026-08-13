@@ -15,3 +15,5 @@ sample styles: Awwwards, interactive
 1. Design, develop, and implement features and functionalities that are interactive, minimalist, modern, and awwwards style. Sample Animation packages: animejs, xstate, gsap, webgl, threejs, framer motion, three, and other animation libraries or packages. Sample Animation types: morphical, starchy, fluid, bouncy, jelly, elastic, stretchy. Use more, better packages or animation types
 
 2. Indulge into devout designs, developments, and implementation of features and functionalities which involve more than these: [Template Categories Samples]
+
+3. Design, and develop interactive and innovative physics-based, mathematics-based features and functionalities that are Awwwards style. [Template Categories Samples]

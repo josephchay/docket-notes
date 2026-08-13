@@ -8,14 +8,25 @@
   padding-top: 12vh;
 }
 
+/* A radial wash rather than a flat fill — a uniform color has no internal
+   edge for the boil filter below to actually displace (warping a flat
+   field just gives back the same flat field), so the gradient's own soft
+   rings are what the turbulence has something to visibly work on. Same
+   fix CommandPalette.css's own backdrop needed for the identical reason. */
 .ink-levels-backdrop {
   position: absolute;
   inset: 0;
-  background-color: rgba(25, 25, 25, 0.28);
+  background: radial-gradient(circle at 50% 30%, rgba(25, 25, 25, 0.34), rgba(25, 25, 25, 0.22) 60%, rgba(25, 25, 25, 0.28) 100%);
 }
 
 :root[data-theme="dark"] .ink-levels-backdrop {
-  background-color: rgba(0, 0, 0, 0.5);
+  background: radial-gradient(circle at 50% 30%, rgba(0, 0, 0, 0.58), rgba(0, 0, 0, 0.42) 60%, rgba(0, 0, 0, 0.5) 100%);
+}
+
+/* The wet-ink boil itself (see InkLevelsPanel.jsx's backdropTurbRef) — a
+   separate modifier class, applied only outside reduced motion. */
+.ink-levels-backdrop-boil {
+  filter: url(#ink-levels-backdrop-boil);
 }
 
 /* border-radius is animated by framer during the drop-to-sheet morph, so it
@@ -83,6 +94,9 @@
 }
 
 .ink-levels-section h4 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   margin: 0 0 12px;
   font-size: 12px;
   font-weight: 700;
@@ -93,15 +107,53 @@
   transition: color 0.4s ease-in-out;
 }
 
+/* The milestone's own live countdown (see useOdometer in
+   InkLevelsPanel.jsx) — normal-case and full opacity against the
+   uppercase, dimmed label it sits beside, so the one number that's
+   actually still moving is what draws the eye. */
+.ink-levels-countdown {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--page-ink-color);
+  opacity: 1;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Bars sit on a shared baseline with a gap between them, the same
    .insights-bars layout Desk insights' own "Notes by color" section
-   uses — no scrollbar, a busy palette just wraps onto another row. */
+   uses — no scrollbar, a busy palette just wraps onto another row.
+   position: relative anchors the thread overlay below to this row's own
+   box rather than the panel's. */
 .ink-levels-bars {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 10px;
   padding-bottom: 2px;
+}
+
+/* The catenary thread strung across every vial's own top (see the tick
+   loop in InkLevelsPanel.jsx) — sits behind the columns themselves
+   (z-index below their own implicit stacking) so it always reads as
+   running INTO each vial rather than over it. */
+.ink-levels-thread-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.ink-levels-thread {
+  fill: none;
+  stroke: var(--page-ink-color);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: .3;
+  transition: stroke 0.4s ease-in-out;
 }
 
 .ink-levels-column {
@@ -118,6 +170,31 @@
   background: transparent;
   padding: 4px 2px 0;
   border-radius: 10px;
+}
+
+/* The desk's own current front-runner (see the leadingColor comparison in
+   InkLevelsPanel.jsx) — a soft ink halo breathing behind the vial, real
+   data driving a visual rather than a decorative badge. Sits behind
+   everything else in the column (z-index: -1 against this button's own
+   position: relative) so it never intercepts the hover/click the vial
+   itself already owns. */
+.ink-levels-column.leading::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 46px;
+  height: 46px;
+  margin-left: -23px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--black-more-transclucent-color) 0%, transparent 70%);
+  z-index: -1;
+  animation: ink-levels-leading-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes ink-levels-leading-pulse {
+  0%, 100% { opacity: .45; transform: scale(.92); }
+  50% { opacity: .85; transform: scale(1.08); }
 }
 
 /* Replaces the old plain ink-column's native title tooltip with the
@@ -193,6 +270,25 @@
    outline instead, same as the vial always has. */
 .ink-levels-button.active .ink-vial-fill {
   stroke: var(--page-ink-color);
+}
+
+/* The recolor-travel droplet (see travelDroplet in InkLevelsPanel.jsx) —
+   plain-appended straight to document.body and GSAP-tweened, the same
+   "no React reconciliation for something this short-lived" choice
+   ColorSelector.jsx's own drag ghost and Navigation.jsx's data-stream
+   drops already make. */
+.ink-levels-travel-drop {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 970;
+  box-shadow: 0 4px 10px -2px rgba(25, 25, 25, 0.35);
 }
 
 .ink-levels-label {

@@ -4,6 +4,8 @@ import gsap from "gsap";
 
 import { resolveCssColor } from "../History/HistoryAmbient";
 
+import "./LiquidMeter.css";
+
 THREE.ColorManagement.enabled = false;
 
 const VIAL_W = 44;
@@ -77,13 +79,20 @@ const FRAG = `
 // the vial's rounded-rect shape via the frame div's own CSS
 // (border-radius + overflow: hidden), the same way HistoryAmbient.jsx's
 // canvas is clipped by its parent rather than a shader-side mask.
-const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduceMotion = false, celebration = null }) => {
+const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduceMotion = false, celebration = null, interactive = false }) => {
   const canvasRef = useRef(null);
   const currentRef = useRef(0);
   const targetRef = useRef(ratio);
   const uniformsRef = useRef(null);
   const pulseRef = useRef({ value: 1 });
   const pulseTlRef = useRef(null);
+  // Read fresh from inside the mount effect's own pointerdown handler
+  // below (that effect only ever runs once — see its own exhaustive-deps
+  // opt-out further down), the same "sync a ref every render, read the
+  // ref in the long-lived effect" pattern this file already keeps for
+  // color/reduceMotion.
+  const interactiveRef = useRef(interactive);
+  interactiveRef.current = interactive;
   // The wave field's own state — three buffers rotated each step (current,
   // previous, and a scratch slot for the next one) rather than allocated
   // fresh every frame. waveImpulseRef is how the ratio/celebration effect
@@ -174,6 +183,20 @@ const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduce
     waveNextRef.current = new Float32Array(SURFACE_COUNT);
     waveLastRef.current = performance.now();
 
+    // Opt-in (see the `interactive` prop) — a tap strikes this meter's own
+    // wave field exactly the way a real milestone crossing already does
+    // below, just gentler, so a visitor can play with the surface instead
+    // of only ever watching it react to data.
+    const handlePointerDown = () => {
+      if (!interactiveRef.current || reduceMotionRef.current) return;
+      waveImpulseRef.current = 3;
+      pulseTlRef.current?.kill();
+      pulseTlRef.current = gsap.timeline()
+        .to(pulseRef.current, { value: 1.15, duration: .12, ease: "power2.in" })
+        .to(pulseRef.current, { value: 1, duration: .7, ease: "elastic.out(1.1, .42)" });
+    };
+    canvas.addEventListener("pointerdown", handlePointerDown);
+
     const clock = new THREE.Clock();
     let raf = null;
 
@@ -261,6 +284,7 @@ const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduce
     return () => {
       if (raf) cancelAnimationFrame(raf);
       document.removeEventListener("visibilitychange", handleVisibility);
+      canvas.removeEventListener("pointerdown", handlePointerDown);
       pulseTlRef.current?.kill();
       quad.geometry.dispose();
       material.dispose();
@@ -292,7 +316,7 @@ const LiquidMeter = ({ ratio = 0, color = "var(--page-ink-color)", label, reduce
   return (
     <div className="liquid-meter">
       <div className="liquid-meter-frame">
-        <canvas ref={ canvasRef } className="liquid-meter-canvas" aria-hidden="true" />
+        <canvas ref={ canvasRef } className={ `liquid-meter-canvas ${ interactive ? "interactive" : "" }` } aria-hidden="true" />
       </div>
       {
         label && <span className="liquid-meter-label">{ label }</span>

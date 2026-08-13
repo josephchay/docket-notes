@@ -10,33 +10,10 @@ import useInkPulse from "../../hooks/useInkPulse";
 import useFocusTrap from "../../hooks/useFocusTrap";
 import HistoryAmbient from "../History/HistoryAmbient";
 import { EXIT_SPRING, coinFlip } from "../Motion";
-import { createPoint, integratePoint, satisfyConstraint } from "../../utils/verlet";
-import { smoothPath } from "../../utils/svgPath";
 
 import "./NoteEditor.css";
 
 const debounceTimer = 500;
-
-// Drag-to-resize (see handleResizeDown/Move/End below) — continuous
-// width/height while held, clamped so the paper can never shrink below a
-// usable size or blow past the same viewport-relative ceiling sizeFor's
-// own "epic" preset already respects.
-const RESIZE_MIN_W = 380;
-const RESIZE_MIN_H = 300;
-
-// The bottom edge's own verlet chain while a resize is live (see the drag
-// effect further down) — a real rope/cloth integration (utils/verlet.js,
-// the same one ClothField/PullString and NoteList's own idle blobs
-// already trust), not a decorative wobble: the right end is kinematically
-// driven to the actual drag position every frame, the left end stays
-// pinned at the paper's own fixed corner, and the points between them
-// relax toward straight through ordinary distance constraints — which is
-// exactly what gives a fast drag a real trailing whip and a slow one an
-// almost-taut line.
-const EDGE_SEGMENTS = 7;
-const EDGE_DAMPING = .88;
-const EDGE_SAG = 60; // px/s² — a light droop while the edge is actively being pulled
-const EDGE_RELAX_ITERATIONS = 3;
 
 // The palette dots and every action button (star, lock, copy, resize,
 // close) shared this exact spring as a copy-pasted literal six times over
@@ -62,14 +39,13 @@ const sizeFor = (name) => {
   }
 };
 
-// A thin ink stroke drawing itself on around whichever field (title or
-// text) is actually focused, rather than an instant CSS border/outline
-// swap — the same pathLength draw-on technique TrashPanel's own
-// hold-to-confirm ring already uses, just triggered by focus instead of a
-// held press. `rect` is measured in the caller (offsetLeft/Top/Width/
-// Height against .note-editor, the nearest positioned ancestor) rather
-// than this component reading a ref itself, so the same small piece works
-// for both fields without needing to know which one it's tracking.
+// A thin ink stroke drawing itself on around the title field while it's
+// actually focused, rather than an instant CSS border/outline swap — the
+// same pathLength draw-on technique TrashPanel's own hold-to-confirm ring
+// already uses, just triggered by focus instead of a held press. `rect` is
+// measured in the caller (offsetLeft/Top/Width/Height against .note-editor,
+// the nearest positioned ancestor) rather than this component reading a
+// ref itself.
 const FocusRing = ({ rect, radius = 8 }) => {
   if (!rect) return null;
 
@@ -117,22 +93,6 @@ const NoteEditor = ({
   const [draftText, setDraftText] = useState(note.text);
   const [size, setSize] = useState("roomy");
   const [copied, setCopied] = useState(false);
-
-  // Drag-to-resize's own live dimensions — non-null only while a drag is
-  // actually held, overriding the size spring below with a direct,
-  // duration:0 target so the paper tracks the pointer 1:1 rather than
-  // lagging a spring behind it. dragSizeRef mirrors the same value for the
-  // edge-chain effect to read fresh every frame without depending on a
-  // stale closure over this render's own state.
-  const [dragSize, setDragSize] = useState(null);
-  const dragSizeRef = useRef(null);
-  const resizeStartRef = useRef(null);
-  const paperRef = useRef(null);
-
-  const updateDragSize = (next) => {
-    dragSizeRef.current = next;
-    setDragSize(next);
-  };
 
   // Tags pop in bouncy, shrink away when removed. Notes from before this
   // feature existed simply have none yet.
@@ -200,136 +160,16 @@ const NoteEditor = ({
   const textTimerRef = useRef(null);
   const copiedTimerRef = useRef(null);
 
-  // Which preset the paper's own current box is actually closest to (by
-  // straight-line distance in width/height space) — what a released drag
-  // snaps `size` to, so the discrete preset classes (.cozy/.grand/.epic —
-  // padding, border-radius, type scale) still take over cleanly once the
-  // continuous part of the resize is done.
-  const nearestPreset = (width, height) => {
-    let best = EDITOR_SIZES[0];
-    let bestDist = Infinity;
-    EDITOR_SIZES.forEach((name) => {
-      const preset = sizeFor(name);
-      const dist = Math.hypot(preset.width - width, preset.height - height);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = name;
-      }
-    });
-    return best;
-  };
-
-  const handleResizeDown = (e) => {
-    const rect = paperRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    e.preventDefault();
-    resizeStartRef.current = { x: e.clientX, y: e.clientY, w: rect.width, h: rect.height };
-    updateDragSize({ width: rect.width, height: rect.height });
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-  };
-
-  const handleResizeMove = (e) => {
-    const start = resizeStartRef.current;
-    if (!start) return;
-
-    const maxW = Math.min(1440, window.innerWidth * .96);
-    const maxH = Math.min(1080, window.innerHeight * .94);
-    const width = Math.max(RESIZE_MIN_W, Math.min(maxW, start.w + (e.clientX - start.x)));
-    const height = Math.max(RESIZE_MIN_H, Math.min(maxH, start.h + (e.clientY - start.y)));
-    updateDragSize({ width, height });
-  };
-
-  // Named to match the drag-resize this CSS file's own .note-editor
-  // comment already describes: the continuous part ends here, and only
-  // now does `size` (and with it, the preset classes' own CSS-transitioned
-  // padding/border-radius) actually change.
-  const handleResizeEnd = (e) => {
-    const start = resizeStartRef.current;
-    if (!start) return;
-
-    resizeStartRef.current = null;
-    e.currentTarget?.releasePointerCapture?.(e.pointerId);
-
-    const final = dragSizeRef.current;
-    updateDragSize(null);
-    if (final) setSize(nearestPreset(final.width, final.height));
-  };
-
-  // The bottom edge's own verlet chain, live only while a resize is
-  // actually held — see EDGE_SEGMENTS' own comment for the physics. Keyed
-  // on whether a drag is active at all (not on dragSize's own values), so
-  // this starts and stops exactly once per drag rather than restarting on
-  // every pixel of movement; the loop itself reads the live width straight
-  // off dragSizeRef every frame.
-  const edgeChainRef = useRef(null);
-  const edgePathRef = useRef(null);
-  const edgeRafRef = useRef(null);
-
-  useEffect(() => {
-    if (!dragSize) return undefined;
-
-    edgeChainRef.current = Array.from({ length: EDGE_SEGMENTS }, (_, i) =>
-      createPoint((i / (EDGE_SEGMENTS - 1)) * dragSize.width, 0, i === 0),
-    );
-
-    let lastT = performance.now();
-
-    const tick = (now) => {
-      edgeRafRef.current = requestAnimationFrame(tick);
-      const dt = Math.min(.032, (now - lastT) / 1000);
-      lastT = now;
-
-      const chain = edgeChainRef.current;
-      const width = dragSizeRef.current?.width ?? dragSize.width;
-
-      // The right end is kinematically driven straight to the live drag
-      // position every frame (a moving anchor, not a free point) — px is
-      // reset alongside it so it never itself accumulates an implied
-      // velocity; only the free points between the two ends actually get
-      // integrated and feel the chain's own tension.
-      const driven = chain[chain.length - 1];
-      driven.x = width;
-      driven.y = 0;
-      driven.px = driven.x;
-      driven.py = driven.y;
-
-      for (let i = 1; i < chain.length - 1; i++) {
-        integratePoint(chain[i], dt, 0, EDGE_SAG, EDGE_DAMPING);
-      }
-
-      const restLength = width / (EDGE_SEGMENTS - 1);
-      for (let pass = 0; pass < EDGE_RELAX_ITERATIONS; pass++) {
-        for (let i = 0; i < chain.length - 1; i++) {
-          satisfyConstraint(chain[i], chain[i + 1], restLength);
-        }
-      }
-
-      if (edgePathRef.current) {
-        edgePathRef.current.setAttribute("d", smoothPath(chain.map((p) => ({ x: p.x, y: p.y }))));
-      }
-    };
-
-    edgeRafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (edgeRafRef.current) cancelAnimationFrame(edgeRafRef.current);
-      edgeRafRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!dragSize]);
-
   // The focus-draw ring (see FocusRing below) — measured via offsetLeft/
-  // offsetTop/offsetWidth/offsetHeight rather than wrapping the title/text
-  // fields in new positioning containers, since both already sit directly
-  // inside .note-editor (itself position: relative), so their own offsets
+  // offsetTop/offsetWidth/offsetHeight rather than wrapping the title
+  // field in a new positioning container, since it already sits directly
+  // inside .note-editor (itself position: relative), so its own offsets
   // already land in exactly the coordinate space an absolutely-positioned
   // sibling overlay needs. Re-measured whenever the paper's own size
-  // changes while a field is focused, so a resize mid-focus doesn't leave
+  // changes while the field is focused, so a resize mid-focus doesn't leave
   // the ring sized for stale dimensions.
   const [titleFocused, setTitleFocused] = useState(false);
-  const [textFocused, setTextFocused] = useState(false);
   const [titleRect, setTitleRect] = useState(null);
-  const [textRect, setTextRect] = useState(null);
 
   const measureFocusRect = (el, setter) => {
     if (!el) return;
@@ -338,8 +178,7 @@ const NoteEditor = ({
 
   useEffect(() => {
     if (titleFocused) measureFocusRect(titleRef.current, setTitleRect);
-    if (textFocused) measureFocusRect(textRef.current, setTextRect);
-  }, [size, dragSize, titleFocused, textFocused]);
+  }, [size, titleFocused]);
 
   // The copy action's own ghost scrap (see handleCopy below) — page-space
   // coordinates, portaled straight to document.body the same way every
@@ -489,19 +328,10 @@ const NoteEditor = ({
           animate={ jelly }
         >
           <motion.div
-            ref={ paperRef }
             className={ `note-editor ${ size } ${ note.color }-bg ${ note.lock ? "locked" : "" }` }
             initial={ sizeFor("roomy") }
-            /* A held drag overrides the preset spring entirely with a
-               duration:0 target — the paper tracks the pointer 1:1 rather
-               than lagging a spring behind it; handleResizeEnd hands back
-               to the ordinary preset spring below the instant it lets go. */
-            animate={ dragSize || sizeFor(size) }
-            transition={
-              dragSize
-                ? { duration: 0 }
-                : { type: "spring", stiffness: 260, damping: 14, mass: .9 }
-            }
+            animate={ sizeFor(size) }
+            transition={{ type: "spring", stiffness: 260, damping: 14, mass: .9 }}
           >
             {/* A faint drift of actual ink specks behind the paper — the
                 exact same raw-Three.js dust technique History's own preview
@@ -714,13 +544,8 @@ const NoteEditor = ({
               placeholder={ note.placeholder }
               value={ draftText }
               onChange={ (e) => handleText(e.target.value) }
-              onFocus={ () => { setTextFocused(true); measureFocusRect(textRef.current, setTextRect); } }
-              onBlur={ () => setTextFocused(false) }
               className={ `note-editor-text custom-scroll ${ note.color }-highlight` }
             ></textarea>
-            <AnimatePresence>
-              { textFocused && <FocusRing key="text-ring" rect={ textRect } radius={ 10 } /> }
-            </AnimatePresence>
             <div className="note-editor-footer">
               <div className="note-editor-footer-left">
                 <span className="note-editor-date">{ note.time }</span>
@@ -760,33 +585,6 @@ const NoteEditor = ({
                 <span className="note-editor-count muted">{ draftText.length } chars</span>
               </div>
             </div>
-            {/* The bottom edge's own verlet chain (see the drag effect
-                above) — only actually mounted while a resize is live, so
-                it costs nothing the rest of the time. */}
-            {
-              dragSize && (
-                <svg className="note-editor-edge-chain" aria-hidden="true">
-                  <path ref={ edgePathRef } />
-                </svg>
-              )
-            }
-            {/* The corner grip — a direct-manipulation companion to the
-                click-to-cycle resize button above, not a replacement for
-                it. touch-action: none so a touch drag doesn't also try to
-                scroll the page underneath it. */}
-            {
-              !note.lock && (
-                <span
-                  className="note-editor-resize-handle"
-                  role="presentation"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={ handleResizeDown }
-                  onPointerMove={ handleResizeMove }
-                  onPointerUp={ handleResizeEnd }
-                  onPointerCancel={ handleResizeEnd }
-                />
-              )
-            }
           </motion.div>
         </motion.div>
       </motion.div>

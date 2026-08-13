@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 
 import { WaveField } from "../../utils/waveField";
 import { smoothPath } from "../../utils/svgPath";
@@ -24,7 +24,7 @@ const VIAL_AMPLITUDE = 5; // px of visible ripple at the surface
 const VIAL_OPEN_SPLASH = 0.6;   // struck once, every time the popover opens
 const VIAL_COUNT_SPLASH = 0.35; // per note gained or lost, capped below
 
-const InkVial = ({ count, height, colorName, open, reduceMotion }) => {
+const InkVial = forwardRef(({ count, height, colorName, open, reduceMotion }, ref) => {
   const waveRef = useRef(null);
   const pathRef = useRef(null);
   const prevCountRef = useRef(count);
@@ -34,6 +34,18 @@ const InkVial = ({ count, height, colorName, open, reduceMotion }) => {
   if (!waveRef.current) {
     waveRef.current = new WaveField(VIAL_COLS, VIAL_ROWS, VIAL_CELL, { waveSpeed: VIAL_WAVE_SPEED, damping: VIAL_DAMPING });
   }
+
+  // A third way to strike the same wave field open/count already do —
+  // exposed for InkLevelsPanel.jsx's own hover-dip and neighbor-ripple,
+  // neither of which is a change to this vial's own props the way open/
+  // count are, so neither could trigger from an effect the way those two
+  // already do.
+  useImperativeHandle(ref, () => ({
+    strike(amount) {
+      if (reduceMotion) return;
+      waveRef.current.exciteMode(1, 1, amount);
+    },
+  }), [reduceMotion]);
 
   // Struck once on open — a small standing-wave strike (exciteMode, the
   // same "hit like a bell" this vial is genuinely small and closed enough
@@ -99,6 +111,6 @@ const InkVial = ({ count, height, colorName, open, reduceMotion }) => {
       <path ref={ pathRef } className={ `ink-vial-fill ${ colorName }-bg` } d={ flatPath } />
     </svg>
   );
-};
+});
 
 export default InkVial;
