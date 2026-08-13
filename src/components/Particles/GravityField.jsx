@@ -112,10 +112,24 @@ const FRAG = `
 // hand-derived projection math this time — unlike ParticleCuboid.jsx's 3D
 // scene, a flat 2D view has no reason to reimplement anything Three.js
 // already does correctly).
-const GravityField = ({ active, reduceMotion = false }) => {
+// How often the panel chrome around this canvas actually gets a fresh
+// physics reading (see onSystemStats below) — real quantities computed
+// straight off the same body list the stepper itself owns, just reported
+// out at a chrome-appropriate rate rather than every one of the 240
+// substeps/second the simulation itself actually runs at.
+const STATS_EMIT_MS = 150;
+
+const GravityField = ({ active, reduceMotion = false, onSystemStats }) => {
   const canvasRef = useRef(null);
   const reduceMotionRef = useRef(reduceMotion);
   reduceMotionRef.current = reduceMotion;
+  // Read fresh inside the tick loop below (which only ever mounts once per
+  // `active` toggle) rather than closed over at effect-start — the same
+  // "sync a ref every render, read the ref in the long-lived effect"
+  // pattern TrashPhysics' own onPileTilt callback already uses.
+  const onSystemStatsRef = useRef(onSystemStats);
+  useEffect(() => { onSystemStatsRef.current = onSystemStats; });
+  const lastStatsEmitRef = useRef(0);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -379,12 +393,23 @@ const GravityField = ({ active, reduceMotion = false }) => {
       // without needing to fake the star's position as immovable.
       barycenter.set(0, 0);
       let totalMass = 0;
+      // The system's own real total kinetic energy — Σ½mv², accumulated in
+      // the same pass rather than a second loop over bodies, purely for
+      // the panel chrome's own display (see onSystemStats below); nothing
+      // downstream of the stepper above ever reads this back.
+      let kineticEnergy = 0;
       for (const body of bodies) {
         barycenter.x += body.pos.x * body.mass;
         barycenter.y += body.pos.y * body.mass;
         totalMass += body.mass;
+        kineticEnergy += 0.5 * body.mass * body.vel.lengthSq();
       }
       barycenter.multiplyScalar(1 / totalMass);
+
+      if (onSystemStatsRef.current && now - lastStatsEmitRef.current > STATS_EMIT_MS) {
+        lastStatsEmitRef.current = now;
+        onSystemStatsRef.current({ kineticEnergy, bodyCount: bodies.length });
+      }
 
       if (!reduceMotionRef.current) {
         for (const planet of planets) {

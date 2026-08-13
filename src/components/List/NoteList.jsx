@@ -739,7 +739,7 @@ const NoteList = ({
         )
       }
       <div ref={ quoteParallaxRef } className="quote-parallax">
-        <QuoteCard reduceMotion={ reduceMotion } />
+        <QuoteCard />
       </div>
       <div
         ref={ ref }

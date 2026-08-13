@@ -880,26 +880,6 @@ const Home = () => {
     setNotes(newNotes);
   }
 
-  // Pours every note of one color into another — the whole-color
-  // counterpart to setNoteColor's single note, driven by the ink-levels
-  // panel's own vial-onto-vial decant gesture (see InkLevelsPanel.jsx).
-  // Undoable like every other bulk action; a no-op (no undo entry, no
-  // stamp) when the source color is empty, so a stray drag never pushes a
-  // meaningless step onto the history.
-  const decantColor = (fromColor, toColor) => {
-    if (fromColor === toColor) return;
-
-    const moved = notes.filter((note) => note.color === fromColor).length;
-    if (moved === 0) return;
-
-    pushUndo(`decanted ${ fromColor } into ${ toColor }`);
-    playHistoryAction("recolored");
-    setNotes((prev) => prev.map((note) => (
-      note.color === fromColor ? { ...note, color: toColor } : note
-    )));
-    showStamp(`${ moved } ${ moved === 1 ? "note" : "notes" } · ${ fromColor } → ${ toColor }`);
-  }
-
   const reorderNotes = (sourceId, targetId) => {
     if (sourceId === targetId) return;
 
@@ -1478,8 +1458,6 @@ const Home = () => {
         setSortColor={ setNotesSortColor }
         reduceMotion={ reduceMotion }
         celebration={ celebration }
-        addNote={ addNote }
-        decantColor={ decantColor }
       />
       <GravityFieldPanel reduceMotion={ reduceMotion } />
       <FluidFieldPanel reduceMotion={ reduceMotion } />
