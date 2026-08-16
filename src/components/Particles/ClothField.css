@@ -43,3 +43,45 @@
   stroke-width: 1.4px;
   opacity: .3;
 }
+
+/* The scissors' trailing echo (see cutTrail in ClothField.jsx) — dashed so
+   it reads as a cut line being drawn rather than another thread. */
+.cloth-field-cut-trail {
+  fill: none;
+  stroke: var(--red-color);
+  stroke-width: 1.6px;
+  stroke-linecap: round;
+  stroke-dasharray: 1 5;
+  opacity: .8;
+  pointer-events: none;
+}
+
+/* Grab/cut mode toggle — same 30px rounded-square language as every other
+   in-panel icon button in this app (see .cloth-field-close), pinned to the
+   stage's own top-right corner (.cloth-field-stage is position:relative). */
+.cloth-field-mode-toggle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 9px;
+  background-color: var(--page-bg-color);
+  color: var(--page-ink-color);
+  font-size: 13px;
+  box-shadow: 0 4px 14px -6px rgba(25, 25, 25, 0.35);
+  cursor: pointer;
+  transition: background-color 0.25s ease-in-out, color 0.25s ease-in-out;
+}
+
+.cloth-field-mode-toggle.is-active {
+  background-color: var(--red-color);
+  color: var(--page-bg-color);
+}

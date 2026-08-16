@@ -56,7 +56,7 @@ const ClothPanel = ({ reduceMotion }) => {
           <FaXmark />
         </button>
       </div>
-      <p className="cloth-field-hint">Grab any thread and let go — it swings with real weight</p>
+      <p className="cloth-field-hint">Grab any thread and let go — it swings with real weight. Switch to scissors to tear it open.</p>
       <div className="cloth-field-stage">
         {/* Always mounted, same reasoning as the other Particles/ panels —
             SheetPanel's own AnimatePresence already owns the mount/unmount
