@@ -255,8 +255,13 @@ header.header {
   font-weight: 600;
   color: var(--page-bg-color);
   background-color: var(--page-ink-color);
-  /* cursor: pointer; */
+  cursor: grab;
+  touch-action: none;
   transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.header .clear-filters:active {
+  cursor: grabbing;
 }
 
 .header .clear-filters .clear-filters-icon {

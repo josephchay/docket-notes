@@ -183,7 +183,10 @@ const Header = ({
   const chipRefs = useRef([]);
   const filterScatterRef = useRef(null);
 
-  const handleClearFilters = () => {
+  // fling: null for a plain tap, or framer's own drag-release velocity
+  // ({ x, y } px/s — see the clear-filters button's onDragEnd below) for a
+  // real flick, passed straight through to FilterScatter.scatter.
+  const handleClearFilters = (fling) => {
     if (!reduceMotion && filterScatterRef.current) {
       const chips = chipRefs.current
         .map((el, index) => {
@@ -197,7 +200,7 @@ const Header = ({
           };
         })
         .filter(Boolean);
-      filterScatterRef.current.scatter(chips);
+      filterScatterRef.current.scatter(chips, fling ?? null);
     }
     clearFilters();
   }
@@ -452,7 +455,22 @@ const Header = ({
               whileHover={{ scale: 1.06 }}
               whileTap={{ scale: .92 }}
               transition={ springy }
-              onClick={ handleClearFilters }
+              /* A real flick, not just a click — drag the button itself a
+                 little, same elastic-tug idiom PullString's own tassel
+                 uses, and release it to throw the color row with actual
+                 captured velocity (see FilterScatter's fling handling)
+                 instead of the default gentle toss. dragSnapToOrigin
+                 springs the button itself straight back into place;
+                 framer suppresses onClick for any release that actually
+                 engaged the drag, so a plain tap still only ever fires
+                 onClick below, never both. */
+              drag
+              dragSnapToOrigin
+              dragElastic={ 0.3 }
+              dragConstraints={{ left: -20, right: 20, top: -16, bottom: 16 }}
+              dragTransition={{ bounceStiffness: 480, bounceDamping: 22 }}
+              onClick={ () => handleClearFilters(null) }
+              onDragEnd={ (e, info) => handleClearFilters(info.velocity) }
             >
               <FaRotateLeft className="clear-filters-icon" />
               <span>Clear</span>

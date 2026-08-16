@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, useMotionValue, useTransform } from "framer-motion";
+import { AnimatePresence, motion, Reorder, useDragControls, useMotionValue, useTransform } from "framer-motion";
 import { interpret } from "xstate";
-import { FaThumbtack, FaEyeSlash } from "react-icons/fa6";
+import { FaThumbtack, FaEyeSlash, FaGripLinesVertical } from "react-icons/fa6";
 
 import { commandMachine } from "./CommandState";
 import useInkPulse from "../../hooks/useInkPulse";
@@ -36,18 +36,53 @@ const FLING_VELOCITY_WEIGHT = .12;
 // How far the casting-gather effect (see CommandRow's own gather math
 // below) still reaches from the row that actually fired, and how much
 // each step out fades by — the rest of the list visibly yields to the one
-// that just ran rather than sitting inert while it does.
+// that just ran rather than sitting inert while it does. Still governs the
+// opacity/scale recede (a cheap, static falloff is fine for that); the
+// actual MOTION is the real chain below.
 const CAST_GATHER_REACH = 3;
 const CAST_GATHER_DECAY = .35;
+
+// The cast's own nudge used to be a static, pre-shaped falloff — every row
+// within reach started easing toward its final offset in the same instant,
+// just by different amounts. This replaces that with a genuine damped
+// chain: the row that actually fired gets a real velocity kick, and every
+// other row only starts moving once its NEIGHBOR'S displacement pulls it
+// along, frame by frame — the same discretized-second-order-ODE family
+// utils/waveField.js's own 2D membrane and every critically-damped spring
+// elsewhere in this app already integrate (accel = coupling + restoring −
+// damping·v), just a 1D chain of list rows rather than a grid of height
+// samples or a single isolated point. A real disturbance TRAVELS down the
+// list and rings, instead of every row within reach flinching at once.
+const CHAIN_KICK = 150; // px/s — the cast row's own initial velocity
+const CHAIN_SELF_K = 170; // 1/s² — pulls each row back toward its own rest
+const CHAIN_COUPLE_K = 55; // 1/s² — how hard each row pulls its immediate neighbors along
+const CHAIN_DAMPING = 11; // 1/s
+
+// The reverse-stagger drain (see the 'closing' xstate state in
+// CommandState.js) — capped at CLOSE_STAGGER_MAX rows out regardless of
+// how long the actual filtered list is, so a long list still closes
+// promptly instead of the tail end waiting through a proportionally longer
+// stagger.
+const CLOSE_STAGGER_STEP = .022;
+const CLOSE_STAGGER_MAX = 4;
 
 // A single swipeable row — its own component (rather than inline in the
 // list below) purely so its drag motion values and the two live icon
 // opacities derived from them (useTransform) get a fresh instance per
 // row instead of one shared pair every row would otherwise fight over.
-const CommandRow = ({ action, index, highlight, pulse, onSelect, onRun, onPin, onHide, renderLabel, casting, castIndex }) => {
+// `reorderable` rows (the pinned block, see the split below) render as a
+// Reorder.Item instead of a plain motion.div, dragged only from their own
+// grip handle (dragListener={false} + a manually-started dragControls) so
+// the grip's vertical drag never fights the row's own horizontal
+// swipe-to-pin/hide, or the row's plain click-to-run.
+const CommandRow = ({
+  action, index, highlight, pulse, onSelect, onRun, onPin, onHide, renderLabel,
+  casting, castIndex, closing, closeDelay, reduceMotion, reorderable, registerRipple,
+}) => {
   const dragX = useMotionValue(0);
   const pinOpacity = useTransform(dragX, [0, SWIPE_THRESHOLD], [0, 1], { clamp: true });
   const hideOpacity = useTransform(dragX, [0, -SWIPE_THRESHOLD], [0, 1], { clamp: true });
+  const dragControls = useDragControls();
 
   const handleDragEnd = (e, info) => {
     // The release's own momentum, not just where it happened to land —
@@ -58,12 +93,11 @@ const CommandRow = ({ action, index, highlight, pulse, onSelect, onRun, onPin, o
   };
 
   // The rest of the list's own brief acknowledgment that one row just
-  // fired (see the casting-gather comment on run() below) — a small
-  // vertical nudge toward whichever row actually cast, decaying with
-  // distance and capped at CAST_GATHER_REACH, plus a slight recede in
-  // scale/opacity so the eye reads the cast row as the one thing that
-  // still has full weight. translateY rather than translateX so this
-  // never reads as the same axis the swipe gesture above already owns.
+  // fired — a slight recede in scale/opacity so the eye reads the cast row
+  // as the one thing that still has full weight. Just a cheap static
+  // falloff by distance (unlike the real per-frame chain the parent now
+  // drives for the actual MOTION — see registerRipple/the ripple effect in
+  // CommandPalette below), since a subtle dim doesn't need to travel.
   const isCastTarget = casting && index === castIndex;
   const castDistance = casting && castIndex != null ? Math.abs(index - castIndex) : Infinity;
   const gather = !isCastTarget && castDistance <= CAST_GATHER_REACH
@@ -71,12 +105,26 @@ const CommandRow = ({ action, index, highlight, pulse, onSelect, onRun, onPin, o
     : 0;
 
   const slotAnimate = casting
-    ? {
-      opacity: isCastTarget ? 1 : 1 - gather * .5,
-      translateY: isCastTarget ? 0 : Math.sign(castIndex - index) * 4 * gather,
-      scale: isCastTarget ? 1.03 : 1 - gather * .06,
-    }
-    : { opacity: 1, translateX: 0, translateY: 0, scale: 1 };
+    ? { opacity: isCastTarget ? 1 : 1 - gather * .5, scale: isCastTarget ? 1.03 : 1 - gather * .06 }
+    // 'closing' plays the same shape the old plain exit used, just staggered
+    // in reverse (see closeDelay) and via `animate` rather than `exit` —
+    // the row isn't actually leaving `filtered` yet, only the panel around
+    // it is about to fold, so AnimatePresence's own exit never fires here.
+    : closing
+      ? { opacity: 0, translateX: -16, scale: .96 }
+      : { opacity: 1, translateX: 0, scale: 1 };
+
+  const slotTransition = casting
+    ? { type: "spring", stiffness: 500, damping: 30 }
+    : closing
+      ? (reduceMotion ? { duration: 0 } : { duration: .22, ease: "easeIn", delay: closeDelay })
+      : { ...LIST_ROW_SPRING, delay: listRowDelay(index) };
+
+  // Reorder.Item in place of the plain motion.div for pinned rows only —
+  // it takes the exact same layout/initial/animate/exit/transition props,
+  // so swapping which one renders costs nothing else in this component.
+  const RowRoot = reorderable ? Reorder.Item : motion.div;
+  const rootProps = reorderable ? { value: action.key, dragListener: false, dragControls } : {};
 
   return (
     // command-row-slot is the static backing every row's own drag reveals
@@ -86,67 +134,83 @@ const CommandRow = ({ action, index, highlight, pulse, onSelect, onRun, onPin, o
     // whole; the button inside is free to carry its OWN independent x
     // without that fighting the slot's layout animation for the same
     // transform.
-    <motion.div
+    <RowRoot
       layout
       className="command-row-slot"
       initial={{ opacity: 0, translateX: -16 }}
       animate={ slotAnimate }
       exit={{ opacity: 0, translateX: -16, scale: .96, transition: { duration: .16, ease: "easeIn" } }}
-      transition={
-        casting
-          ? { type: "spring", stiffness: 500, damping: 30 }
-          : { ...LIST_ROW_SPRING, delay: listRowDelay(index) }
-      }
+      transition={ slotTransition }
+      { ...rootProps }
     >
-      {/* The swipe's own live hint — pin to the right, hide to the left —
-          fixed here in the static backing rather than inside the button
-          that actually carries dragX, so the row sliding away is what
-          reveals them rather than the row dragging them along with it.
-          Purely opacity-driven off the same dragX the row's own x
-          already rides, so they track the gesture with zero lag. */}
-      <motion.span className="command-item-hint-pin" style={{ opacity: pinOpacity }} aria-hidden="true">
-        <FaThumbtack />
-      </motion.span>
-      <motion.span className="command-item-hint-hide" style={{ opacity: hideOpacity }} aria-hidden="true">
-        <FaEyeSlash />
-      </motion.span>
-      <motion.button
-        type="button"
-        className={ `command-item ${ index === highlight ? "selected" : "" }` }
-        style={{ x: dragX }}
-        drag="x"
-        dragConstraints={{ left: -SWIPE_RANGE, right: SWIPE_RANGE }}
-        dragElastic={ 0.6 }
-        dragSnapToOrigin
-        onDragEnd={ handleDragEnd }
-        onMouseEnter={ onSelect }
-        onTapStart={ pulse.squash }
-        onClick={ onRun }
-      >
-        {
-          index === highlight && (
-            <motion.span
-              layoutId="commandThumb"
-              style={{ position: "absolute", inset: 0, borderRadius: 12 }}
-              transition={{ type: "spring", stiffness: 520, damping: 20 }}
-            >
+      {
+        reorderable && (
+          <span
+            className="command-row-grip"
+            role="presentation"
+            style={{ touchAction: "none" }}
+            onPointerDown={ (e) => dragControls.start(e) }
+          >
+            <FaGripLinesVertical />
+          </span>
+        )
+      }
+      {/* The real per-frame ripple (see CommandPalette's own casting
+          effect) writes translateY straight to this inner wrapper's style
+          every frame — kept on its own element, separate from this slot's
+          own framer-driven opacity/scale/layout above, so the two never
+          fight over the same transform. */}
+      <div className="command-row-ripple" ref={ registerRipple }>
+        {/* The swipe's own live hint — pin to the right, hide to the left —
+            fixed here in the static backing rather than inside the button
+            that actually carries dragX, so the row sliding away is what
+            reveals them rather than the row dragging them along with it.
+            Purely opacity-driven off the same dragX the row's own x
+            already rides, so they track the gesture with zero lag. */}
+        <motion.span className="command-item-hint-pin" style={{ opacity: pinOpacity }} aria-hidden="true">
+          <FaThumbtack />
+        </motion.span>
+        <motion.span className="command-item-hint-hide" style={{ opacity: hideOpacity }} aria-hidden="true">
+          <FaEyeSlash />
+        </motion.span>
+        <motion.button
+          type="button"
+          className={ `command-item ${ index === highlight ? "selected" : "" }` }
+          style={{ x: dragX }}
+          drag="x"
+          dragConstraints={{ left: -SWIPE_RANGE, right: SWIPE_RANGE }}
+          dragElastic={ 0.6 }
+          dragSnapToOrigin
+          onDragEnd={ handleDragEnd }
+          onMouseEnter={ onSelect }
+          onTapStart={ pulse.squash }
+          onClick={ onRun }
+        >
+          {
+            index === highlight && (
               <motion.span
-                className="command-thumb"
-                animate={ pulse.jelly }
-                style={{ borderRadius: "inherit" }}
-              />
-            </motion.span>
-          )
-        }
-        <span className="command-item-icon">{ action.icon }</span>
-        <span className="command-item-label">{ renderLabel(action.label) }</span>
-        {
-          action.hint && (
-            <kbd className="command-item-hint">{ action.hint }</kbd>
-          )
-        }
-      </motion.button>
-    </motion.div>
+                layoutId="commandThumb"
+                style={{ position: "absolute", inset: 0, borderRadius: 12 }}
+                transition={{ type: "spring", stiffness: 520, damping: 20 }}
+              >
+                <motion.span
+                  className="command-thumb"
+                  animate={ pulse.jelly }
+                  style={{ borderRadius: "inherit" }}
+                />
+              </motion.span>
+            )
+          }
+          <span className="command-item-icon">{ action.icon }</span>
+          <span className="command-item-label">{ renderLabel(action.label) }</span>
+          {
+            action.hint && (
+              <kbd className="command-item-hint">{ action.hint }</kbd>
+            )
+          }
+        </motion.button>
+      </div>
+    </RowRoot>
   );
 };
 
@@ -285,7 +349,12 @@ const CommandPalette = ({ actions, reduceMotion }) => {
     });
 
   // Marks the matched stretch of a label with a little pop of ink, instead
-  // of leaving the visitor to guess why a row surfaced.
+  // of leaving the visitor to guess why a row surfaced. `.liquid-text`
+  // (LiquidTextFilter.jsx, mounted once near Home's root — the same shared
+  // #liquid-text filter ShortcutsSheet/NoteConstellation's own headings
+  // already wear) gives just that matched stretch a living, never-quite-
+  // still wobble, distinct from the rest of the label, which stays flat and
+  // legible for actually scanning the list.
   const renderLabel = (label) => {
     if (!trimmedQuery) return label;
 
@@ -299,6 +368,7 @@ const CommandPalette = ({ actions, reduceMotion }) => {
         { label.slice(0, start) }
         <motion.mark
           key={ trimmedQuery }
+          className={ reduceMotion ? "" : "liquid-text" }
           initial={{ opacity: 0, scale: .5 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ type: "spring", stiffness: 500, damping: 20 }}
@@ -336,10 +406,116 @@ const CommandPalette = ({ actions, reduceMotion }) => {
     }
   };
 
+  const closing = phase === "closing";
+
+  // The pinned block renders inside its own Reorder.Group (drag-to-reorder
+  // via CommandRow's own grip handle) whenever there's no active query —
+  // `filtered`'s own sort already puts pinned rows first, so this is a
+  // straight split of an already-ordered array, not a second re-sort of
+  // its own. Search deliberately skips the split: re-ranking a filtered,
+  // temporary view by hand wouldn't mean anything once the query clears.
+  const pinnedFiltered = trimmedQuery ? [] : filtered.filter((action) => pinned.includes(action.key));
+  const restFiltered = trimmedQuery ? filtered : filtered.filter((action) => !pinned.includes(action.key));
+
+  const handlePinnedReorder = (nextKeys) => {
+    setPinned(nextKeys);
+    saveSettings({ pinnedCommands: nextKeys });
+  };
+
   const highlight = Math.min(selected, Math.max(filtered.length - 1, 0));
   const commandPulse = useInkPulse(highlight);
 
   const panelRef = useRef(null);
+
+  // The cast ripple's own live state — a plain ref rather than React state,
+  // since it's advanced and read every animation frame (see the effect
+  // below); rowRefs hands that loop a direct DOM node per row to write
+  // translateY onto, the same refs-map-plus-imperative-rAF pattern
+  // TagThreads.jsx's own thread ring-down and NotePile's per-tick body sync
+  // already use.
+  const rowRefs = useRef({});
+  const registerRow = (key, el) => {
+    if (el) rowRefs.current[key] = el; else delete rowRefs.current[key];
+  };
+  const chainRef = useRef({});
+
+  // The cast's own real ripple — see CHAIN_KICK/CHAIN_SELF_K/CHAIN_COUPLE_K/
+  // CHAIN_DAMPING's own comment for the physics. Keyed on the casting phase
+  // itself (not on `filtered`, which mustn't retrigger this mid-ring), so
+  // it starts fresh exactly once per cast and runs for the same ~260ms
+  // window the panel's own squash already budgets. Free (Neumann) ends —
+  // the first/last row simply has one fewer neighbor to couple with, not a
+  // wall it bounces off — since the list doesn't have solid edges the way
+  // TrashPhysics' own floor/walls do.
+  useEffect(() => {
+    if (phase !== "casting" || reduceMotion) return undefined;
+
+    const order = filtered.map((action) => action.key);
+    chainRef.current = {};
+    order.forEach((key) => { chainRef.current[key] = { y: 0, v: 0 }; });
+
+    const castKey = castIndex != null ? order[castIndex] : null;
+    if (castKey && chainRef.current[castKey]) chainRef.current[castKey].v = CHAIN_KICK;
+
+    let last = performance.now();
+    let raf;
+
+    const tick = (now) => {
+      const dt = Math.min(.032, (now - last) / 1000);
+      last = now;
+
+      const ys = order.map((key) => chainRef.current[key]?.y || 0);
+
+      order.forEach((key, i) => {
+        const state = chainRef.current[key];
+        if (!state) return;
+
+        const left = i > 0 ? ys[i - 1] : state.y;
+        const right = i < ys.length - 1 ? ys[i + 1] : state.y;
+        const coupling = CHAIN_COUPLE_K * (left + right - 2 * state.y);
+        const accel = coupling - CHAIN_SELF_K * state.y - CHAIN_DAMPING * state.v;
+        state.v += accel * dt;
+        state.y += state.v * dt;
+
+        const el = rowRefs.current[key];
+        if (el) el.style.transform = state.y ? `translateY(${ state.y.toFixed(2) }px)` : "";
+      });
+
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      order.forEach((key) => {
+        const el = rowRefs.current[key];
+        if (el) el.style.transform = "";
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, castIndex, reduceMotion]);
+
+  const renderRow = (action, index, reorderable) => (
+    <CommandRow
+      key={ action.key }
+      action={ action }
+      index={ index }
+      highlight={ highlight }
+      pulse={ commandPulse }
+      onSelect={ () => setSelected(index) }
+      onRun={ () => run(action) }
+      onPin={ pinAction }
+      onHide={ hideAction }
+      renderLabel={ renderLabel }
+      casting={ phase === "casting" }
+      castIndex={ castIndex }
+      closing={ closing }
+      closeDelay={ Math.min(filtered.length - 1 - index, CLOSE_STAGGER_MAX) * CLOSE_STAGGER_STEP }
+      reduceMotion={ reduceMotion }
+      reorderable={ reorderable }
+      registerRipple={ (el) => registerRow(action.key, el) }
+    />
+  );
 
   // The backdrop's own slow boil (see the SVG filter in the JSX below) —
   // the same feTurbulence/feDisplacementMap "re-roll the seed a few times
@@ -440,27 +616,49 @@ const CommandPalette = ({ actions, reduceMotion }) => {
             instant it starts exiting, so the rows below it can immediately
             reflow up into its place while it fades out on top — a real
             leave transition instead of narrowing the query just snapping
-            rows away. */}
-        <AnimatePresence mode="popLayout" initial={ false }>
-          {
-            filtered.map((action, index) => (
-              <CommandRow
-                key={ action.key }
-                action={ action }
-                index={ index }
-                highlight={ highlight }
-                pulse={ commandPulse }
-                onSelect={ () => setSelected(index) }
-                onRun={ () => run(action) }
-                onPin={ pinAction }
-                onHide={ hideAction }
-                renderLabel={ renderLabel }
-                casting={ phase === "casting" }
-                castIndex={ castIndex }
-              />
-            ))
-          }
-        </AnimatePresence>
+            rows away. Search renders the one flat list exactly as before;
+            browsing (no query) splits off the pinned prefix into its own
+            Reorder.Group so it can be dragged into a new order (see
+            handlePinnedReorder) without touching the rest of the list. */}
+        {
+          trimmedQuery ? (
+            <AnimatePresence mode="popLayout" initial={ false }>
+              { filtered.map((action, index) => renderRow(action, index, false)) }
+            </AnimatePresence>
+          ) : (
+            <>
+              {
+                pinnedFiltered.length > 0 && (
+                  <Reorder.Group
+                    as="div"
+                    axis="y"
+                    className="command-pinned-group"
+                    values={ pinnedFiltered.map((action) => action.key) }
+                    onReorder={ handlePinnedReorder }
+                  >
+                    <AnimatePresence mode="popLayout" initial={ false }>
+                      {
+                        // Always reorderable, even with only one pinned row —
+                        // dragging a lone item is a harmless no-op, and it
+                        // keeps this row's rendered component type stable
+                        // (Reorder.Item, not a conditional swap back to a
+                        // plain motion.div) as the pinned count crosses 1↔2,
+                        // so it never has to remount mid-list.
+                        pinnedFiltered.map((action, index) => renderRow(action, index, true))
+                      }
+                    </AnimatePresence>
+                  </Reorder.Group>
+                )
+              }
+              <AnimatePresence mode="popLayout" initial={ false }>
+                {
+                  restFiltered.map((action, i) =>
+                    renderRow(action, pinnedFiltered.length + i, false))
+                }
+              </AnimatePresence>
+            </>
+          )
+        }
         {
           filtered.length === 0 && (
             <motion.p
@@ -469,13 +667,13 @@ const CommandPalette = ({ actions, reduceMotion }) => {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ type: "spring", stiffness: 300, damping: 18 }}
             >
-              Nothing casts like that
+              <span className={ reduceMotion ? "" : "liquid-text" }>Nothing casts like that</span>
             </motion.p>
           )
         }
       </div>
       <div className="command-footer">
-        <span>↑↓ choose · Enter cast · Esc fold · drag a row to pin/hide it</span>
+        <span>↑↓ choose · Enter cast · Esc fold · drag a row to pin/hide it · grip a pin to reorder it</span>
         {
           hidden.length > 0 && (
             <button type="button" className="command-restore" onClick={ restoreHidden }>

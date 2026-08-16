@@ -74,12 +74,61 @@
   gap: 2px;
 }
 
+/* The pinned block's own Reorder.Group (see CommandPalette.jsx) — a plain
+   flex column matching .command-list's own row stacking exactly, since it
+   sits as one direct child of .command-list wrapping several rows rather
+   than being a row itself. */
+.command-pinned-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* The swipe's own static backing (see CommandRow in CommandPalette.jsx)
    — .command-item itself is what carries dragX and actually slides; this
    is what stays put underneath it, so the two pin/hide hints below read
    as revealed by the row sliding away rather than dragged along with it. */
 .command-row-slot {
   position: relative;
+}
+
+/* The cast ripple's own live transform target (see CommandPalette.jsx's
+   casting effect) — a plain block wrapper, deliberately with no `position`
+   of its own, so it doesn't become a new positioning context: the hint
+   spans just below still resolve their `position: absolute` against
+   .command-row-slot exactly as before, just with this wrapper transparently
+   sitting between them in the DOM. */
+.command-row-ripple {
+  will-change: transform;
+}
+
+/* The pinned drag handle (see CommandRow's own dragControls.start) — sits
+   inside .command-item's own left padding gutter (14px) rather than
+   widening the row to make room for it, on top of the button (z-index 2 vs
+   its 1) so a press here never also reads as the button's own click. */
+.command-row-grip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  font-size: 11px;
+  color: #a1a7b6;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.command-row-slot:hover .command-row-grip {
+  opacity: .6;
+}
+
+.command-row-grip:active {
+  cursor: grabbing;
 }
 
 .command-item {
