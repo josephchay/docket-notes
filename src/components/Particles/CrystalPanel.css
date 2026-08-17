@@ -1,0 +1,124 @@
+.crystal-field-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crystal-field-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(25, 25, 25, 0.28);
+}
+
+:root[data-theme="dark"] .crystal-field-backdrop {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* border-radius is animated by framer during the drop-to-sheet morph, so it
+   is deliberately not set here. */
+.crystal-field-panel {
+  position: relative;
+  width: min(520px, 94vw);
+  overflow: hidden;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
+  will-change: transform;
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+  outline: none;
+}
+
+.crystal-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 0;
+}
+
+.crystal-field-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.crystal-field-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The live grown% reading (see CrystalField.jsx's own onStats) — same
+   black-ink-pill language as every other Particles/ panel's own stat. */
+.crystal-field-stat {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--page-bg-color);
+  background-color: var(--page-ink-color);
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.crystal-field-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.crystal-field-hint {
+  margin: 4px 18px 0;
+  font-size: 13px;
+  color: var(--black-more-transclucent-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.crystal-field-stage {
+  position: relative;
+  margin: 12px 18px 0;
+  height: min(420px, 70vw);
+  border-radius: 14px;
+  overflow: hidden;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.crystal-field-controls {
+  display: flex;
+  justify-content: center;
+  margin: 14px 18px 18px;
+}
+
+/* The one action this panel needs — a solid ink pill, the same inverted
+   treatment .crystal-field-stat/.chladni-shuffle/.boid-field-startle
+   already use. */
+.crystal-field-regrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}

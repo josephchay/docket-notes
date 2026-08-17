@@ -1,0 +1,13 @@
+/* Fills its parent (boid-field-stage) — position:absolute;inset:0, sized by
+   the ResizeObserver in BoidField.jsx rather than fixed pixel dimensions,
+   the same convention GravityField.css/ChladniField.css already use. The
+   interactive surface itself (hover to draw the flock, press to startle
+   it), so it keeps pointer-events on rather than being a decorative
+   backdrop. */
+.boid-field-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}

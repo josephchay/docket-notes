@@ -2,8 +2,6 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useAnimationControls, useMotionValue, useSpring, useTransform } from "framer-motion";
 import anime from "animejs";
-import gsap from "gsap";
-import { interpret } from "xstate";
 
 import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRight, FaCheck } from "react-icons/fa6";
 import { FaEye, FaTrash } from "react-icons/fa";
@@ -13,7 +11,6 @@ import { playDelete, playStar } from "../../utils/sound";
 import PullString from "./PullString";
 import MoveString from "./MoveString";
 import SparkBurst from "../Spark/SparkBurst";
-import { HOLD_FILL_MS, noteDeleteMachine } from "./NoteDeleteState";
 import { SNAPPY, EXIT_SPRING, coinFlip } from "../Motion";
 
 import "./Note.css";
@@ -50,37 +47,11 @@ const Note = ({
   onHoverEnd,
   reduceMotion,
 }) => {
-  // Hold-to-delete (see NoteDeleteState.js for the full reasoning) — a real
-  // xstate machine now owns the holding → confirmed → completing sequence;
-  // isDeleting/deleteConfirmed/deleteCompleted stay as plain derived
-  // booleans below so every existing consumer of those three names (there
-  // are over a dozen, all through the JSX further down) needed no changes
-  // at all, only the state that feeds them did.
-  const [deleteService] = useState(() => interpret(noteDeleteMachine));
-  const [deletePhase, setDeletePhase] = useState("idle");
-  // Always the LATEST deleteNote, read from inside the transition handler
-  // below without putting it in that effect's own deps — the same reason
-  // NoteConstellation.jsx's own onSelectRef exists: re-running that effect
-  // on every deleteNote identity change would mean calling
-  // service.stop()/onTransition().start() again, which resets the machine
-  // to "idle" — a genuine bug if that identity ever changed mid-hold.
-  const deleteNoteRef = useRef(deleteNote);
-  deleteNoteRef.current = deleteNote;
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false);
+  const [deleteCompleted, setDeleteCompleted] = useState(false);
 
-  useEffect(() => {
-    deleteService.onTransition((state) => {
-      setDeletePhase(String(state.value));
-      if (!state.changed) return;
-      if (state.value === "confirmed") playDelete();
-      else if (state.value === "completing") deleteNoteRef.current(note.id);
-    }).start();
-    return () => deleteService.stop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deleteService]);
-
-  const isDeleting = deletePhase !== "idle";
-  const deleteConfirmed = deletePhase === "confirmed";
-  const deleteCompleted = deletePhase === "completing";
+  const [deleteTimeout, setDeleteTimeout] = useState(null);
 
   // The fields are controlled through these drafts so edits made in the
   // focus editor land on the card too; commits back to the list are
@@ -162,12 +133,34 @@ const Note = ({
     textTimerRef.current = setTimeout(() => updateText(text, note.id), debounceTimer);
   }
 
+  const HOLD_FILL_MS = 1000;   // how long the delete ring takes to fill once the hold registers
+
   const handlePressHold = () => {
-    deleteService.send({ type: "HOLD" });
+    setIsDeleting(true);
+
+    const timeoutId = setTimeout(() => {
+      setDeleteConfirmed(true);
+      playDelete();
+
+      setTimeout(() => {
+        deleteNote(note.id);
+
+        setDeleteCompleted(true);
+        setDeleteConfirmed(false);
+
+        setTimeout(() => {
+          setDeleteCompleted(false);
+        }, 600);
+      }, 600);
+    }, HOLD_FILL_MS);
+
+    setDeleteTimeout(timeoutId);
   }
 
   const handlePressRelease = () => {
-    deleteService.send({ type: "RELEASE" });
+    setIsDeleting(false);
+
+    clearTimeout(deleteTimeout);
   }
 
   const longPressEvent = useLongPress(handlePressHold, () => {}, handlePressRelease, {
@@ -320,13 +313,6 @@ const Note = ({
   const [spawning, setSpawning] = useState(() => !!spawnOrigin);
   const spawnControls = useAnimationControls();
   const cardRef = useRef(null);
-  // The duplicate's own ink-soak overlay (see the .note-soak-overlay JSX
-  // below) — only ever relevant while spawning === true AND this spawn is
-  // a duplicate, so it's fine as a plain ref rather than React state: the
-  // GSAP tween that drives it never needs to trigger a re-render of
-  // anything, only its own clip-path attribute.
-  const soakRef = useRef(null);
-  const isSoaking = spawning && !!spawnOrigin?.duplicate;
 
   useLayoutEffect(() => {
     if (!spawning || !cardRef.current) return;
@@ -349,23 +335,6 @@ const Note = ({
           borderRadius: "24px",
           opacity: 1,
         });
-
-        // The copy's own color soaks in from its own center rather than
-        // arriving already fully painted — GSAP driving a growing
-        // clip-path circle on a colored overlay (see .note-soak-overlay;
-        // the card underneath renders with NO color class for as long as
-        // spawnOrigin.duplicate is true — see the className below — so
-        // this overlay is genuinely the only source of color until it
-        // finishes, not a redundant coat of paint over one already
-        // there). Started, not awaited: it plays alongside the slide
-        // below rather than gating it, so the copy arrives in its slot
-        // already mid-soak rather than waiting on this first.
-        if (reduceMotion) {
-          if (soakRef.current) gsap.set(soakRef.current, { clipPath: "circle(150% at 50% 50%)" });
-        } else if (soakRef.current) {
-          gsap.set(soakRef.current, { clipPath: "circle(0% at 50% 50%)" });
-          gsap.to(soakRef.current, { clipPath: "circle(150% at 50% 50%)", duration: .55, ease: "power2.out" });
-        }
 
         await spawnControls.start({
           x: 0,
@@ -598,21 +567,8 @@ const Note = ({
         onMouseLeave={ () => onHoverEnd?.(note.id) }
         onClick={ handleCardClick }
         onContextMenu={ openRadialMenu }
-        // The color class itself withholds while a duplicate is still
-        // soaking (see isSoaking/.note-soak-overlay below) — the overlay
-        // is genuinely the only source of color for that whole span, not
-        // a redundant coat over one already there.
-        className={ `note ${ isSoaking ? "soaking" : `${ note.color }-bg` } ${ isPulling ? "dragging" : "" } ${ isTyping ? "editing" : "" } ${ selectMode && selected ? "selected" : "" } ${ isSearchMatch ? "search-match" : "" }` }
+        className={ `note ${ note.color }-bg ${ isPulling ? "dragging" : "" } ${ isTyping ? "editing" : "" } ${ selectMode && selected ? "selected" : "" } ${ isSearchMatch ? "search-match" : "" }` }
       >
-        {/* The duplicate's own ink-soak (see the useLayoutEffect above) —
-            a plain div GSAP drives directly by ref, sized and rounded to
-            match the card exactly, carrying the note's true color while
-            the card itself carries none. */}
-        {
-          isSoaking && (
-            <div ref={ soakRef } className={ `note-soak-overlay ${ note.color }-bg` } aria-hidden="true" />
-          )
-        }
         {/* The checkmark badge only exists in select mode, and blooms in
             with a bouncy overshoot rather than just appearing. Its own
             pointerdown is shielded from the card's long-press handlers,
@@ -982,7 +938,6 @@ const Note = ({
                 icon={ string.icon }
                 verb={ string.verb }
                 onTrigger={ string.onTrigger }
-                reduceMotion={ reduceMotion }
               />
             ))
           }
@@ -996,7 +951,6 @@ const Note = ({
             onPullStart={ () => setIsPulling(true) }
             onPullEnd={ () => setIsPulling(false) }
             onMove={ (targetId) => reorderNotes(note.id, targetId) }
-            reduceMotion={ reduceMotion }
           />
         </motion.div>
       </motion.div>

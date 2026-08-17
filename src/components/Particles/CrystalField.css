@@ -1,0 +1,13 @@
+/* Fills its parent (crystal-field-stage) — position:absolute;inset:0, sized
+   by the ResizeObserver in CrystalField.jsx rather than fixed pixel
+   dimensions, the same convention GravityField.css/ChladniField.css/
+   BoidField.css already use. The interactive surface itself (drag to lean
+   the growth), so it keeps pointer-events on rather than being a
+   decorative backdrop. */
+.crystal-field-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}

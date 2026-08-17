@@ -32,6 +32,10 @@ import {
   FaWater,
   FaFlag,
   FaCircleNodes,
+  FaFillDrip,
+  FaAtom,
+  FaDove,
+  FaSnowflake,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -80,6 +84,10 @@ import AudioWaveStringPanel, { AUDIO_WAVE_STRING_EVENT } from "../components/Par
 import FluidVisualizerPanel, { FLUID_VISUALIZER_EVENT } from "../components/Particles/FluidVisualizerPanel";
 import FluidPlayerDock from "../components/Particles/FluidPlayerDock";
 import ClothPanel, { CLOTH_EVENT } from "../components/Particles/ClothPanel";
+import InkBloomPanel, { INK_BLOOM_EVENT } from "../components/Particles/InkBloomPanel";
+import ChladniPanel, { CHLADNI_EVENT } from "../components/Particles/ChladniPanel";
+import BoidPanel, { BOID_EVENT } from "../components/Particles/BoidPanel";
+import CrystalPanel, { CRYSTAL_EVENT } from "../components/Particles/CrystalPanel";
 import NoteConstellationPanel, { NOTE_CONSTELLATION_EVENT } from "../components/Constellation/NoteConstellationPanel";
 import useLenisScroll from "../hooks/useLenisScroll";
 
@@ -1275,6 +1283,30 @@ const Home = () => {
       perform: () => window.dispatchEvent(new CustomEvent(CLOTH_EVENT)),
     },
     {
+      key: "ink-bloom",
+      label: "Show the ink bloom",
+      icon: <FaFillDrip />,
+      perform: () => window.dispatchEvent(new CustomEvent(INK_BLOOM_EVENT)),
+    },
+    {
+      key: "chladni-field",
+      label: "Show the ink plate",
+      icon: <FaAtom />,
+      perform: () => window.dispatchEvent(new CustomEvent(CHLADNI_EVENT)),
+    },
+    {
+      key: "boid-field",
+      label: "Show the murmuration",
+      icon: <FaDove />,
+      perform: () => window.dispatchEvent(new CustomEvent(BOID_EVENT)),
+    },
+    {
+      key: "crystal-field",
+      label: "Show the ink frost",
+      icon: <FaSnowflake />,
+      perform: () => window.dispatchEvent(new CustomEvent(CRYSTAL_EVENT)),
+    },
+    {
       key: "note-constellation",
       label: "Map your notes",
       icon: <FaCircleNodes />,
@@ -1464,6 +1496,10 @@ const Home = () => {
       <AudioWaveStringPanel reduceMotion={ reduceMotion } />
       <FluidVisualizerPanel reduceMotion={ reduceMotion } />
       <ClothPanel reduceMotion={ reduceMotion } />
+      <InkBloomPanel reduceMotion={ reduceMotion } />
+      <ChladniPanel reduceMotion={ reduceMotion } />
+      <BoidPanel reduceMotion={ reduceMotion } />
+      <CrystalPanel reduceMotion={ reduceMotion } />
       <NoteConstellationPanel notes={ notes } openEditor={ setEditingNoteId } reduceMotion={ reduceMotion } />
       <TrashPanel
         entries={ deletedNotes }
