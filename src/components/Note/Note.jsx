@@ -12,6 +12,7 @@ import PullString from "./PullString";
 import MoveString from "./MoveString";
 import SparkBurst from "../Spark/SparkBurst";
 import { SNAPPY, EXIT_SPRING, coinFlip } from "../Motion";
+import { blobPath, roundedRectPath, createBlobMorph } from "../../utils/blob";
 
 import "./Note.css";
 
@@ -321,6 +322,74 @@ const Note = ({
     const dx = spawnOrigin.x - (rect.left + rect.width / 2);
     const dy = spawnOrigin.y - (rect.top + rect.height / 2);
 
+    // The squeeze/bloom below already tells the "dot becomes paper" story
+    // through scale + border-radius; this plays a genuine flubber shape
+    // interpolation (utils/blob.js's createBlobMorph — the same real morph
+    // every SheetPanel already blooms open through, see
+    // useBlobClipMorph.js) across the card's own clip-path right as the
+    // bloom begins, so the outline itself visibly wobbles through an
+    // organic ink shape on its way to square paper rather than only ever
+    // reading as a rectangle stretching. A separate, explicitly-timed
+    // anime.js tween (animejs, already used elsewhere in this file the
+    // same way useOdometer.js uses it — tweening a plain object, not a DOM
+    // node) rather than deriving progress from spawnControls' own live
+    // scale value: that would tie the blob's own duration to however long
+    // the bloom spring happens to take to settle, when the wobble actually
+    // reads best as a quick, confident flourish right as growth starts,
+    // not something stretched across the whole arrival.
+    //
+    // clip-path clips the ENTIRE rendered element, box-shadow included —
+    // left alone, .note's own soft drop shadow (Note.css) would be harshly
+    // cropped to the blob's own tight silhouette for as long as the clip
+    // stays active. Suppressed for that one short window and handed back
+    // by clearing the inline override (not by animating it back in by
+    // hand) — Note.css already transitions box-shadow 0.25s, so lifting
+    // the override lets that existing rule fade it back in on its own.
+    //
+    // Wrapped defensively: a shape-morph failure here (an unexpected
+    // dimension, anything flubber itself doesn't like) must never be able
+    // to break note creation — the transform sequence below is the one
+    // thing that actually has to run every time, the blob is a flourish on
+    // top of it.
+    const playBlobMorph = () => {
+      if (spawnOrigin.duplicate || !cardRef.current) return null;
+      try {
+        const fauxPath = {
+          setAttribute: (_name, d) => {
+            if (cardRef.current) cardRef.current.style.clipPath = `path('${ d }')`;
+          },
+        };
+        const blobMorph = createBlobMorph(fauxPath, [
+          roundedRectPath(rect.width, rect.height, Math.min(rect.width, rect.height) / 2),
+          blobPath(rect.width, rect.height, 9, .2),
+          roundedRectPath(rect.width, rect.height, 24),
+        ]);
+
+        cardRef.current.style.boxShadow = "none";
+        const progress = { t: 0 };
+
+        return anime({
+          targets: progress,
+          t: blobMorph.stageCount,
+          duration: 260,
+          easing: "easeInOutQuad",
+          update: () => blobMorph.set(progress.t),
+          complete: () => {
+            if (!cardRef.current) return;
+            cardRef.current.style.clipPath = "";
+            cardRef.current.style.boxShadow = "";
+          },
+        });
+      } catch {
+        if (cardRef.current) {
+          cardRef.current.style.clipPath = "";
+          cardRef.current.style.boxShadow = "";
+        }
+        return null;
+      }
+    };
+    let blobAnimation = null;
+
     const morph = async () => {
       if (spawnOrigin.duplicate) {
         // Already this note's own size and shape — just parked at the
@@ -375,7 +444,13 @@ const Note = ({
         // 2 — The bloom: travels to its slot, grows, un-stretches, and
         //     squares off from circle to paper — all in one loose, starchy
         //     spring, so it reads as one continuous fluid motion rather
-        //     than separate steps.
+        //     than separate steps. The real shape morph (see
+        //     playBlobMorph above) rides along on top of it, timed to
+        //     start exactly here rather than at the squeeze's own start —
+        //     the card is still pot-dot-sized through the whole squeeze,
+        //     too small at that scale for a wobbling outline to actually
+        //     read as anything.
+        blobAnimation = playBlobMorph();
         await spawnControls.start({
           x: 0,
           y: 0,
@@ -405,6 +480,20 @@ const Note = ({
     };
 
     morph();
+
+    // Only actually matters if the note is removed mid-spawn (filtered
+    // out, deleted) before playBlobMorph's own complete callback ever
+    // gets a chance to lift the clip-path/shadow overrides itself — a
+    // stale inline style frozen on an unmounting element is harmless, but
+    // an anime.js instance still ticking after unmount, writing to a ref
+    // that's about to go stale, is not something to leave running.
+    return () => {
+      blobAnimation?.pause();
+      if (cardRef.current) {
+        cardRef.current.style.clipPath = "";
+        cardRef.current.style.boxShadow = "";
+      }
+    };
     // Runs once, for the mount that poured (or copied) the note.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
