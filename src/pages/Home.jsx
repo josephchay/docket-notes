@@ -1264,96 +1264,96 @@ const Home = () => {
       icon: <FaChartSimple />,
       perform: () => window.dispatchEvent(new CustomEvent(INK_LEVELS_EVENT)),
     },
-    {
-      key: "gravity-field",
-      label: "Show the gravity field",
-      icon: <FaMeteor />,
-      perform: () => window.dispatchEvent(new CustomEvent(GRAVITY_FIELD_EVENT)),
-    },
-    {
-      key: "fluid-field",
-      label: "Show the fluid field",
-      icon: <FaDroplet />,
-      perform: () => window.dispatchEvent(new CustomEvent(FLUID_FIELD_EVENT)),
-    },
-    {
-      key: "audio-wave-string",
-      label: "Show the wavy line",
-      icon: <FaWaveSquare />,
-      perform: () => window.dispatchEvent(new CustomEvent(AUDIO_WAVE_STRING_EVENT)),
-    },
-    {
-      key: "fluid-visualizer",
-      label: "Show the fluid visualizer",
-      icon: <FaWater />,
-      perform: () => window.dispatchEvent(new CustomEvent(FLUID_VISUALIZER_EVENT)),
-    },
-    {
-      key: "cloth-field",
-      label: "Show the cloth field",
-      icon: <FaFlag />,
-      perform: () => window.dispatchEvent(new CustomEvent(CLOTH_EVENT)),
-    },
-    {
-      key: "ink-bloom",
-      label: "Show the ink bloom",
-      icon: <FaFillDrip />,
-      perform: () => window.dispatchEvent(new CustomEvent(INK_BLOOM_EVENT)),
-    },
-    {
-      key: "chladni-field",
-      label: "Show the ink plate",
-      icon: <FaAtom />,
-      perform: () => window.dispatchEvent(new CustomEvent(CHLADNI_EVENT)),
-    },
-    {
-      key: "boid-field",
-      label: "Show the murmuration",
-      icon: <FaDove />,
-      perform: () => window.dispatchEvent(new CustomEvent(BOID_EVENT)),
-    },
-    {
-      key: "crystal-field",
-      label: "Show the ink frost",
-      icon: <FaSnowflake />,
-      perform: () => window.dispatchEvent(new CustomEvent(CRYSTAL_EVENT)),
-    },
-    {
-      key: "pendulum-field",
-      label: "Show the chaos",
-      icon: <FaInfinity />,
-      perform: () => window.dispatchEvent(new CustomEvent(PENDULUM_EVENT)),
-    },
-    {
-      key: "lenia-field",
-      label: "Show the ink life",
-      icon: <FaBacterium />,
-      perform: () => window.dispatchEvent(new CustomEvent(LENIA_EVENT)),
-    },
-    {
-      key: "epicycle-field",
-      label: "Show the orbits",
-      icon: <FaCompassDrafting />,
-      perform: () => window.dispatchEvent(new CustomEvent(EPICYCLE_EVENT)),
-    },
-    {
-      key: "interference-field",
-      label: "Show the ripples",
-      icon: <FaBullseye />,
-      perform: () => window.dispatchEvent(new CustomEvent(INTERFERENCE_EVENT)),
-    },
-    {
-      key: "lsystem-field",
-      label: "Show the growth",
-      icon: <FaSeedling />,
-      perform: () => window.dispatchEvent(new CustomEvent(LSYSTEM_EVENT)),
-    },
-    {
-      key: "metaball-field",
-      label: "Show the droplets",
-      icon: <FaCircleHalfStroke />,
-      perform: () => window.dispatchEvent(new CustomEvent(METABALL_EVENT)),
-    },
+    // {
+    //   key: "gravity-field",
+    //   label: "Show the gravity field",
+    //   icon: <FaMeteor />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(GRAVITY_FIELD_EVENT)),
+    // },
+    // {
+    //   key: "fluid-field",
+    //   label: "Show the fluid field",
+    //   icon: <FaDroplet />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(FLUID_FIELD_EVENT)),
+    // },
+    // {
+    //   key: "audio-wave-string",
+    //   label: "Show the wavy line",
+    //   icon: <FaWaveSquare />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(AUDIO_WAVE_STRING_EVENT)),
+    // },
+    // {
+    //   key: "fluid-visualizer",
+    //   label: "Show the fluid visualizer",
+    //   icon: <FaWater />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(FLUID_VISUALIZER_EVENT)),
+    // },
+    // {
+    //   key: "cloth-field",
+    //   label: "Show the cloth field",
+    //   icon: <FaFlag />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(CLOTH_EVENT)),
+    // },
+    // {
+    //   key: "ink-bloom",
+    //   label: "Show the ink bloom",
+    //   icon: <FaFillDrip />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(INK_BLOOM_EVENT)),
+    // },
+    // {
+    //   key: "chladni-field",
+    //   label: "Show the ink plate",
+    //   icon: <FaAtom />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(CHLADNI_EVENT)),
+    // },
+    // {
+    //   key: "boid-field",
+    //   label: "Show the murmuration",
+    //   icon: <FaDove />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(BOID_EVENT)),
+    // },
+    // {
+    //   key: "crystal-field",
+    //   label: "Show the ink frost",
+    //   icon: <FaSnowflake />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(CRYSTAL_EVENT)),
+    // },
+    // {
+    //   key: "pendulum-field",
+    //   label: "Show the chaos",
+    //   icon: <FaInfinity />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(PENDULUM_EVENT)),
+    // },
+    // {
+    //   key: "lenia-field",
+    //   label: "Show the ink life",
+    //   icon: <FaBacterium />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(LENIA_EVENT)),
+    // },
+    // {
+    //   key: "epicycle-field",
+    //   label: "Show the orbits",
+    //   icon: <FaCompassDrafting />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(EPICYCLE_EVENT)),
+    // },
+    // {
+    //   key: "interference-field",
+    //   label: "Show the ripples",
+    //   icon: <FaBullseye />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(INTERFERENCE_EVENT)),
+    // },
+    // {
+    //   key: "lsystem-field",
+    //   label: "Show the growth",
+    //   icon: <FaSeedling />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(LSYSTEM_EVENT)),
+    // },
+    // {
+    //   key: "metaball-field",
+    //   label: "Show the droplets",
+    //   icon: <FaCircleHalfStroke />,
+    //   perform: () => window.dispatchEvent(new CustomEvent(METABALL_EVENT)),
+    // },
     {
       key: "note-constellation",
       label: "Map your notes",
@@ -1539,7 +1539,7 @@ const Home = () => {
         reduceMotion={ reduceMotion }
         celebration={ celebration }
       />
-      <GravityFieldPanel reduceMotion={ reduceMotion } />
+      {/* <GravityFieldPanel reduceMotion={ reduceMotion } />
       <FluidFieldPanel reduceMotion={ reduceMotion } />
       <AudioWaveStringPanel reduceMotion={ reduceMotion } />
       <FluidVisualizerPanel reduceMotion={ reduceMotion } />
@@ -1553,7 +1553,7 @@ const Home = () => {
       <EpicyclePanel reduceMotion={ reduceMotion } />
       <InterferencePanel reduceMotion={ reduceMotion } />
       <LSystemPanel reduceMotion={ reduceMotion } />
-      <MetaballPanel reduceMotion={ reduceMotion } />
+      <MetaballPanel reduceMotion={ reduceMotion } /> */}
       <NoteConstellationPanel notes={ notes } openEditor={ setEditingNoteId } reduceMotion={ reduceMotion } />
       <TrashPanel
         entries={ deletedNotes }
