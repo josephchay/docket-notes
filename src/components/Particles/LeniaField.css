@@ -1,0 +1,12 @@
+/* Fills its parent (lenia-field-stage) — position:absolute;inset:0, sized
+   by the ResizeObserver in LeniaField.jsx rather than fixed pixel
+   dimensions, the same convention InkBloomField.css already uses. The
+   interactive surface itself (drag to feed it), so it keeps pointer-events
+   on rather than being a decorative backdrop. */
+.lenia-field-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}

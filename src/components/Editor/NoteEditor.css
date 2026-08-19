@@ -59,10 +59,10 @@
   box-shadow:
     0 0 0 4px var(--white-transclucent-color),
     0 40px 90px -30px rgba(25, 25, 25, 0.55);
-  /* The preset classes (.cozy/.grand/.epic below) only change padding and
-    border-radius, and only ever at the end of a drag-resize (see
-    handleResizeEnd in NoteEditor.jsx) rather than continuously through
-    it — this just softens that one jump instead of a hard cut. */
+  /* The preset classes (.cozy/.grand/.epic below) change padding and
+    border-radius the instant `size` switches (see the header's click-to-
+    cycle resize button in NoteEditor.jsx) — this just softens that jump
+    instead of a hard cut. */
   transition: padding 0.25s ease-in-out, border-radius 0.25s ease-in-out;
 }
 
@@ -339,6 +339,40 @@
   background: var(--black-color);
   pointer-events: none;
   z-index: 2;
+}
+
+/* The copy action's own flying scrap (see NoteEditor.jsx's copyGhost) —
+   portaled to document.body, so fixed page-space x/y lands correctly
+   regardless of whatever transform the editor's own entrance/jelly
+   wrappers currently carry. */
+.note-editor-copy-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 30px;
+  height: 20px;
+  margin: -10px 0 0 -15px;
+  border-radius: 4px;
+  box-shadow: 0 6px 14px -6px rgba(25, 25, 25, 0.4);
+  pointer-events: none;
+  z-index: 900;
+}
+
+/* The focus-draw ring (see the FocusRing component in NoteEditor.jsx) —
+   positioned in the same offsetLeft/Top coordinate space as the title/text
+   fields themselves, both direct children of .note-editor (position:
+   relative, the nearest positioned ancestor either field has). */
+.note-editor-focus-ring {
+  position: absolute;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 1;
+}
+
+.note-editor-focus-ring rect {
+  fill: none;
+  stroke: var(--black-color);
+  stroke-width: 2;
 }
 
 .note-editor-meta {

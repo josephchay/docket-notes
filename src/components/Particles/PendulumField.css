@@ -1,0 +1,17 @@
+/* Fills its parent (pendulum-field-stage) — position:absolute;inset:0,
+   sized by the ResizeObserver in PendulumField.jsx rather than fixed pixel
+   dimensions, the same convention GravityField.css/ChladniField.css/
+   BoidField.css/CrystalField.css already use. The interactive surface
+   itself (grab and pull the pendulum out, let go), so it keeps
+   pointer-events on rather than being a decorative backdrop. */
+.pendulum-field-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+
+.pendulum-field-canvas:active {
+  cursor: grabbing;
+}

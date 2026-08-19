@@ -1,0 +1,12 @@
+/* Fills its parent (lsystem-field-stage) — position:absolute;inset:0, sized
+   by the ResizeObserver in LSystemField.jsx rather than fixed pixel
+   dimensions, the same convention every other Particles/ canvas already
+   uses. Purely decorative (nothing to click or drag here), so pointer
+   events stay off unlike its siblings. */
+.lsystem-field-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}

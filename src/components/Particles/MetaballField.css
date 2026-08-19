@@ -1,0 +1,12 @@
+/* Fills its parent (metaball-field-stage) — position:absolute;inset:0,
+   sized by the ResizeObserver in MetaballField.jsx rather than fixed pixel
+   dimensions, the same convention every other Particles/ canvas already
+   uses. The interactive surface itself (drag to swat the blobs apart), so
+   it keeps pointer-events on rather than being a decorative backdrop. */
+.metaball-field-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}

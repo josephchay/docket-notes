@@ -1,0 +1,108 @@
+.epicycle-field-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.epicycle-field-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(25, 25, 25, 0.28);
+}
+
+:root[data-theme="dark"] .epicycle-field-backdrop {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* border-radius is animated by framer during the drop-to-sheet morph, so it
+   is deliberately not set here. */
+.epicycle-field-panel {
+  position: relative;
+  width: min(520px, 94vw);
+  overflow: hidden;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
+  will-change: transform;
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+  outline: none;
+}
+
+.epicycle-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 0;
+}
+
+.epicycle-field-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.epicycle-field-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.epicycle-field-hint {
+  margin: 4px 18px 0;
+  font-size: 13px;
+  color: var(--black-more-transclucent-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.epicycle-field-stage {
+  position: relative;
+  margin: 12px 18px 0;
+  height: min(420px, 70vw);
+  border-radius: 14px;
+  overflow: hidden;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.epicycle-field-controls {
+  margin: 14px 18px 18px;
+}
+
+.epicycle-field-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--black-more-transclucent-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.epicycle-field-slider input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--page-ink-color);
+}
+
+.epicycle-field-slider-value {
+  min-width: 24px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}

@@ -2,23 +2,30 @@ main {
   grid-area: main;
 }
 
-/* The lasso's own selection rectangle — portaled to document.body (see
+/* The lasso's own traced loop — portaled to document.body (see
    NoteList.jsx) since it tracks the pointer in plain viewport coordinates,
-   the same reasoning Note.jsx's own radial menu portals for. Rounded and
-   soft rather than a hard marquee rectangle, to read as an elastic pull
-   rather than a literal selection tool. */
-.lasso-rect {
+   the same reasoning Note.jsx's own radial menu portals for. A real
+   freeform shape now (smoothPath through recorded points) rather than an
+   axis-aligned marquee rectangle — round line joins/caps so the smoothed
+   curve's own corners never look faceted. */
+.lasso-layer {
   position: fixed;
+  inset: 0;
   z-index: 500;
-  border-radius: 14px;
-  border: 1.5px solid var(--page-ink-color);
-  background-color: rgba(25, 25, 25, 0.1);
   pointer-events: none;
-  transition: border-color 0.4s ease-in-out;
 }
 
-:root[data-theme="dark"] .lasso-rect {
-  background-color: rgba(255, 254, 255, 0.14);
+.lasso-path {
+  fill: rgba(25, 25, 25, 0.1);
+  stroke: var(--page-ink-color);
+  stroke-width: 1.5px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  transition: stroke 0.4s ease-in-out;
+}
+
+:root[data-theme="dark"] .lasso-path {
+  fill: rgba(255, 254, 255, 0.14);
 }
 
 main .header {
@@ -229,6 +236,28 @@ main .notes {
   transform: skewY(calc(var(--scroll-tilt, 0) * 1deg));
 }
 
+/* The grid's own settle wave (see NoteList.jsx's gridWashRef) — GSAP owns
+   `top`/`opacity` directly every scroll tick, so this only sets the
+   band's own static shape: a soft horizontal light, centered on
+   whatever `top` percentage the current scroll progress puts it at.
+   pointer-events: none since this is purely decorative and sits above
+   the grid's own cards in paint order but must never intercept a click. */
+.grid-settle-wave {
+  position: absolute;
+  left: -70px;
+  right: -70px;
+  height: 260px;
+  margin-top: -130px;
+  background: radial-gradient(ellipse 60% 100% at 50% 50%, rgba(25, 25, 25, 0.05), transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+:root[data-theme="dark"] .grid-settle-wave {
+  background: radial-gradient(ellipse 60% 100% at 50% 50%, rgba(255, 254, 255, 0.07), transparent 70%);
+}
+
 .quote-parallax {
   will-change: transform;
 }
@@ -240,6 +269,17 @@ main .notes.pile-active {
 main .notes .empty-state {
   position: relative;
   padding: 30px 10px;
+}
+
+/* EmptyStateWash's own canvas (see NoteList.jsx) — the same box the
+   blobs themselves drift within (matching inset), sat one layer further
+   back so real ripple detail reads underneath the gooey shapes rather
+   than competing with them. */
+main .notes .empty-state .empty-state-wash {
+  position: absolute;
+  inset: -60px -80px;
+  z-index: -2;
+  pointer-events: none;
 }
 
 /* The lava-lamp drops behind the empty desk, melted together by the same

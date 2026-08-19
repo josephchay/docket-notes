@@ -36,6 +36,12 @@ import {
   FaAtom,
   FaDove,
   FaSnowflake,
+  FaInfinity,
+  FaBacterium,
+  FaCompassDrafting,
+  FaBullseye,
+  FaSeedling,
+  FaCircleHalfStroke,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
@@ -88,6 +94,12 @@ import InkBloomPanel, { INK_BLOOM_EVENT } from "../components/Particles/InkBloom
 import ChladniPanel, { CHLADNI_EVENT } from "../components/Particles/ChladniPanel";
 import BoidPanel, { BOID_EVENT } from "../components/Particles/BoidPanel";
 import CrystalPanel, { CRYSTAL_EVENT } from "../components/Particles/CrystalPanel";
+import PendulumPanel, { PENDULUM_EVENT } from "../components/Particles/PendulumPanel";
+import LeniaPanel, { LENIA_EVENT } from "../components/Particles/LeniaPanel";
+import EpicyclePanel, { EPICYCLE_EVENT } from "../components/Particles/EpicyclePanel";
+import InterferencePanel, { INTERFERENCE_EVENT } from "../components/Particles/InterferencePanel";
+import LSystemPanel, { LSYSTEM_EVENT } from "../components/Particles/LSystemPanel";
+import MetaballPanel, { METABALL_EVENT } from "../components/Particles/MetaballPanel";
 import NoteConstellationPanel, { NOTE_CONSTELLATION_EVENT } from "../components/Constellation/NoteConstellationPanel";
 import useLenisScroll from "../hooks/useLenisScroll";
 
@@ -1307,6 +1319,42 @@ const Home = () => {
       perform: () => window.dispatchEvent(new CustomEvent(CRYSTAL_EVENT)),
     },
     {
+      key: "pendulum-field",
+      label: "Show the chaos",
+      icon: <FaInfinity />,
+      perform: () => window.dispatchEvent(new CustomEvent(PENDULUM_EVENT)),
+    },
+    {
+      key: "lenia-field",
+      label: "Show the ink life",
+      icon: <FaBacterium />,
+      perform: () => window.dispatchEvent(new CustomEvent(LENIA_EVENT)),
+    },
+    {
+      key: "epicycle-field",
+      label: "Show the orbits",
+      icon: <FaCompassDrafting />,
+      perform: () => window.dispatchEvent(new CustomEvent(EPICYCLE_EVENT)),
+    },
+    {
+      key: "interference-field",
+      label: "Show the ripples",
+      icon: <FaBullseye />,
+      perform: () => window.dispatchEvent(new CustomEvent(INTERFERENCE_EVENT)),
+    },
+    {
+      key: "lsystem-field",
+      label: "Show the growth",
+      icon: <FaSeedling />,
+      perform: () => window.dispatchEvent(new CustomEvent(LSYSTEM_EVENT)),
+    },
+    {
+      key: "metaball-field",
+      label: "Show the droplets",
+      icon: <FaCircleHalfStroke />,
+      perform: () => window.dispatchEvent(new CustomEvent(METABALL_EVENT)),
+    },
+    {
       key: "note-constellation",
       label: "Map your notes",
       icon: <FaCircleNodes />,
@@ -1500,6 +1548,12 @@ const Home = () => {
       <ChladniPanel reduceMotion={ reduceMotion } />
       <BoidPanel reduceMotion={ reduceMotion } />
       <CrystalPanel reduceMotion={ reduceMotion } />
+      <PendulumPanel reduceMotion={ reduceMotion } />
+      <LeniaPanel reduceMotion={ reduceMotion } />
+      <EpicyclePanel reduceMotion={ reduceMotion } />
+      <InterferencePanel reduceMotion={ reduceMotion } />
+      <LSystemPanel reduceMotion={ reduceMotion } />
+      <MetaballPanel reduceMotion={ reduceMotion } />
       <NoteConstellationPanel notes={ notes } openEditor={ setEditingNoteId } reduceMotion={ reduceMotion } />
       <TrashPanel
         entries={ deletedNotes }
