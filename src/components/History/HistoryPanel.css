@@ -731,6 +731,18 @@
   transition: color 0.4s ease-in-out;
 }
 
+/* The branch-restore flight's own traveling ghost (see restoreBranch in
+   HistoryPanel.jsx) — a plain, un-styled-by-React div appended straight to
+   document.body for the duration of the tween, the same "no component of
+   its own to animate" reasoning HistoryConstellation.jsx's graftBranch
+   already leans on for the exact same moment in the constellation view. */
+.history-branch-flight-ghost {
+  position: fixed;
+  z-index: 1300;
+  pointer-events: none;
+  background-color: var(--orange-color);
+}
+
 .history-branch-restore {
   flex-shrink: 0;
   padding: 5px 11px;
@@ -1066,6 +1078,22 @@
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+/* The magnitude gauge (see LiquidMeter usage in HistoryPanel.jsx) reads as
+   a little dashboard readout beside the action icon — pinned to the far
+   right of the header rather than sitting in the icon/label's own flow. */
+.history-preview-magnitude {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.history-preview-magnitude .liquid-meter-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  opacity: .5;
 }
 
 .history-preview-icon {

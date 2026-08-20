@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { interpret } from "xstate";
 import gsap from "gsap";
+import Lenis from "lenis";
 import {
   FaXmark, FaClockRotateLeft, FaPlus, FaTrash, FaArrowRotateLeft, FaTrashCan,
   FaBoxArchive, FaFileArrowUp, FaCopy, FaPalette, FaUpDownLeftRight, FaStar,
@@ -19,6 +20,7 @@ import { playbackMachine, PLAYBACK_SPEEDS } from "./HistoryPlaybackState";
 import SheetPanel from "../Sheet/SheetPanel";
 import HistoryAmbient from "./HistoryAmbient";
 import HistoryConstellation from "./HistoryConstellation";
+import LiquidMeter from "../Meter/LiquidMeter";
 import useOdometer from "../../hooks/useOdometer";
 import { playHistoryAction, playTick } from "../../utils/sound";
 
@@ -280,6 +282,135 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   };
   const handleTrackClick = (e) => { stopPlayback(); onJump(indexFromPoint(e.clientX)); };
 
+  // Touch has no hover, so a rail tick's own onMouseEnter/onFocus preview
+  // below is unreachable by tap — and tapping a tick already jumps straight
+  // there via its onClick, with no way to peek first the way a mouse user
+  // gets for free by just hovering. Same gap the note-grid chips' own
+  // tapChipPreview already closed elsewhere in this file; this is the same
+  // fix applied to the rail instead of the grid — a touch hold past a short
+  // threshold previews the tick (without jumping) rather than committing,
+  // auto-dismissing itself the same way that chip preview already does
+  // rather than needing a "tap elsewhere to close" listener. A quick tap
+  // (released before the hold threshold) still jumps immediately, exactly
+  // as it always has — this only ever adds a path, never removes the old
+  // one, and mouse/keyboard users never touch any of it (gated on
+  // e.pointerType === "touch").
+  const touchPeekRef = useRef({ index: null, holdTimer: null, dismissTimer: null, longPress: false });
+
+  const clearTouchPeek = () => {
+    clearTimeout(touchPeekRef.current.holdTimer);
+    clearTimeout(touchPeekRef.current.dismissTimer);
+    touchPeekRef.current = { index: null, holdTimer: null, dismissTimer: null, longPress: false };
+  };
+
+  const handleTickPointerDown = (index, e) => {
+    if (e.pointerType !== "touch") return;
+    clearTouchPeek();
+    touchPeekRef.current.index = index;
+    touchPeekRef.current.holdTimer = setTimeout(() => {
+      touchPeekRef.current.longPress = true;
+      setHovered(index);
+      touchPeekRef.current.dismissTimer = setTimeout(() => {
+        setHovered((h) => (h === index ? null : h));
+        touchPeekRef.current.longPress = false;
+      }, 2600);
+    }, 200);
+  };
+
+  const handleTickClick = (index, e) => {
+    e.stopPropagation();
+    // A long hold still fires exactly one click the instant the finger
+    // lifts (release-without-moving is a click regardless of how long the
+    // hold was) — so this is what tells a genuine long-press-then-release
+    // apart from a genuine quick tap, both of which reach this same
+    // handler. The former just dismisses the peek back to the live cursor;
+    // it takes a second, separate tap afterward (a fresh pointerdown, by
+    // which point longPress has already been reset below) to actually jump.
+    const wasPeeking = touchPeekRef.current.longPress && touchPeekRef.current.index === index;
+    clearTouchPeek();
+    if (wasPeeking) {
+      setHovered((h) => (h === index ? null : h));
+      return;
+    }
+    stopPlayback();
+    onJump(index);
+  };
+
+  useEffect(() => () => clearTouchPeek(), []);
+
+  // The constellation's own branch restore (see graftBranch in
+  // HistoryConstellation.jsx) already flies the branch node along its own
+  // connecting line to the fork point it forked from, shrinking away as it
+  // arrives, before actually restoring — this linear view's own "Restore"
+  // button just called onRestoreBranch instantly with nothing to watch,
+  // the one asymmetry left between the two views doing the exact same
+  // thing. Mirrors that flight here instead of inventing a second
+  // mechanism: a small ghost pill measured off the button itself (plain
+  // getBoundingClientRect — a manual FLIP, not framer's layout animation,
+  // since the ghost has to travel to a *different* element entirely) flies
+  // to the rail tick it forked from and shrinks to a dot, landing tick
+  // getting the same elastic "just arrived" bump HistoryConstellation's own
+  // active-node glow already uses, before onRestoreBranch actually fires.
+  const branchFlightTweenRef = useRef(null);
+  const branchFlightGhostRef = useRef(null);
+
+  const restoreBranch = (stash, e) => {
+    stopPlayback();
+
+    if (reduceMotion) {
+      onRestoreBranch(stash.id);
+      return;
+    }
+
+    const forkIndex = Math.min(stash.undoStack?.length ?? 0, timeline.length - 1);
+    const tickEl = trackRef.current?.querySelector(`[data-tick-index="${ forkIndex }"]`);
+    const fromRect = e.currentTarget.getBoundingClientRect();
+
+    if (!tickEl) {
+      onRestoreBranch(stash.id);
+      return;
+    }
+    const toRect = tickEl.getBoundingClientRect();
+
+    branchFlightTweenRef.current?.kill();
+    branchFlightGhostRef.current?.remove();
+
+    const ghost = document.createElement("div");
+    ghost.className = "history-branch-flight-ghost";
+    ghost.style.left = `${ fromRect.left }px`;
+    ghost.style.top = `${ fromRect.top }px`;
+    ghost.style.width = `${ fromRect.width }px`;
+    ghost.style.height = `${ fromRect.height }px`;
+    document.body.appendChild(ghost);
+    branchFlightGhostRef.current = ghost;
+
+    branchFlightTweenRef.current = gsap.to(ghost, {
+      left: toRect.left + toRect.width / 2 - 5,
+      top: toRect.top + toRect.height / 2 - 5,
+      width: 10,
+      height: 10,
+      borderRadius: 999,
+      opacity: 0,
+      duration: .5,
+      ease: "power2.in",
+      onComplete: () => {
+        ghost.remove();
+        branchFlightGhostRef.current = null;
+        gsap.fromTo(
+          tickEl,
+          { scale: 1 },
+          { scale: 1.6, duration: .5, ease: "elastic.out(1, .55)", onComplete: () => gsap.set(tickEl, { clearProps: "transform" }) }
+        );
+        onRestoreBranch(stash.id);
+      },
+    });
+  };
+
+  useEffect(() => () => {
+    branchFlightTweenRef.current?.kill();
+    branchFlightGhostRef.current?.remove();
+  }, []);
+
   // Every OTHER entry's label describes the edit that turned it into the
   // next one, so the entry right before a given index is the one whose
   // label describes how the desk arrived there; nothing before index 0
@@ -296,6 +427,60 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
   // zoomed-out overview + quick-nav for that scrolled state.
   const isLongSession = timeline.length > LONG_SESSION_TICKS;
   const [minimapViewport, setMinimapViewport] = useState({ left: 0, width: 100 });
+
+  // Real momentum scrolling for the rail once it's actually a horizontal
+  // scroller (see isLongSession above) — .history-track sets touch-action:
+  // none (so the playhead's own framer pan gesture below doesn't fight the
+  // browser's native touch scroll underneath it), which as a side effect
+  // silently blocks native touch flicking on the rail too. Lenis drives
+  // scrollLeft itself off its own pointer handling rather than the
+  // browser's native touch-scroll path, so it works fine despite that, and
+  // (per Lenis's own scroll-event contract, the same one useLenisScroll.jsx
+  // already relies on for the vertical desk) keeps dispatching real native
+  // `scroll` events the whole time — nothing downstream (the minimap
+  // viewport effect right below) needs to know it's there.
+  const lenisRef = useRef(null);
+
+  useEffect(() => {
+    // Gated on `open` too, not just isLongSession — this file's other
+    // panel-lifetime effects (playbackService/constellation resets) already
+    // keep the same convention. Without it a session past 14 tracked edits
+    // would leave Lenis attached the entire time the app is open, panel
+    // closed or not.
+    if (!open || !isLongSession || reduceMotion) return;
+    const el = trackRef.current;
+    const content = el?.firstElementChild;
+    if (!el || !content) return;
+
+    const lenis = new Lenis({
+      wrapper: el,
+      content,
+      // eventsTarget defaults to `window` — without pinning it to the rail
+      // itself, this would capture wheel/touch input for the whole page
+      // the instant a long session made isLongSession true, not just input
+      // actually over the rail.
+      eventsTarget: el,
+      orientation: "horizontal",
+      // "horizontal" (rather than "both") would only ever look at
+      // deltaX, silently ignoring a plain vertical mouse-wheel scroll
+      // (deltaY) entirely — the overwhelmingly common case. "both" reads
+      // whichever axis actually has the bigger delta each event, so an
+      // ordinary wheel drives the rail exactly like a horizontal trackpad
+      // swipe or a touch drag already would.
+      gestureOrientation: "both",
+      smoothWheel: true,
+    });
+    lenisRef.current = lenis;
+
+    const raf = (time) => lenis.raf(time * 1000);
+    gsap.ticker.add(raf);
+
+    return () => {
+      gsap.ticker.remove(raf);
+      lenis.destroy();
+      lenisRef.current = null;
+    };
+  }, [open, isLongSession, reduceMotion]);
 
   useEffect(() => {
     if (!isLongSession) return;
@@ -325,7 +510,13 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
 
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
-    el.scrollTo({ left: ratio * el.scrollWidth - el.clientWidth / 2, behavior: "smooth" });
+    const target = ratio * el.scrollWidth - el.clientWidth / 2;
+    // Lenis owns scrollLeft frame-to-frame while it's active — a plain
+    // el.scrollTo would just get overwritten the next tick, the same
+    // "route position writes through Lenis" reasoning useLenisScroll.jsx's
+    // own ScrollTrigger.scrollerProxy already applies to the vertical desk.
+    if (lenisRef.current) lenisRef.current.scrollTo(target, { immediate: false });
+    else el.scrollTo({ left: target, behavior: "smooth" });
   };
 
   const previewIndex = hovered ?? cursor;
@@ -530,23 +721,39 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
     return null;
   }, [focusNoteId, timeline]);
 
+  // How much each tracked step actually changed — shared by the waveform
+  // below and the right pane's own liquid magnitude gauge (see
+  // previewMagnitudeRatio further down), so both read "how big was this
+  // step" off the exact same numbers rather than two separate passes.
+  const magnitudes = useMemo(() => (
+    timeline.map((entry, index) => (index === 0 ? 0 : magnitudeOf(timeline[index - 1], entry)))
+  ), [timeline]);
+  const maxSessionMagnitude = Math.max(1, ...magnitudes);
+
   const wavePath = useMemo(() => {
     if (timeline.length < 2) return "";
 
-    const magnitudes = timeline.map((entry, index) =>
-      index === 0 ? 0 : magnitudeOf(timeline[index - 1], entry)
-    );
-    const maxMagnitude = Math.max(1, ...magnitudes);
     const baselineY = WAVE_H - 6;
     const usableH = baselineY - 6;
 
     const points = magnitudes.map((magnitude, index) => ({
       x: (index / (timeline.length - 1)) * WAVE_W,
-      y: baselineY - (magnitude / maxMagnitude) * usableH,
+      y: baselineY - (magnitude / maxSessionMagnitude) * usableH,
     }));
 
     return smoothPath(points);
-  }, [timeline]);
+  }, [timeline, magnitudes, maxSessionMagnitude]);
+
+  // "How big was this step," as an actual fill level rather than another
+  // number — reuses LiquidMeter.jsx (until now only ever mounted in
+  // Header's ink-levels popover) off the exact same magnitudes/
+  // maxSessionMagnitude the waveform above already computes, so the two
+  // stay honest about what "big" means at a glance instead of drifting.
+  // Fires the meter's own milestone pulse whenever the previewed step
+  // happens to be the single largest one this session actually had — a
+  // literal splash for the biggest edit you've made, not a synthetic one.
+  const previewMagnitudeRatio = previewIndex > 0 ? magnitudes[previewIndex] / maxSessionMagnitude : 0;
+  const isBiggestStep = previewIndex > 0 && magnitudes[previewIndex] === maxSessionMagnitude;
 
   // The activity list: every timeline entry, newest first, read the exact
   // same way the rail's ticks and the "now" preview already are — the
@@ -1055,10 +1262,12 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                 <button
                                   key={ index }
                                   type="button"
+                                  data-tick-index={ index }
                                   className={ `history-tick ${ index === cursor ? "active" : "" } ${ entry.label === "now" ? "is-now" : "" } ${ index > cursor ? "redoable" : "" }` }
                                   style={{ left: `${ timeline.length > 1 ? (index / (timeline.length - 1)) * 100 : 0 }%`, "--tick-color": style.color }}
                                   title={ entry.label === "now" ? "Right now" : entry.label }
-                                  onClick={ (e) => { e.stopPropagation(); stopPlayback(); onJump(index); } }
+                                  onClick={ (e) => handleTickClick(index, e) }
+                                  onPointerDown={ (e) => handleTickPointerDown(index, e) }
                                   onMouseEnter={ () => setHovered(index) }
                                   onMouseLeave={ () => setHovered((h) => (h === index ? null : h)) }
                                   onFocus={ () => setHovered(index) }
@@ -1187,7 +1396,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                       whileHover={{ scale: 1.06 }}
                                       whileTap={{ scale: .94 }}
                                       transition={{ type: "spring", stiffness: 420, damping: 16 }}
-                                      onClick={ () => { stopPlayback(); onRestoreBranch(stash.id); } }
+                                      onClick={ (e) => restoreBranch(stash, e) }
                                     >
                                       Restore
                                     </motion.button>
@@ -1386,6 +1595,19 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                                   { previewArrival ? timeAgo(previewArrival.at) : "session start" }
                                 </span>
                               </span>
+                              {
+                                previewIndex > 0 && (
+                                  <div className="history-preview-magnitude">
+                                    <LiquidMeter
+                                      ratio={ previewMagnitudeRatio }
+                                      color={ previewStyle.color }
+                                      label="This step"
+                                      reduceMotion={ reduceMotion }
+                                      celebration={ isBiggestStep ? { key: `biggest-${ previewIndex }` } : null }
+                                    />
+                                  </div>
+                                )
+                              }
                             </div>
 
                             {
