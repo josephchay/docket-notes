@@ -30,6 +30,32 @@ const HOP2_MAX_SAG = 46; // a fainter, tauter-reading echo than the real hop-1 r
 const HOP2_MAX_PER_ANCHOR = 10;
 const HOP2_STAGGER_S = .07; // each hop-2 thread ripples outward a beat after the last
 
+// Hop-1's own reveal now stagger-orders by distance from the anchor
+// (nearest first, the same "ink reaches nearer surfaces sooner" reasoning
+// as a real spreading stain) rather than snapping every thread in at once
+// — hop-2's own delay below then chains onto its actual hop-1 parent's
+// arrival instead of a flat anchor-wide count, so the whole web radiates
+// outward in one real sequence.
+const HOP1_STAGGER_S = .045;
+
+// How hard a freshly-struck thread rattles anything else tied to the same
+// note — a fraction of the strike that actually caused it, one hop only
+// (no recursive cascade through the whole web).
+const SYMPATHY_FACTOR = .35;
+
+// Pulling the belly bead (see the drag handlers below) directly sets mode
+// 1's own amplitude while held — DRAG_MAX_PULL caps how far a real yank can
+// stretch it, PULL_TO_PLUCK_SCALE is how much of that pull survives as the
+// actual pluck() amount once let go.
+const DRAG_MAX_PULL = 90;
+const PULL_TO_PLUCK_SCALE = .22;
+
+// The energy-driven ink-bleed halo (see haloRefs below) — how much of the
+// per-frame modal energy (already computed for the drop's own radius) it
+// takes to read as fully "wet," tuned against a single hop-1 pluck's own
+// typical peak rather than PLUCK_MAX_AMP's own worst-case stacked ceiling.
+const HALO_ENERGY_SCALE = 10;
+
 // The harmonic pluck — the exact modal-decay recipe NoteConstellation.jsx's
 // own thread-plucking already established (see its pluckEdge/PLUCK_OMEGA):
 // a string struck at fraction p of its span takes mode n with amplitude
@@ -101,9 +127,59 @@ const TagThreads = ({ notes, hoveredId, containerRef, reduceMotion }) => {
 
   const pathRefs = useRef({});
   const dropRefs = useRef({});
+  const haloRefs = useRef({});
   const vibRef = useRef({});
   const prevEndRef = useRef({});
   const rafRef = useRef(0);
+
+  // "Borrow the pen" on the drop bead — no React state per drag frame, the
+  // same imperative discipline the ring-down tick loop below already keeps.
+  // key is null whenever nothing's being held.
+  const dragRef = useRef({ key: null, offset: 0 });
+
+  const localPoint = (e) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  // Signed distance from the thread's own resting belly (see
+  // catenaryBelly), projected onto the chord's perpendicular — exactly the
+  // local-frame displacement catenaryPath's own `wave` param expects, so
+  // handing this straight back to it as wave1 bends the curve exactly the
+  // way pulling the middle of a real string would.
+  const perpOffset = (pair, point) => {
+    const dx = pair.x2 - pair.x1;
+    const dy = pair.y2 - pair.y1;
+    const chordLen = Math.hypot(dx, dy) || 1;
+    const ux = -dy / chordLen;
+    const uy = dx / chordLen;
+    const belly = catenaryBelly(pair.x1, pair.y1, pair.x2, pair.y2, { k: CATENARY_K, maxSag: MAX_SAG });
+    return (point.x - belly.x) * ux + (point.y - belly.y) * uy;
+  };
+
+  const handleDropPointerDown = (pair, e) => {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    dragRef.current = { key: pair.key, offset: perpOffset(pair, localPoint(e)) };
+  };
+
+  const handleDropPointerMove = (pair, e) => {
+    if (dragRef.current.key !== pair.key) return;
+    const offset = perpOffset(pair, localPoint(e));
+    dragRef.current.offset = Math.max(-DRAG_MAX_PULL, Math.min(DRAG_MAX_PULL, offset));
+  };
+
+  // Shared by pointerup/pointercancel — letting go plucks the thread for
+  // real (see pluck()'s own p=.5 "struck at the belly" convention) rather
+  // than just snapping the override off with nothing to show for the pull.
+  const handleDropRelease = (pair) => {
+    if (dragRef.current.key !== pair.key) return;
+    const state = vibRef.current[pair.key];
+    const amount = Math.abs(dragRef.current.offset) * PULL_TO_PLUCK_SCALE;
+    dragRef.current = { key: null, offset: 0 };
+    if (state && amount > .5) pluck(state, amount, .5);
+  };
 
   // A note deleted out from under a pin shouldn't linger in the set forever.
   useEffect(() => {
@@ -207,13 +283,27 @@ const TagThreads = ({ notes, hoveredId, containerRef, reduceMotion }) => {
 
         const hop1Ids = new Set(hop1.map((note) => note.id));
 
-        hop1.forEach((note) => {
-          const c = centerOf(note.id);
-          if (!c) return;
+        // Sorted nearest-first purely for the reveal's own stagger order
+        // (see HOP1_STAGGER_S) — the physics/hit-testing below still reads
+        // the original unsorted `hop1`, so this has no effect on anything
+        // but which delay each pair gets.
+        const hop1ByDistance = hop1
+          .map((note) => ({ note, center: centerOf(note.id) }))
+          .filter((entry) => entry.center)
+          .sort((a, b) =>
+            Math.hypot(a.center.x - anchorCenter.x, a.center.y - anchorCenter.y)
+            - Math.hypot(b.center.x - anchorCenter.x, b.center.y - anchorCenter.y)
+          );
+
+        const hop1DelayById = new Map();
+        hop1ByDistance.forEach(({ note, center: c }, rank) => {
+          const delay = rank * HOP1_STAGGER_S;
+          hop1DelayById.set(note.id, delay);
           nextPairs.push({
             key: `${ anchorId }:${ note.id }`, gradId: `${ anchorId }-${ note.id }`, hop: 1,
+            fromId: anchorId, toId: note.id,
             x1: anchorCenter.x, y1: anchorCenter.y, x2: c.x, y2: c.y,
-            colorA: anchor.color, colorB: note.color, delay: 0,
+            colorA: anchor.color, colorB: note.color, delay,
           });
         });
 
@@ -232,10 +322,16 @@ const TagThreads = ({ notes, hoveredId, containerRef, reduceMotion }) => {
               if (!c2) return;
 
               hop2Count += 1;
+              // Chained onto this thread's own hop-1 parent's arrival
+              // (rather than a flat anchor-wide count) — the web now
+              // radiates outward in one real sequence: the parent blooms
+              // in, then its own children ripple out a beat later.
+              const parentDelay = hop1DelayById.get(h1note.id) ?? 0;
               nextPairs.push({
                 key: `${ anchorId }:${ h1note.id }:${ h2note.id }`, gradId: `${ anchorId }-${ h1note.id }-${ h2note.id }`, hop: 2,
+                fromId: h1note.id, toId: h2note.id,
                 x1: h1Center.x, y1: h1Center.y, x2: c2.x, y2: c2.y,
-                colorA: h1note.color, colorB: h2note.color, delay: hop2Count * HOP2_STAGGER_S,
+                colorA: h1note.color, colorB: h2note.color, delay: parentDelay + hop2Count * HOP2_STAGGER_S,
               });
             });
         });
@@ -251,6 +347,9 @@ const TagThreads = ({ notes, hoveredId, containerRef, reduceMotion }) => {
       // relationship forming.
       const prevEnd = prevEndRef.current;
       const nextEnd = {};
+      // How much each pair actually got struck THIS pass — fed to the
+      // sympathetic-resonance pass right below, keyed by pair.key.
+      const struckAmount = {};
 
       nextPairs.forEach((pair) => {
         let state = vibRef.current[pair.key];
@@ -266,20 +365,49 @@ const TagThreads = ({ notes, hoveredId, containerRef, reduceMotion }) => {
           if (isNew) {
             if (pair.hop === 1) {
               pluck(state, 10, .82);
+              struckAmount[pair.key] = 10;
             } else {
-              const fire = () => pluck(state, 5, .5);
+              const amount = 5;
+              const fire = () => pluck(state, amount, .5);
               if (pair.delay > 0) setTimeout(fire, pair.delay * 1000);
               else fire();
+              struckAmount[pair.key] = amount;
             }
           } else if (isReflow) {
             const prev = prevEnd[pair.key];
             if (prev) {
               const moved = Math.hypot(pair.x2 - prev.x, pair.y2 - prev.y);
-              if (moved > 5) pluck(state, Math.min(6, moved * .18), .5);
+              if (moved > 5) {
+                const amount = Math.min(6, moved * .18);
+                pluck(state, amount, .5);
+                struckAmount[pair.key] = amount;
+              }
             }
           }
         }
       });
+
+      // Sympathetic resonance — a real spiderweb's own behavior: plucking
+      // one strand jostles whatever else is tied to the same knot. One hop
+      // only (no recursive cascade), and only ever a fraction of the
+      // strike that actually caused it; a pair that got its own fresh
+      // strike this pass is left alone rather than double-plucked by a
+      // neighbor's sympathy on top of its own real pluck.
+      if (!reduceMotion) {
+        Object.keys(struckAmount).forEach((struckKey) => {
+          const struckPair = nextPairs.find((p) => p.key === struckKey);
+          if (!struckPair) return;
+
+          nextPairs.forEach((other) => {
+            if (other.key === struckKey || struckAmount[other.key] != null) return;
+            if (other.fromId !== struckPair.fromId && other.fromId !== struckPair.toId
+              && other.toId !== struckPair.fromId && other.toId !== struckPair.toId) return;
+
+            const state = vibRef.current[other.key];
+            if (state) pluck(state, struckAmount[struckKey] * SYMPATHY_FACTOR, .5);
+          });
+        });
+      }
 
       // Threads that no longer exist stop being tracked (rather than
       // leaking forever as the anchor set/tags change over a long session).
@@ -331,24 +459,52 @@ const TagThreads = ({ notes, hoveredId, containerRef, reduceMotion }) => {
         const state = vibRef.current[pair.key];
         if (!state) return;
 
-        const energy = stepState(state, dt);
-        const [w1, w2, w3] = waveTerms(state);
+        // While this exact pair is being dragged (see handleDropPointerMove
+        // above), mode 1's own amplitude is overridden directly from the
+        // live pull instead of stepped from stored modal state — the
+        // stored amp/phase stay frozen (not decayed) for the duration, so
+        // nothing needs undoing if the drag is released or cancelled.
+        const dragging = dragRef.current.key === pair.key;
+        let w1, w2, w3, energy;
+        if (dragging) {
+          w1 = dragRef.current.offset;
+          w2 = 0;
+          w3 = 0;
+          energy = Math.abs(w1);
+        } else {
+          energy = stepState(state, dt);
+          [w1, w2, w3] = waveTerms(state);
+        }
+
         const maxSag = pair.hop === 1 ? MAX_SAG : HOP2_MAX_SAG;
 
+        const pathD = catenaryPath(pair.x1, pair.y1, pair.x2, pair.y2, {
+          k: CATENARY_K, samples: CATENARY_SAMPLES, maxSag, wave: w1, wave2: w2, wave3: w3,
+        });
         const pathEl = pathRefs.current[pair.key];
-        if (pathEl) {
-          pathEl.setAttribute("d", catenaryPath(pair.x1, pair.y1, pair.x2, pair.y2, {
-            k: CATENARY_K, samples: CATENARY_SAMPLES, maxSag, wave: w1, wave2: w2, wave3: w3,
-          }));
-        }
+        if (pathEl) pathEl.setAttribute("d", pathD);
 
         const dropEl = dropRefs.current[pair.key];
         if (dropEl) {
           const belly = catenaryBelly(pair.x1, pair.y1, pair.x2, pair.y2, { k: CATENARY_K, maxSag, wave: w1, wave3: w3 });
-          const r = energy < REST_EPSILON ? 0 : Math.min(DROP_MAX_R, DROP_BASE_R + energy * DROP_ENERGY_GAIN);
+          const r = dragging
+            ? Math.min(DROP_MAX_R * 1.4, DROP_BASE_R + Math.abs(w1) * .06)
+            : (energy < REST_EPSILON ? 0 : Math.min(DROP_MAX_R, DROP_BASE_R + energy * DROP_ENERGY_GAIN));
           dropEl.setAttribute("cx", belly.x);
           dropEl.setAttribute("cy", belly.y);
           dropEl.setAttribute("r", r);
+        }
+
+        // The ink-bleed halo (hop-1 only) — a companion path riding the
+        // exact same `d` the main line just got, its opacity tracking the
+        // same per-frame energy the drop's own radius already reads, so a
+        // freshly-plucked thread visibly glows wetter while it's still
+        // ringing and dries down as it settles, rather than that energy
+        // value only ever driving one visual channel.
+        const haloEl = haloRefs.current[pair.key];
+        if (haloEl) {
+          haloEl.setAttribute("d", pathD);
+          haloEl.style.opacity = Math.min(1, energy / HALO_ENERGY_SCALE);
         }
       });
 
@@ -403,33 +559,54 @@ const TagThreads = ({ notes, hoveredId, containerRef, reduceMotion }) => {
       </AnimatePresence>
       <AnimatePresence>
         {
-          pairs.filter((pair) => pair.hop === 1).map((pair, index) => (
-            <motion.g
-              key={ pair.key }
-              className="tag-thread"
-              style={{ filter: "url(#gooey-effect)" }}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, transition: { duration: .18 } }}
-            >
-              <motion.path
-                ref={ (el) => { if (el) pathRefs.current[pair.key] = el; else delete pathRefs.current[pair.key]; } }
-                className="tag-thread-line"
+          pairs.filter((pair) => pair.hop === 1).map((pair) => (
+            // The halo sits OUTSIDE the gooey-filtered group below on
+            // purpose — #gooey-effect's own feColorMatrix applies a hard
+            // alpha threshold to fuse separate blurred blobs into one solid
+            // shape (see Svg/GooeyEffectSvg.jsx: alpha below ~.45 vanishes,
+            // above it gets pushed toward opaque), which would either wipe
+            // out or harshly clip a soft, low-opacity glow rather than
+            // reading as a wet-ink halo. A plain React.Fragment (needs the
+            // key here since <>...</> can't carry one) keeps both as
+            // siblings without a wrapping element neither should share.
+            <React.Fragment key={ pair.key }>
+              <path
+                ref={ (el) => { if (el) haloRefs.current[pair.key] = el; else delete haloRefs.current[pair.key]; } }
+                className="tag-thread-halo"
                 d={ catenaryPath(pair.x1, pair.y1, pair.x2, pair.y2, { k: CATENARY_K, samples: CATENARY_SAMPLES, maxSag: MAX_SAG }) }
                 stroke={ `url(#tagThreadGradient-${ pair.gradId })` }
-                initial={{ pathLength: reduceMotion ? 1 : 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{ type: "spring", stiffness: 140, damping: 18, delay: index * .03 }}
               />
-              <circle className="tag-thread-node" cx={ pair.x1 } cy={ pair.y1 } r="5" fill={ NOTE_COLORS[pair.colorA] } />
-              <circle className="tag-thread-node" cx={ pair.x2 } cy={ pair.y2 } r="5" fill={ NOTE_COLORS[pair.colorB] } />
-              <circle
-                ref={ (el) => { if (el) dropRefs.current[pair.key] = el; else delete dropRefs.current[pair.key]; } }
-                className="tag-thread-drop"
-                cx={ pair.x2 } cy={ pair.y2 } r="0"
-                fill={ `url(#tagThreadGradient-${ pair.gradId })` }
-              />
-            </motion.g>
+              <motion.g
+                className="tag-thread"
+                style={{ filter: "url(#gooey-effect)" }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, transition: { duration: .18 } }}
+                transition={{ delay: pair.delay }}
+              >
+                <motion.path
+                  ref={ (el) => { if (el) pathRefs.current[pair.key] = el; else delete pathRefs.current[pair.key]; } }
+                  className="tag-thread-line"
+                  d={ catenaryPath(pair.x1, pair.y1, pair.x2, pair.y2, { k: CATENARY_K, samples: CATENARY_SAMPLES, maxSag: MAX_SAG }) }
+                  stroke={ `url(#tagThreadGradient-${ pair.gradId })` }
+                  initial={{ pathLength: reduceMotion ? 1 : 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{ type: "spring", stiffness: 140, damping: 18, delay: pair.delay }}
+                />
+                <circle className="tag-thread-node" cx={ pair.x1 } cy={ pair.y1 } r="5" fill={ NOTE_COLORS[pair.colorA] } />
+                <circle className="tag-thread-node" cx={ pair.x2 } cy={ pair.y2 } r="5" fill={ NOTE_COLORS[pair.colorB] } />
+                <circle
+                  ref={ (el) => { if (el) dropRefs.current[pair.key] = el; else delete dropRefs.current[pair.key]; } }
+                  className="tag-thread-drop"
+                  cx={ pair.x2 } cy={ pair.y2 } r="0"
+                  fill={ `url(#tagThreadGradient-${ pair.gradId })` }
+                  onPointerDown={ (e) => handleDropPointerDown(pair, e) }
+                  onPointerMove={ (e) => handleDropPointerMove(pair, e) }
+                  onPointerUp={ () => handleDropRelease(pair) }
+                  onPointerCancel={ () => handleDropRelease(pair) }
+                />
+              </motion.g>
+            </React.Fragment>
           ))
         }
       </AnimatePresence>

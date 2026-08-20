@@ -21,12 +21,35 @@
   opacity: .4;
 }
 
+/* The energy-driven ink-bleed halo (see haloRefs in TagThreads.jsx) — a
+   blurred companion riding the exact same path as the real line, painted
+   first so it sits underneath it; opacity is written directly per-frame,
+   never through React, so it starts at 0 here rather than needing a class
+   toggle. */
+.tag-thread-halo {
+  fill: none;
+  stroke-width: 7px;
+  filter: blur(4px);
+  opacity: 0;
+}
+
 .tag-thread-node {
   opacity: .9;
 }
 
+/* Grabbable despite the parent .tag-threads svg's own pointer-events:
+   none — pointer-events is an ordinary inherited CSS property, so a single
+   descendant can still opt back in with its own explicit value even while
+   the whole rest of the overlay stays click-through around it. */
 .tag-thread-drop {
   opacity: .8;
+  pointer-events: all;
+  cursor: grab;
+  touch-action: none;
+}
+
+.tag-thread-drop:active {
+  cursor: grabbing;
 }
 
 .tag-thread-pin-ring {
