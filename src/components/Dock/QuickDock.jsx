@@ -11,6 +11,7 @@ import {
   FaCircleNodes,
   FaMoon,
   FaSun,
+  FaEllipsis,
 } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
@@ -57,6 +58,13 @@ const ITEM_KEYS = ["new", "shuffle", "constellation", "focus", "sprint", "comman
 const IMPACT_REACH = 2;
 const IMPACT_DECAY = .28;
 
+// How long a stationary press on an item takes to shelve it (see the hold
+// handlers below) — long enough that an ordinary tap or the start of a
+// real reorder drag never brushes past it, short enough to still read as
+// deliberate rather than sluggish.
+const HOLD_MS = 550;
+const HOLD_MOVE_CANCEL_PX = 6;
+
 // A floating dock of the desk's most-reached-for actions, magnetized the
 // way a real dock is (see useMagnetic.jsx for the shared recipe — Header's
 // toolbar icons borrow the same one, including its own velocity-aware
@@ -85,7 +93,7 @@ const QuickDock = ({
   const dockRef = useRef(null);
   const [hovered, setHovered] = useState(null);
   const dockPulse = useInkPulse(hovered);
-  const magnetic = useMagnetic({ range: 96, maxLift: 16, maxScale: 1.55, axis: "x", reduceMotion });
+  const magnetic = useMagnetic({ range: 96, maxLift: 16, maxScale: 1.55, axis: "x", tilt: true, maxTilt: 7, reduceMotion });
 
   // Drag-to-reorder (see the Reorder.Group/Reorder.Item below) — persisted
   // through the exact same loadSettings/saveSettings pair CommandPalette's
@@ -95,17 +103,115 @@ const QuickDock = ({
   // order (an older save from before an item existed) is appended at the
   // end rather than dropped.
   const [order, setOrder] = useState(() => {
-    const stored = loadSettings().dockOrder;
-    if (!Array.isArray(stored)) return ITEM_KEYS;
-    const valid = stored.filter((key) => ITEM_KEYS.includes(key));
-    const missing = ITEM_KEYS.filter((key) => !valid.includes(key));
+    const stored = loadSettings();
+    const hiddenStored = Array.isArray(stored.dockHidden) ? stored.dockHidden.filter((key) => ITEM_KEYS.includes(key)) : [];
+    const valid = Array.isArray(stored.dockOrder)
+      ? stored.dockOrder.filter((key) => ITEM_KEYS.includes(key) && !hiddenStored.includes(key))
+      : [];
+    const missing = ITEM_KEYS.filter((key) => !valid.includes(key) && !hiddenStored.includes(key));
     return [...valid, ...missing];
   });
 
+  // Shelved items — see the long-press handlers below. Kept as a fully
+  // separate array (not filtered out of `order` at render time) so
+  // Reorder.Group's own `values` prop always matches its rendered
+  // children 1:1, the invariant framer's Reorder expects.
+  const [hidden, setHidden] = useState(() => {
+    const stored = loadSettings().dockHidden;
+    return Array.isArray(stored) ? stored.filter((key) => ITEM_KEYS.includes(key)) : [];
+  });
+  const [shelfOpen, setShelfOpen] = useState(false);
+
   const handleReorder = (nextOrder) => {
     setOrder(nextOrder);
-    saveSettings({ dockOrder: nextOrder });
+    saveSettings({ dockOrder: nextOrder, dockHidden: hidden });
   };
+
+  // Long-press (not drag) to shelve an item out of the row entirely —
+  // dragging already means "reorder," so this deliberately keys off a
+  // stationary hold instead, the same threshold-timer idiom the History
+  // round's own touch-peek used, just universal here (mouse or touch)
+  // rather than touch-only. `justShelved` swallows the click that still
+  // follows the eventual pointerup even though the item's already gone by
+  // then, since AnimatePresence keeps it mounted for its own exit tween.
+  const holdRef = useRef({ key: null, timer: null, justShelved: false, startX: 0, startY: 0 });
+
+  const clearHold = () => {
+    clearTimeout(holdRef.current.timer);
+    holdRef.current.timer = null;
+  };
+
+  const shelveItem = (key) => {
+    const nextOrder = order.filter((k) => k !== key);
+    const nextHidden = [...hidden, key];
+    setOrder(nextOrder);
+    setHidden(nextHidden);
+    setHovered((prev) => (order[prev] === key ? null : prev));
+    saveSettings({ dockOrder: nextOrder, dockHidden: nextHidden });
+  };
+
+  const restoreItem = (key) => {
+    const nextHidden = hidden.filter((k) => k !== key);
+    const nextOrder = [...order, key];
+    setHidden(nextHidden);
+    setOrder(nextOrder);
+    saveSettings({ dockOrder: nextOrder, dockHidden: nextHidden });
+    if (nextHidden.length === 0) setShelfOpen(false);
+  };
+
+  const handleItemPointerDown = (item, e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    holdRef.current.key = item.key;
+    holdRef.current.startX = e.clientX;
+    holdRef.current.startY = e.clientY;
+    clearTimeout(holdRef.current.timer);
+    holdRef.current.timer = setTimeout(() => {
+      holdRef.current.justShelved = true;
+      shelveItem(item.key);
+    }, HOLD_MS);
+  };
+
+  const handleItemPointerMove = (e) => {
+    if (!holdRef.current.timer) return;
+    const dx = e.clientX - holdRef.current.startX;
+    const dy = e.clientY - holdRef.current.startY;
+    // Real movement past a small threshold means this is becoming a
+    // reorder drag instead — let go of the shelve timer and hand off to
+    // Reorder's own gesture (also cancelled authoritatively via
+    // onDragStart below, this is just the fast local guard).
+    if (Math.hypot(dx, dy) > HOLD_MOVE_CANCEL_PX) clearHold();
+  };
+
+  const handleItemClick = (item, index) => {
+    if (holdRef.current.justShelved && holdRef.current.key === item.key) {
+      holdRef.current.justShelved = false;
+      return;
+    }
+    runItem(item, index);
+  };
+
+  // The reorder drag's own settle — a real squash-stretch landing (the
+  // same beat Note.jsx's own spawn "landing jelly" already gives a poured
+  // note, applied here to a dropped dock icon instead) rather than
+  // framer's own reorder spring being the only thing you feel. Reuses
+  // impactRefs as its transform host — the dedicated layer already split
+  // out from icon-wrap specifically so a recoil tween here never fights
+  // magnetic's own continuous quickTo scale/y/rotateZ.
+  const handleItemDragStart = () => clearHold();
+
+  const handleItemDragEnd = (index) => {
+    clearHold();
+    if (reduceMotion) return;
+    const el = impactRefs.current[index];
+    if (!el) return;
+
+    gsap.killTweensOf(el);
+    gsap.timeline()
+      .to(el, { scaleY: .7, scaleX: 1.18, y: 3, duration: .09, ease: "power2.out" })
+      .to(el, { scaleY: 1, scaleX: 1, y: 0, duration: .55, ease: "elastic.out(1, .5)" });
+  };
+
+  useEffect(() => () => clearHold(), []);
 
   const handleThemeToggle = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -240,8 +346,31 @@ const QuickDock = ({
     return () => window.removeEventListener("quick-dock-impact", onImpact);
   }, [reduceMotion]);
 
+  // A brief shiver across the dock's own background — the ink well
+  // trembling, not another gooey blob (the hover highlight already spends
+  // that idiom) — reusing History's own feTurbulence/feDisplacementMap
+  // "boil" technique against this dock's flat surface instead of a note
+  // grid. Needs an actual textured surface behind it to distort (see
+  // quick-dock-splash-surface's own gradient in the CSS) — a perfectly
+  // flat single color gives the filter nothing to warp.
+  const splashDisplaceRef = useRef(null);
+  const splashTweenRef = useRef(null);
+
+  const triggerSplash = () => {
+    if (reduceMotion || !splashDisplaceRef.current) return;
+    splashTweenRef.current?.kill();
+    splashTweenRef.current = gsap.fromTo(
+      splashDisplaceRef.current,
+      { attr: { scale: 22 } },
+      { attr: { scale: 0 }, duration: .5, ease: "power3.out", overwrite: "auto" }
+    );
+  };
+
+  useEffect(() => () => splashTweenRef.current?.kill(), []);
+
   const runItem = (item, index) => {
     item.onRun();
+    triggerSplash();
     if (!reduceMotion) window.dispatchEvent(new CustomEvent("quick-dock-impact", { detail: { index } }));
   };
 
@@ -277,6 +406,15 @@ const QuickDock = ({
       }}
       transition={{ type: "spring", stiffness: 220, damping: 16, delay: .2 }}
     >
+      <svg className="quick-dock-splash-defs" aria-hidden="true">
+        <defs>
+          <filter id="quick-dock-splash" x="-20%" y="-20%" width="140%" height="140%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="7" result="noise" />
+            <feDisplacementMap ref={ splashDisplaceRef } in="SourceGraphic" in2="noise" scale="0" />
+          </filter>
+        </defs>
+      </svg>
+      <span className="quick-dock-splash-surface" aria-hidden="true" />
       {/* Reorder.Group in place of the old plain motion.div — axis="x"
           matches the row's own single-line layout (and useMagnetic's own
           axis: "x" above), `as="div"` so this stays a plain flex row rather
@@ -292,7 +430,12 @@ const QuickDock = ({
         initial="hidden"
         animate="shown"
       >
-      {
+      {/* AnimatePresence around the mapped items — Reorder.Group/Item alone
+          only own the drag-to-reorder transform, not mount/unmount; without
+          this, shelving an item (see shelveItem above) would just vanish it
+          instantly rather than letting its own exit play. */}
+      <AnimatePresence initial={ false }>
+        {
         orderedItems.map((item, index) => (
           <Reorder.Item
             key={ item.key }
@@ -301,6 +444,12 @@ const QuickDock = ({
             className="quick-dock-slot"
             variants={ dockItemVariants }
             whileDrag={{ scale: 1.18, zIndex: 5, cursor: "grabbing" }}
+            /* Lifts and dissolves up and away — reads as being picked up
+               and put on the shelf, deliberately not the same downward
+               entrance variants reversed. */
+            exit={{ opacity: 0, scale: .4, translateY: -26, transition: { duration: .3, ease: "easeIn" } }}
+            onDragStart={ handleItemDragStart }
+            onDragEnd={ () => handleItemDragEnd(index) }
           >
             <motion.button
               ref={ (el) => { itemBoxRefs.current[index] = el; } }
@@ -313,7 +462,11 @@ const QuickDock = ({
               onMouseEnter={ () => setHovered(index) }
               onMouseLeave={ () => setHovered((prev) => (prev === index ? null : prev)) }
               onTapStart={ dockPulse.squash }
-              onClick={ () => runItem(item, index) }
+              onClick={ () => handleItemClick(item, index) }
+              onPointerDown={ (e) => handleItemPointerDown(item, e) }
+              onPointerMove={ handleItemPointerMove }
+              onPointerUp={ clearHold }
+              onPointerLeave={ clearHold }
             >
               {
                 hovered === index && (
@@ -366,8 +519,73 @@ const QuickDock = ({
             </motion.button>
           </Reorder.Item>
         ))
-      }
+        }
+      </AnimatePresence>
       </Reorder.Group>
+      {
+        hidden.length > 0 && (
+          <div className="quick-dock-shelf-wrap">
+            <motion.button
+              type="button"
+              className="quick-dock-shelf-toggle"
+              aria-label={ `${ hidden.length } hidden ${ hidden.length === 1 ? "action" : "actions" } — tap to restore` }
+              title="Hidden actions"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: .9 }}
+              transition={{ type: "spring", stiffness: 420, damping: 16 }}
+              onClick={ () => setShelfOpen((v) => !v) }
+            >
+              <FaEllipsis />
+              <span className="quick-dock-shelf-count">{ hidden.length }</span>
+            </motion.button>
+            <AnimatePresence>
+              {
+                shelfOpen && (
+                  <motion.div
+                    className="quick-dock-shelf-popover"
+                    role="menu"
+                    aria-label="Hidden dock actions"
+                    initial={{ opacity: 0, scale: .6, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: .6, y: 10 }}
+                    transition={{ type: "spring", stiffness: 420, damping: 22 }}
+                  >
+                    <AnimatePresence initial={ false }>
+                      {
+                        hidden.map((key) => {
+                          const item = itemsByKey[key];
+                          if (!item) return null;
+
+                          return (
+                            <motion.button
+                              key={ key }
+                              type="button"
+                              role="menuitem"
+                              className="quick-dock-shelf-chip"
+                              aria-label={ `Restore ${ item.label }` }
+                              title={ `Restore ${ item.label }` }
+                              layout
+                              initial={{ opacity: 0, scale: .4 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: .4 }}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: .9 }}
+                              transition={{ type: "spring", stiffness: 420, damping: 18 }}
+                              onClick={ () => restoreItem(key) }
+                            >
+                              { item.icon }
+                            </motion.button>
+                          );
+                        })
+                      }
+                    </AnimatePresence>
+                  </motion.div>
+                )
+              }
+            </AnimatePresence>
+          </div>
+        )
+      }
     </motion.div>
   );
 };

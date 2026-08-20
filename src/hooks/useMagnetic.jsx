@@ -12,7 +12,15 @@ import gsap from "gsap";
 // (Header.jsx's toolbar, QuickDock.jsx) already threads the app's own
 // reduceMotion prop down anyway — one shared source of truth instead of a
 // second, independent check.
-const useMagnetic = ({ range = 96, maxLift = 16, maxScale = 1.55, axis = "x", reduceMotion = false } = {}) => {
+const useMagnetic = ({
+  range = 96, maxLift = 16, maxScale = 1.55, axis = "x", reduceMotion = false,
+  // Opt-in — a plank-like rotateZ layered on top of the existing lift/
+  // scale response, signed by which side of an item's own center the
+  // pointer currently sits. Off by default so the hook's other caller
+  // (Header's toolbar) renders exactly as it always has; QuickDock is the
+  // first to turn it on.
+  tilt = false, maxTilt = 8,
+} = {}) => {
   const itemRefs = useRef([]);
   const quickTweens = useRef([]);
 
@@ -34,6 +42,7 @@ const useMagnetic = ({ range = 96, maxLift = 16, maxScale = 1.55, axis = "x", re
       quickTweens.current[index] = {
         scale: gsap.quickTo(itemRefs.current[index], "scale", { duration: .35, ease: "power3.out" }),
         y: gsap.quickTo(itemRefs.current[index], "y", { duration: .35, ease: "power3.out" }),
+        ...(tilt ? { rotateZ: gsap.quickTo(itemRefs.current[index], "rotateZ", { duration: .35, ease: "power3.out" }) } : {}),
       };
     }
     return quickTweens.current[index];
@@ -77,6 +86,14 @@ const useMagnetic = ({ range = 96, maxLift = 16, maxScale = 1.55, axis = "x", re
       if (!tween) return;
       tween.scale(1 + (maxScale - 1) * eased);
       tween.y(-maxLift * eased);
+      if (tween.rotateZ) {
+        // Continuous signed offset (not axis's own already-absolute
+        // `distance`) — which side of THIS item's center the pointer sits
+        // on, clamped to ±1 across `range`, same falloff as the lift/scale
+        // above so the tilt eases out right alongside them.
+        const dxNorm = Math.max(-1, Math.min(1, (e.clientX - centerX) / range));
+        tween.rotateZ(dxNorm * maxTilt * eased);
+      }
     });
   };
 
@@ -104,7 +121,7 @@ const useMagnetic = ({ range = 96, maxLift = 16, maxScale = 1.55, axis = "x", re
       // same "continues past release" read ColorSelector's own flick-throw
       // gives a poured note, applied here to the whole row's snap instead.
       if (kick > 1) timeline.to(el, { x: dirX * kick, duration: .07, ease: "power1.out" });
-      timeline.to(el, { x: 0, scale: 1, y: 0, duration: .6, ease: `elastic.out(${ amplitude}, 0.45)` });
+      timeline.to(el, { x: 0, scale: 1, y: 0, ...(tilt ? { rotateZ: 0 } : {}), duration: .6, ease: `elastic.out(${ amplitude}, 0.45)` });
     });
 
     lastSampleRef.current = null;

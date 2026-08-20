@@ -37,8 +37,9 @@ Session Storage and local storage is being used temporarily.
 
 ## TODO
 
-1. Some or all notes during delete animation the note became shrinked-square like the note shape itself since <a href="https://github.com/josephchay/docket-notes/tree/71dbccb3d8b35017268a152894c92bc2065bcac1" target="_blank">71dbccb3d8b35017268a152894c92bc2065bcac1</a>, instead of circle instead like in commit: <a href="https://github.com/josephchay/docket-notes/tree/6d44f9e460ce52f49906022e3bc3965baf9c896c" target="_blank">6d44f9e460ce52f49906022e3bc3965baf9c896c</a>
+- Some or all notes during delete animation the note became shrinked-square like the note shape itself since <a href="https://github.com/josephchay/docket-notes/tree/71dbccb3d8b35017268a152894c92bc2065bcac1" target="_blank">71dbccb3d8b35017268a152894c92bc2065bcac1</a>, instead of circle instead like in commit: <a href="https://github.com/josephchay/docket-notes/tree/6d44f9e460ce52f49906022e3bc3965baf9c896c" target="_blank">6d44f9e460ce52f49906022e3bc3965baf9c896c</a>
 - Sound cues (enabled/disabled in Settings panel) only play for some interactables
+- Check the QuickDock functionality, if there is any bug issue under this commit
 
 ## Acknowledgements
 
