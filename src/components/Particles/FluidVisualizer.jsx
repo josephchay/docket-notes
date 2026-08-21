@@ -116,6 +116,36 @@ const RIPPLE_STRENGTH = 0.55;
 const CURSOR_RIPPLE_STRENGTH = 3.5;
 const SPLASH_RIPPLE_STRENGTH = 0.9;
 
+// A real attack/decay envelope follower on each injector band — the raw
+// per-frame FFT read (bandMagnitude below) is genuinely noisy frame to
+// frame even for a steady tone, and every geyser was reading it directly
+// with no smoothing at all. Fast attack so a sudden hit still registers
+// immediately, slow decay so a geyser eases back down rather than
+// flickering with the bin noise — the same asymmetric-rate technique a
+// real audio compressor's envelope detector uses.
+const BAND_ATTACK = 0.35;
+const BAND_DECAY = 0.06;
+
+// A one-off tap on the pool (not the continuous drag-to-stir the pointer
+// already does) — a direct velocity impulse plus a foam burst plus a
+// ripple, all through the exact same particles/foamPool/waveField the
+// continuous interaction already drives, just triggered as a single click
+// rather than sustained movement.
+const SPLASH_CLICK_KICK = 14;
+const SPLASH_CLICK_RADIUS = 4.5;
+const SPLASH_CLICK_FOAM_COUNT = 8;
+const SPLASH_CLICK_RIPPLE_STRENGTH = 2.2;
+
+// The pool's own "here we go" the instant a track actually starts (see
+// handlePlay below) — several points along the floor excited in a quick
+// left-to-right sequence, reusing waveField.excite() the same way a
+// splash or the cursor stir already does, just scripted instead of
+// input-driven. setTimeout, not rAF — stays correct regardless of
+// whatever compositing state the tab happens to be in.
+const MUSIC_START_SWEEP_POINTS = 6;
+const MUSIC_START_SWEEP_STAGGER_MS = 40;
+const MUSIC_START_RIPPLE_STRENGTH = 1.2;
+
 const formatTime = (t) => {
   if (!Number.isFinite(t) || t < 0) return "0:00";
   const m = Math.floor(t / 60);
@@ -162,6 +192,12 @@ const FluidVisualizer = ({
   const audioGraphRef = useRef(null);
   const reduceMotionRef = useRef(reduceMotion);
   reduceMotionRef.current = reduceMotion;
+  // The transport row's own audio-loudness pulse (see --audio-pulse in the
+  // tick loop below and .fluid-visualizer-play in the CSS) — written
+  // directly via style.setProperty, never through React state, the same
+  // no-render-per-frame discipline the rest of this file's own per-frame
+  // writes already keep.
+  const transportRef = useRef(null);
 
   const [trackName, setTrackName] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -314,6 +350,10 @@ const FluidVisualizer = ({
     // so step() below can read it unconditionally without its own
     // separate null check.
     const bandMagnitude = new Float32Array(INJECTOR_COUNT);
+    // What step() actually reads — the raw array above smoothed through
+    // the attack/decay envelope follower (see BAND_ATTACK/BAND_DECAY),
+    // populated in tick() below right alongside bandMagnitude itself.
+    const bandEnvelope = new Float32Array(INJECTOR_COUNT);
 
     const step = (dt) => {
       grid.build(particles);
@@ -393,7 +433,7 @@ const FluidVisualizer = ({
         // ensureAudioGraph() has run and tick() starts populating it.
         if (p.pos.y < activationHeight) {
           const bandIndex = Math.max(0, Math.min(INJECTOR_COUNT - 1, Math.floor((p.pos.x / domainW) * INJECTOR_COUNT)));
-          ay += bandMagnitude[bandIndex] * JET_FORCE_SCALE;
+          ay += bandEnvelope[bandIndex] * JET_FORCE_SCALE;
         }
 
         p.vel.x += ax * dt;
@@ -459,6 +499,36 @@ const FluidVisualizer = ({
     canvas.addEventListener("pointermove", handlePointerMove);
     canvas.addEventListener("pointerleave", handlePointerLeave);
 
+    // A tap, not a drag — a direct velocity impulse (not routed through
+    // the force/dt integration continuous stirring uses, since this is a
+    // genuine one-shot impulse rather than a sustained push) plus a foam
+    // burst plus a ripple, all through the exact same systems the
+    // continuous interaction already drives.
+    const handleClick = (e) => {
+      if (reduceMotionRef.current) return;
+      const { x, y } = simFromEvent(e);
+
+      for (const p of particles) {
+        const dx = p.pos.x - x, dy = p.pos.y - y;
+        const dist = Math.max(0.15, Math.hypot(dx, dy));
+        if (dist >= SPLASH_CLICK_RADIUS) continue;
+        const kick = SPLASH_CLICK_KICK * (1 - dist / SPLASH_CLICK_RADIUS);
+        p.vel.x += (dx / dist) * kick;
+        p.vel.y += (dy / dist) * kick;
+      }
+
+      for (let i = 0; i < SPLASH_CLICK_FOAM_COUNT; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 4 + Math.random() * 6;
+        const radius = FOAM_RADIUS_MIN + Math.random() * (FOAM_RADIUS_MAX - FOAM_RADIUS_MIN);
+        const life = FOAM_LIFE_MIN + Math.random() * (FOAM_LIFE_MAX - FOAM_LIFE_MIN);
+        foamPool.spawn(x, y, Math.cos(angle) * speed, Math.abs(Math.sin(angle)) * speed + 2, radius, life);
+      }
+
+      waveField.excite(x, y, SPLASH_CLICK_RIPPLE_STRENGTH);
+    };
+    canvas.addEventListener("click", handleClick);
+
     let lastTime = performance.now();
     let raf = null;
 
@@ -472,13 +542,24 @@ const FluidVisualizer = ({
       const graph = audioGraphRef.current;
       if (graph) {
         graph.analyser.getByteFrequencyData(graph.freqData);
+        let loudnessSum = 0;
         for (let i = 0; i < INJECTOR_COUNT; i++) {
           const lo = graph.bandEdges[i];
           const hi = Math.max(lo + 1, graph.bandEdges[i + 1]);
           let sum = 0;
           for (let bin = lo; bin < hi; bin++) sum += graph.freqData[bin];
-          bandMagnitude[i] = (sum / (hi - lo)) / 255;
+          const raw = (sum / (hi - lo)) / 255;
+          bandMagnitude[i] = raw;
+          const rate = raw > bandEnvelope[i] ? BAND_ATTACK : BAND_DECAY;
+          bandEnvelope[i] += (raw - bandEnvelope[i]) * rate;
+          loudnessSum += bandEnvelope[i];
         }
+        // A rough overall-loudness readout off the same smoothed bands the
+        // pool itself already reacts to — one extra number derived from
+        // data already computed this frame, fed to the play button's own
+        // pulse below rather than the pool being the only thing that
+        // visibly dances to the track.
+        transportRef.current?.style.setProperty("--audio-pulse", (loudnessSum / INJECTOR_COUNT).toFixed(3));
       }
 
       if (!reduceMotionRef.current) {
@@ -543,7 +624,23 @@ const FluidVisualizer = ({
     // Transport wiring — plain DOM events on the <audio> element, the same
     // safe pattern AudioWaveString.jsx already uses (React state mirrors
     // the element's own events; it never drives playback directly).
-    const handlePlay = () => setIsPlaying(true);
+    // musicStartTimers tracks the sweep's own pending setTimeout ids so
+    // they can be cleared on unmount — a component torn down mid-sweep
+    // (a quick play/navigate-away) shouldn't leave orphaned callbacks
+    // trying to excite a waveField instance nothing renders anymore.
+    const musicStartTimers = [];
+    const handlePlay = () => {
+      setIsPlaying(true);
+      if (!reduceMotionRef.current) {
+        for (let i = 0; i < MUSIC_START_SWEEP_POINTS; i++) {
+          const x = (i / (MUSIC_START_SWEEP_POINTS - 1)) * domainW;
+          musicStartTimers.push(setTimeout(
+            () => waveField.excite(x, POOL_BASE_Y, MUSIC_START_RIPPLE_STRENGTH),
+            i * MUSIC_START_SWEEP_STAGGER_MS
+          ));
+        }
+      }
+    };
     const handlePause = () => setIsPlaying(false);
     const handleEnded = () => setIsPlaying(false);
     const handleLoadedMetadata = () => setDuration(audioEl.duration || 0);
@@ -559,6 +656,8 @@ const FluidVisualizer = ({
       document.removeEventListener("visibilitychange", handleVisibility);
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerleave", handlePointerLeave);
+      canvas.removeEventListener("click", handleClick);
+      musicStartTimers.forEach((id) => clearTimeout(id));
       audioEl.removeEventListener("play", handlePlay);
       audioEl.removeEventListener("pause", handlePause);
       audioEl.removeEventListener("ended", handleEnded);
@@ -654,7 +753,7 @@ const FluidVisualizer = ({
         }
       </div>
 
-      <div className={ `fluid-visualizer-transport ${ overlay ? "overlay" : "" }` }>
+      <div ref={ transportRef } className={ `fluid-visualizer-transport ${ overlay ? "overlay" : "" }` }>
         <motion.button
           type="button"
           className="fluid-visualizer-play"

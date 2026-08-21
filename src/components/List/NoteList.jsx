@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
+import { AnimatePresence, motion, useAnimationControls, useTransform } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import anime from "animejs";
@@ -23,6 +23,22 @@ const GRID_RADIAL_RADIUS = 58;
 const GRID_RADIAL_MARGIN = 100;
 
 const springy = SNAPPY;
+
+// The three top-level things .notes can show — the real grid, "filters
+// hid everything," or "nothing here at all" — used to swap via a bare
+// ternary with no coordinated transition of its own at all (each branch's
+// own children still had their individual entrances, but switching
+// BETWEEN branches was a flat instant unmount/mount), the one place left
+// in this file with no cross-fade while everything else here is
+// carefully choreographed. Same blur+scale+fade recipe HistoryPanel.jsx's
+// own VIEW_TRANSITION already established for exactly this kind of view
+// swap, reused here rather than inventing a second one.
+const VIEW_TRANSITION = {
+  initial: { opacity: 0, scale: .96, filter: "blur(5px)" },
+  animate: { opacity: 1, scale: 1, filter: "blur(0px)" },
+  exit: { opacity: 0, scale: .97, filter: "blur(4px)", transition: { duration: .18 } },
+  transition: { type: "spring", stiffness: 280, damping: 26 },
+};
 
 // The desk's layouts: freshest first, grouped by ink color, or starred to
 // the front. The active label wears a sliding ink thumb.
@@ -291,7 +307,14 @@ const NoteList = ({
       height: Math.abs(dy),
     };
     setLassoRect(rect);
-    setSelection?.(notesInLasso(rect));
+
+    // Shift-held (see handleLassoDown) unions this sweep onto whatever was
+    // already selected before this drag started, the same additive
+    // convention a real OS file manager's own lasso already gives —
+    // without it, starting a second lasso anywhere always threw away
+    // whatever the first one had picked up.
+    const covered = notesInLasso(rect);
+    setSelection?.(state.additive ? [...new Set([...state.baseSelection, ...covered])] : covered);
   };
 
   const handleLassoUp = () => {
@@ -305,7 +328,13 @@ const NoteList = ({
     if (e.button !== 0) return;
     if (e.target.closest(".note, button, input, textarea, a")) return;
 
-    lassoStateRef.current = { startX: e.clientX, startY: e.clientY, active: false };
+    lassoStateRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      active: false,
+      additive: e.shiftKey,
+      baseSelection: e.shiftKey ? [...(selectedIds ?? [])] : [],
+    };
     window.addEventListener("pointermove", handleLassoMove);
     window.addEventListener("pointerup", handleLassoUp);
   };
@@ -323,19 +352,55 @@ const NoteList = ({
   // the notes into their new random order.
   const shuffleIconRef = useRef(null);
 
-  const handleShuffle = () => {
-    shuffleNotes?.();
+  // How hard the die actually spins now rides a real measured FLIP
+  // displacement — each visible note's own screen position read right
+  // before shuffleNotes() reorders them, and again two frames later once
+  // the grid has actually reflowed into its new order — rather than the
+  // identical fixed keyframe playing every time regardless of whether the
+  // shuffle barely nudged anything or scrambled the whole desk. Two rAFs
+  // (not one): the first only guarantees the *next* paint has committed
+  // React's own re-render, not that layout from it has actually settled.
+  const SHUFFLE_DISPLACEMENT_REF_PX = 220; // roughly "a full row's worth" — intensity 1 around here
+  const SHUFFLE_MAX_INTENSITY = 1.8;
 
-    if (shuffleIconRef.current) {
-      anime.remove(shuffleIconRef.current);
-      anime({
-        targets: shuffleIconRef.current,
-        rotate: "+=360",
-        scale: [1, 1.4, 1],
-        duration: 900,
-        easing: "easeOutElastic(1, .5)",
+  const handleShuffle = () => {
+    const container = ref.current;
+    const before = new Map();
+    if (container) {
+      container.querySelectorAll("[data-note-id]").forEach((el) => {
+        const r = el.getBoundingClientRect();
+        before.set(el.dataset.noteId, { x: r.left, y: r.top });
       });
     }
+
+    shuffleNotes?.();
+
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      let totalDisplacement = 0;
+      let moved = 0;
+      if (container) {
+        container.querySelectorAll("[data-note-id]").forEach((el) => {
+          const prev = before.get(el.dataset.noteId);
+          if (!prev) return;
+          const r = el.getBoundingClientRect();
+          totalDisplacement += Math.hypot(r.left - prev.x, r.top - prev.y);
+          moved++;
+        });
+      }
+      const avgDisplacement = moved > 0 ? totalDisplacement / moved : 0;
+      const intensity = Math.min(SHUFFLE_MAX_INTENSITY, .5 + avgDisplacement / SHUFFLE_DISPLACEMENT_REF_PX);
+
+      if (shuffleIconRef.current) {
+        anime.remove(shuffleIconRef.current);
+        anime({
+          targets: shuffleIconRef.current,
+          rotate: "+=360",
+          scale: [1, 1 + intensity * .3, 1],
+          duration: 700 + intensity * 250,
+          easing: "easeOutElastic(1, .5)",
+        });
+      }
+    }));
   }
 
   // The daily-ink card drifts a little against the desk's own scroll — the
@@ -345,6 +410,15 @@ const NoteList = ({
   // its selector, so this stays a lightweight scrub rather than needing the
   // scroller instance threaded down as a prop.
   const quoteParallaxRef = useRef(null);
+
+  // scrollVelocity already reaches this component (it's threaded straight
+  // through to every Note below) but NoteList itself never actually read
+  // it — a real motion blur off the exact same live signal, rather than a
+  // second independent scroll-speed measurement, for the one static card
+  // in the grid that isn't already scroll-reactive some other way.
+  const quoteBlur = useTransform(scrollVelocity, (v) => (
+    reduceMotion ? "none" : `blur(${ Math.min(3, Math.abs(v) * .15).toFixed(2) }px)`
+  ));
 
   useEffect(() => {
     if (!quoteParallaxRef.current) return;
@@ -590,9 +664,9 @@ const NoteList = ({
           </motion.div>
         )
       }
-      <div ref={ quoteParallaxRef } className="quote-parallax">
+      <motion.div ref={ quoteParallaxRef } className="quote-parallax" style={{ filter: quoteBlur }}>
         <QuoteCard />
-      </div>
+      </motion.div>
       <div
         ref={ ref }
         className={ `notes ${ pileView ? "pile-active" : "" }` }
@@ -608,9 +682,18 @@ const NoteList = ({
             />
           )
         }
+        <AnimatePresence>
         {
           renderFirstRow && !pileView && (
             notes?.length > 0 ? (
+              // No extra wrapping element here on purpose — .notes is a
+              // wrapping flex row, and any single element wrapping every
+              // note would collapse them into one flex item instead of
+              // each wrapping independently. The individual notes already
+              // animate their own exit (this AnimatePresence, unchanged);
+              // the coordinated cross-fade below is scoped to the two
+              // empty-state branches, where a single full-width block
+              // genuinely benefits from one.
               <AnimatePresence>
                 {
                   notes.map((item, index) => (
@@ -649,8 +732,10 @@ const NoteList = ({
               </AnimatePresence>
             ) : hasNotes ? (
               // Notes exist, the filters just hid them all — offer the way back.
-              <div
+              <motion.div
+                key="filtered-empty"
                 className="empty-state"
+                { ...VIEW_TRANSITION }
               >
                 <GooeyBlobs />
                 <motion.h3
@@ -713,10 +798,12 @@ const NoteList = ({
                 >
                   Show all notes
                 </motion.button>
-              </div>
+              </motion.div>
             ) : (
-              <div
+              <motion.div
+                key="true-empty"
                 className="empty-state"
+                { ...VIEW_TRANSITION }
               >
                 <GooeyBlobs burst={ celebrateClean } />
                 {/* Only plays right after the desk goes from holding notes
@@ -802,10 +889,11 @@ const NoteList = ({
                   </motion.strong>
                   icon to add a note
                 </motion.p>
-              </div>
+              </motion.div>
             )
           )
         }
+        </AnimatePresence>
         <TagThreads
           notes={ notes }
           hoveredId={ hoveredNoteId }

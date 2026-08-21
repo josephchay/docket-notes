@@ -44,6 +44,16 @@
   padding: 10px 4px 2px;
 }
 
+/* --audio-pulse (see the tick loop in FluidVisualizer.jsx) is a rough
+   overall-loudness reading off the exact same smoothed bands the pool
+   itself reacts to, written directly onto .fluid-visualizer-transport
+   every frame — a glow rather than a scale/transform here specifically,
+   since this button is a motion.button whose own whileHover/whileTap
+   already own its transform; a CSS transform on top would fight framer's
+   inline one instead of just adding to it the way box-shadow can. No CSS
+   transition on the shadow itself — a per-frame JS write already updates
+   it every frame in a browser with a live rAF, and a transition would
+   just always be chasing a value that's already moved on again. */
 .fluid-visualizer-play {
   display: flex;
   align-items: center;
@@ -58,6 +68,7 @@
   background-color: var(--page-ink-color);
   color: var(--page-bg-color);
   font-size: 12px;
+  box-shadow: 0 0 calc(var(--audio-pulse, 0) * 16px) calc(var(--audio-pulse, 0) * 3px) var(--page-ink-color);
   transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
 }
 
