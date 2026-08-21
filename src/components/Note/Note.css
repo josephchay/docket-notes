@@ -90,6 +90,36 @@
   pointer-events: none;
 }
 
+/* The moving specular highlight (see sheenX/sheenY in Note.jsx) — a real
+   paper's own sheen catching the light as it tilts, riding the exact same
+   pointer-tracked values the 3D rotateX/rotateY already read, just as a
+   second, additive visual channel rather than only rotation. Sits above
+   the flat background but below the card's own text/controls. */
+.note .note-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(circle at var(--sheen-x, 50%) var(--sheen-y, 50%), rgba(255, 255, 255, 0.4), transparent 45%);
+  opacity: .5;
+  mix-blend-mode: overlay;
+}
+
+/* The one-shot "just made a copy" pulse (see dupAck/handleDuplicate in
+   Note.jsx) — same shape/position as the focus halo above, deliberately a
+   separate class since the two mark different moments (an ongoing typing
+   state vs. a single event) and shouldn't share one name that implies
+   they're the same thing. */
+.note .note-dup-ack {
+  position: absolute;
+  inset: -14px;
+  z-index: 0;
+  border-radius: 34px;
+  filter: blur(20px);
+  pointer-events: none;
+}
+
 .note .header,
 .note .footer {
   padding: 24px;

@@ -7,6 +7,7 @@ import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRig
 import { FaEye, FaTrash } from "react-icons/fa";
 
 import useLongPress from "../../hooks/useLongPress";
+import useMagnetic from "../../hooks/useMagnetic";
 import { playDelete, playStar } from "../../utils/sound";
 import PullString from "./PullString";
 import MoveString from "./MoveString";
@@ -24,6 +25,14 @@ const RING_RADIUS = 68;   // matches the delete-ring svg below
 
 const RADIAL_RADIUS = 64;   // how far the radial menu's items spread from the click point
 const RADIAL_MARGIN = 110;  // keeps the fully-spread menu clear of the viewport edge
+
+// Broadcast the instant a note is actually duplicated (see handleDuplicate
+// below) — the fresh copy is a whole separate Note instance with no back-
+// reference to the source it came from, so a window event is the only way
+// for the ORIGINAL to know it just got copied and play its own
+// acknowledgment; every mounted Note listens and only reacts to its own id.
+const DUPLICATE_ACK_EVENT = "docket:note-duplicated";
+const DUPLICATE_ACK_MS = 500;
 
 const Note = ({
   delay,
@@ -196,19 +205,26 @@ const Note = ({
     const el = blobRef.current;
     anime.remove(el);
     anime.set(el, { opacity: 1, scale: 0 });
+
+    // Rides the exact same noteMass the spawn/reflow springs already carry
+    // — a wordier note was already heavier arriving and settling into the
+    // grid; this is the one place that mass had never reached before,
+    // splatting flat regardless of how much ink was actually on the page.
+    // massT normalizes noteMass's own [1, 2.4] range to [0, 1].
+    const massT = (noteMass - 1) / 1.4;
     anime({
       targets: el,
-      scale: [0, 1.28, 1.05],
+      scale: [0, 1.28 + massT * .35, 1.05],
       borderRadius: [
         "50% 50% 50% 50% / 50% 50% 50% 50%",
         "63% 37% 54% 46% / 44% 56% 41% 59%",
         "40% 60% 46% 54% / 58% 42% 55% 45%",
       ],
       opacity: [1, 1, 0],
-      duration: 600,
+      duration: 600 + massT * 250,
       easing: "easeOutElastic(1, .6)",
     });
-  }, [deleteConfirmed]);
+  }, [deleteConfirmed, noteMass]);
 
   // Starring a note throws a little handful of sparks off the star.
   const [starBurst, setStarBurst] = useState(false);
@@ -221,6 +237,33 @@ const Note = ({
     }
     updateFavorite(note.id);
   }
+
+  // Duplicating fires from two places (a pull-string and the radial menu),
+  // both funneled through here so the acknowledgment broadcast (see
+  // DUPLICATE_ACK_EVENT above) only needs writing once.
+  const handleDuplicate = () => {
+    duplicateNote(note.id);
+    if (!reduceMotion) window.dispatchEvent(new CustomEvent(DUPLICATE_ACK_EVENT, { detail: { id: note.id } }));
+  }
+
+  // The one-shot "I just made a copy" pulse this note gives itself, heard
+  // back from wherever handleDuplicate actually fired.
+  const [dupAck, setDupAck] = useState(false);
+  const dupAckTimerRef = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.detail?.id !== note.id) return;
+      clearTimeout(dupAckTimerRef.current);
+      setDupAck(true);
+      dupAckTimerRef.current = setTimeout(() => setDupAck(false), DUPLICATE_ACK_MS);
+    };
+    window.addEventListener(DUPLICATE_ACK_EVENT, handler);
+    return () => {
+      window.removeEventListener(DUPLICATE_ACK_EVENT, handler);
+      clearTimeout(dupAckTimerRef.current);
+    };
+  }, [note.id]);
 
   // The paper tilts under the pointer like it is resting on a soft desk,
   // springing flat again when the pointer leaves — continuous,
@@ -244,6 +287,15 @@ const Note = ({
     tiltSourceX.set(0);
     tiltSourceY.set(0);
   }
+
+  // A moving specular sheen riding the exact same tiltSourceX/Y the 3D tilt
+  // above already tracks — real paper catches a highlight as it tilts under
+  // a light, not just rotates; this is that second visual channel off the
+  // one signal already being read, not a new pointer-tracking system.
+  // Naturally inert under reduced motion since tiltSourceX/Y themselves
+  // never move past center then (handleTiltMove's own early return).
+  const sheenX = useTransform(tiltSourceX, (x) => `${ (x + 0.5) * 100 }%`);
+  const sheenY = useTransform(tiltSourceY, (y) => `${ (y + 0.5) * 100 }%`);
 
   const handleEditable = () => {
     updateLock(note.id);
@@ -290,10 +342,18 @@ const Note = ({
     };
   }, [radialAt]);
 
+  // The radial menu's own items feel the pointer's distance the same way
+  // QuickDock/Header's toolbar icons already do (see useMagnetic.jsx) —
+  // "xy" since these spread in a circle rather than a single row. They'd
+  // been missing whileHover/whileTap entirely until now too, the one
+  // interactive surface in this file without any press/hover feedback at
+  // all.
+  const radialMagnetic = useMagnetic({ range: 70, maxLift: 8, maxScale: 1.22, axis: "xy", reduceMotion });
+
   const radialActions = [
     { key: "star", icon: <FaStar />, label: note.favorite ? "Unstar" : "Star", onRun: handleFavorite },
     { key: "recolor", icon: <FaPalette />, label: "Recolor", onRun: () => updateColor(note.id) },
-    { key: "duplicate", icon: <FaCopy />, label: "Duplicate", onRun: () => duplicateNote(note.id) },
+    { key: "duplicate", icon: <FaCopy />, label: "Duplicate", onRun: handleDuplicate },
     {
       key: "lock",
       icon: note.lock ? <FaPen /> : <FaEye size={ 12 } />,
@@ -532,7 +592,7 @@ const Note = ({
   const pullStrings = [
     // { key: "favorite", icon: <FaStar className="pull-grip-icon" />, verb: note.favorite ? "unpin" : "pin", onTrigger: handleFavorite },
     { key: "recolor", icon: <FaPalette className="pull-grip-icon" />, verb: "recolor", onTrigger: () => updateColor(note.id) },
-    { key: "duplicate", icon: <FaCopy className="pull-grip-icon" />, verb: "duplicate", onTrigger: () => duplicateNote(note.id) },
+    { key: "duplicate", icon: <FaCopy className="pull-grip-icon" />, verb: "duplicate", onTrigger: handleDuplicate },
     { key: "download", icon: <FaDownload className="pull-grip-icon" />, verb: "download", onTrigger: handleDownload },
     { key: "open", icon: <FaExpand className="pull-grip-icon" />, verb: "open", onTrigger: () => openEditor(note.id) },
   ];
@@ -730,6 +790,30 @@ const Note = ({
                   }}
                 />
               )
+            )
+          }
+        </AnimatePresence>
+        {/* A moving specular sheen riding the same tiltSourceX/Y the 3D
+            tilt above already tracks — see sheenX/sheenY. */}
+        <motion.div
+          className="note-sheen"
+          style={{ "--sheen-x": sheenX, "--sheen-y": sheenY }}
+          aria-hidden="true"
+        />
+        {/* The one-shot "I just made a copy" pulse (see handleDuplicate/
+            dupAck above) — a plain single flourish, not the focus halo's
+            own sustained loop, since this marks a moment rather than an
+            ongoing state. */}
+        <AnimatePresence>
+          {
+            dupAck && (
+              <motion.span
+                className={ `note-dup-ack ${ note.color }-bg` }
+                initial={{ opacity: 0, scale: .92 }}
+                animate={{ opacity: [0, .5, 0], scale: [.92, 1.06, 1.12] }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: DUPLICATE_ACK_MS / 1000, ease: "easeOut" }}
+              />
             )
           }
         </AnimatePresence>
@@ -1049,7 +1133,12 @@ const Note = ({
             {
               radialAt && (
                 <div className="note-radial-layer">
-                  <div className="note-radial-menu" style={{ left: radialAt.x, top: radialAt.y }}>
+                  <div
+                    className="note-radial-menu"
+                    style={{ left: radialAt.x, top: radialAt.y }}
+                    onMouseMove={ radialMagnetic.handleMove }
+                    onMouseLeave={ radialMagnetic.handleLeave }
+                  >
                     {
                       radialActions.map((action, index) => {
                         const angle = (index / radialActions.length) * Math.PI * 2 - Math.PI / 2;
@@ -1075,6 +1164,8 @@ const Note = ({
                                 delay: (radialActions.length - index) * .015,
                               },
                             }}
+                            whileHover={{ scale: 1.12 }}
+                            whileTap={{ scale: .9 }}
                             transition={{
                               type: "spring",
                               stiffness: 260,
@@ -1086,7 +1177,9 @@ const Note = ({
                               closeRadialMenu();
                             } }
                           >
-                            { action.icon }
+                            <span ref={ radialMagnetic.registerItem(index) } style={{ display: "inline-flex" }}>
+                              { action.icon }
+                            </span>
                           </motion.button>
                         );
                       })

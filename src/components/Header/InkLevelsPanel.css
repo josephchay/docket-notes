@@ -147,13 +147,16 @@
   pointer-events: none;
 }
 
+/* Stroke itself is set inline (see InkLevelsPanel.jsx) — a per-segment
+   gradient blending the two vial colors it actually connects, written
+   fresh each frame alongside the path's own `d`. Inline style always wins
+   over a class rule regardless of specificity, so this file only owns the
+   shape/opacity, never the color. */
 .ink-levels-thread {
   fill: none;
-  stroke: var(--page-ink-color);
   stroke-width: 1.5;
   stroke-linecap: round;
   opacity: .3;
-  transition: stroke 0.4s ease-in-out;
 }
 
 .ink-levels-column {
@@ -177,7 +180,12 @@
    data driving a visual rather than a decorative badge. Sits behind
    everything else in the column (z-index: -1 against this button's own
    position: relative) so it never intercepts the hover/click the vial
-   itself already owns. */
+   itself already owns. --lead-margin (set inline, see the JSX) is a real
+   margin-of-victory ratio — how far ahead the leader is over the runner-up
+   as a fraction of the whole desk — so a landslide leader breathes
+   noticeably bigger/brighter than one barely ahead, rather than every
+   leader getting the identical fixed pulse regardless of how close the
+   race actually is. */
 .ink-levels-column.leading::before {
   content: "";
   position: absolute;
@@ -193,8 +201,14 @@
 }
 
 @keyframes ink-levels-leading-pulse {
-  0%, 100% { opacity: .45; transform: scale(.92); }
-  50% { opacity: .85; transform: scale(1.08); }
+  0%, 100% {
+    opacity: calc(.45 + var(--lead-margin, 0) * .2);
+    transform: scale(calc(.92 + var(--lead-margin, 0) * .05));
+  }
+  50% {
+    opacity: calc(.85 + var(--lead-margin, 0) * .15);
+    transform: scale(calc(1.08 + var(--lead-margin, 0) * .12));
+  }
 }
 
 /* Replaces the old plain ink-column's native title tooltip with the

@@ -14,6 +14,7 @@ import searchIcon from '../../assets/icons/search.svg';
 import useJellyTap from "../../hooks/useJellyTap";
 import useInkPulse from "../../hooks/useInkPulse";
 import useMagnetic from "../../hooks/useMagnetic";
+import useOdometer from "../../hooks/useOdometer";
 import { playStar } from "../../utils/sound";
 import SparkBurst from "../Spark/SparkBurst";
 import FilterScatter from "./FilterScatter";
@@ -144,6 +145,13 @@ const Header = ({
   // one transform.
   const toolbarMagnetic = useMagnetic({ range: 80, maxLift: 10, maxScale: 1.28, axis: "xy", reduceMotion });
 
+  // Rolls through the intervening numbers rather than snapping straight to
+  // the new count (see useOdometer.js — already HistoryPanel's own recipe
+  // for exactly this, reused here) — a jump of several notes at once (a
+  // bulk delete, a filter narrowing hard) reads as an actual count-through
+  // instead of an instant substitution.
+  const displayedNotesCount = useOdometer(notesCount);
+
   // The search field's own ripple (see the <filter id="search-ripple">
   // defs below) — a SEPARATE feDisplacementMap from the shared
   // #liquid-text filter LiquidTextFilter.jsx already drives (that one's
@@ -172,6 +180,42 @@ const Header = ({
       e.target.blur();
     }
   }
+
+  // A distinct reaction for the instant a real search actually comes up
+  // empty — reuses the exact same displacement ripple every keystroke
+  // already triggers above (a bigger scale spike, same filter/ref, no new
+  // mechanism) plus a small rejecting shake on the field itself, rather
+  // than leaving "nothing matched" with no feedback beyond the note grid
+  // quietly going blank. Fires once on the actual transition into that
+  // state (via the ref below), not on every render while it stays there —
+  // `notesCount` only reflects the just-typed character once Home.jsx has
+  // re-rendered with it, so this has to live in its own effect rather than
+  // inside handleSearch itself, which only ever sees the PREVIOUS count.
+  const searchInputRef = useRef(null);
+  const wasEmptyResultRef = useRef(false);
+
+  useEffect(() => {
+    const isEmptyResult = searchText.trim() !== "" && notesCount === 0;
+
+    if (isEmptyResult && !wasEmptyResultRef.current && !reduceMotion) {
+      if (searchDisplaceRef.current) {
+        gsap.killTweensOf(searchDisplaceRef.current);
+        gsap.timeline()
+          .to(searchDisplaceRef.current, { attr: { scale: 22 }, duration: .1, ease: "power2.out" })
+          .to(searchDisplaceRef.current, { attr: { scale: 0 }, duration: .7, ease: "power2.out" });
+      }
+      if (searchInputRef.current) {
+        gsap.killTweensOf(searchInputRef.current);
+        gsap.fromTo(
+          searchInputRef.current,
+          { x: 0 },
+          { keyframes: { x: [0, -6, 6, -4, 4, 0] }, duration: .35, ease: "power1.inOut" }
+        );
+      }
+    }
+
+    wasEmptyResultRef.current = isEmptyResult;
+  }, [searchText, notesCount, reduceMotion]);
 
   // The color row's own physical sweep on clear (see FilterScatter.jsx) —
   // chipRefs is a plain array (registered the same way toolbarMagnetic's
@@ -204,6 +248,46 @@ const Header = ({
     }
     clearFilters();
   }
+
+  // Drag straight across the color row to scrub between filters live,
+  // rather than only ever landing exactly one tap at a time — the shared
+  // colorFilterRing (see the JSX below) already slides smoothly between
+  // whichever square is currently `sortColor`, so dragging just feeds it a
+  // faster stream of targets instead of needing any motion of its own.
+  // Kept fully separate from each button's own onClick (a real drag never
+  // fires a click at all, since release lands on a different element than
+  // the press did), so a plain tap still toggles exactly as it always has.
+  const colorScrubRef = useRef(false);
+
+  const handleColorRowPointerDown = (e) => {
+    if (!(e.target instanceof Element) || !e.target.closest(".color-filter")) return;
+    colorScrubRef.current = true;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  // Checks the pointer against each chip's own known rect directly rather
+  // than document.elementFromPoint — CRA's dev-server error overlay
+  // mounts a full-viewport iframe (id="webpack-dev-server-client-overlay")
+  // that's pointer-events: none for real clicks but still comes back as
+  // elementFromPoint's own top hit regardless, silently breaking any
+  // point-based hit-test done this way for anyone running the app via
+  // `npm start` — not just an automated-testing quirk.
+  const handleColorRowPointerMove = (e) => {
+    if (!colorScrubRef.current) return;
+    const chips = e.currentTarget.querySelectorAll(".color-filter");
+    for (const chip of chips) {
+      const rect = chip.getBoundingClientRect();
+      if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) continue;
+      const name = chip.getAttribute("data-color");
+      if (name && name !== sortColor) {
+        colorRingPulse.squash();
+        setSortColor(name);
+      }
+      break;
+    }
+  };
+
+  const handleColorRowPointerUp = () => { colorScrubRef.current = false; };
 
   // Turning the star filter on throws a little handful of sparks, the same
   // celebration a note gives when it is starred.
@@ -290,6 +374,7 @@ const Header = ({
           </defs>
         </svg>
         <input
+          ref={ searchInputRef }
           type="text"
           placeholder="Search"
           value={ searchText }
@@ -358,10 +443,12 @@ const Header = ({
           />
         </motion.button>
       </div>
-      {/* The tally pops with a spring every time a note joins, leaves, or a
-          filter narrows the desk; filtered views read "shown / total". */}
+      {/* Springs into place once on Header's own mount; every count change
+          after that rolls through via useOdometer above instead of
+          re-triggering this same entrance on a remount — a rapid run of
+          small changes now reads as one continuous count rather than a
+          repeated pop each time. Filtered views read "shown / total". */}
       <motion.span
-        key={ `${ notesCount }/${ totalCount }` }
         className="notes-count"
         title={
           filtersActive
@@ -384,7 +471,7 @@ const Header = ({
           damping: 13,
         }}
       >
-        { notesCount }
+        { displayedNotesCount }
         {
           filtersActive && (
             <small>/ { totalCount }</small>
@@ -392,20 +479,26 @@ const Header = ({
         }
       </motion.span>
       {/* One square per palette color; tap to see only that color, tap
-          again to let every note back onto the desk. The ink ring is a
-          single shared element, so it slides — and stretches, gooily —
-          from square to square. */}
+          again to let every note back onto the desk — or drag straight
+          across the row to scrub between them live (see the pointer
+          handlers above). The ink ring is a single shared element, so it
+          slides — and stretches, gooily — from square to square. */}
       <motion.div
         className="color-filters"
         variants={ filterRowVariants }
         initial="hidden"
         animate="shown"
+        onPointerDown={ handleColorRowPointerDown }
+        onPointerMove={ handleColorRowPointerMove }
+        onPointerUp={ handleColorRowPointerUp }
+        onPointerCancel={ handleColorRowPointerUp }
       >
         {
           Object.keys(NOTE_COLORS).map((name) => (
             <motion.button
               key={ name }
               type="button"
+              data-color={ name }
               title={ sortColor === name ? "Show every color" : `Show only ${ name } notes` }
               aria-label={ sortColor === name ? "Show every color" : `Show only ${ name } notes` }
               aria-pressed={ sortColor === name }
@@ -418,25 +511,33 @@ const Header = ({
               onClick={ () => setSortColor(sortColor === name ? null : name) }
             >
               <span ref={ (el) => { chipRefs.current[paletteNames.indexOf(name)] = el; } } className={ `color-chip ${ name }-bg` } />
-              {
-                sortColor === name && (
-                  <motion.span
-                    layoutId="colorFilterRing"
-                    style={{ position: "absolute", inset: 0, borderRadius: 10 }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 500,
-                      damping: 19,
-                    }}
-                  >
+              <AnimatePresence>
+                {
+                  sortColor === name && (
                     <motion.span
-                      className="color-ring"
-                      animate={ colorRingPulse.jelly }
-                      style={{ borderRadius: "inherit" }}
-                    />
-                  </motion.span>
-                )
-              }
+                      layoutId="colorFilterRing"
+                      style={{ position: "absolute", inset: 0, borderRadius: 10 }}
+                      /* No exit before this — the ring used to just vanish
+                         the instant a color filter cleared, the one flat
+                         corner left on an otherwise fully-animated row. A
+                         squash-then-fade reads as the ink flattening back
+                         into the page rather than a plain shrink. */
+                      exit={{ scaleY: .25, scaleX: 1.15, opacity: 0, transition: { duration: .28, ease: "easeIn" } }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 500,
+                        damping: 19,
+                      }}
+                    >
+                      <motion.span
+                        className="color-ring"
+                        animate={ colorRingPulse.jelly }
+                        style={{ borderRadius: "inherit" }}
+                      />
+                    </motion.span>
+                  )
+                }
+              </AnimatePresence>
             </motion.button>
           ))
         }

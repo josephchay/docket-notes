@@ -62,6 +62,21 @@ const THREAD_K = 1.1;
 const THREAD_SAMPLES = 6;
 const THREAD_MAX_SAG = 10;
 
+// Hold-to-agitate a vial (see the pointer handlers below) — a repeating
+// small strike through InkVial's own imperative handle for as long as the
+// press lasts, the touch-friendly (no-hover) equivalent of what a mouse
+// already gets for free via onMouseEnter's single strike, just sustained
+// rather than one-shot.
+const AGITATE_INTERVAL_MS = 90;
+const AGITATE_STRIKE = 0.12;
+
+// The one-shot flourish for the rarest crossing this panel has — every
+// milestone reached, not just the next one (see the celebration effect
+// below). Reuses travelDroplet's own arc mechanics, just fired as a burst
+// from the milestone meter itself rather than a single point-to-point
+// transfer between two vials.
+const MILESTONE_CELEBRATION_DROPLETS = 8;
+
 // How much of each ink the desk holds, dressed in the exact same
 // chrome as the desk insights panel (SheetPanel dot-to-sheet, sectioned
 // body, ink-tab tooltips) — this used to be a small corner popover with
@@ -85,6 +100,7 @@ const InkLevelsPanel = ({
   const barsRef = useRef(null);
   const vialRefs = useRef([]);
   const threadPathRefs = useRef([]);
+  const threadGradRefs = useRef([]);
   const backdropTurbRef = useRef(null);
   const prevColorCountsRef = useRef(colorCounts);
 
@@ -180,6 +196,17 @@ const InkLevelsPanel = ({
   );
   const hasLeader = (colorCounts?.[leadingColor] ?? 0) > 0;
 
+  // A real margin of victory, not a fixed pulse — the leading halo (see
+  // .ink-levels-column.leading::before in the CSS) used to breathe with
+  // the exact same amplitude whether the leader was ahead by one note or
+  // running away with the whole desk. Fed in as a CSS custom property so
+  // the existing @keyframes can read it directly via calc(), rather than
+  // computing per-frame swing values here.
+  const sortedCounts = [...PALETTE_NAMES.map((name) => colorCounts?.[name] ?? 0)].sort((a, b) => b - a);
+  const leadMargin = hasLeader && totalCount > 0
+    ? (sortedCounts[0] - (sortedCounts[1] ?? 0)) / totalCount
+    : 0;
+
   // The vial's fill: how far the desk has come from the last milestone
   // toward the next one (not just totalCount/nextMilestone from zero —
   // that would look nearly full for most of the app's life once a few
@@ -219,6 +246,66 @@ const InkLevelsPanel = ({
       setTimeout(() => vialRefs.current[index]?.strike(MILESTONE_TRICKLE_STRIKE), index * MILESTONE_TRICKLE_STAGGER_MS);
     });
   }, [milestoneRatio, reduceMotion]);
+
+  // Every milestone reached — nextMilestone running out entirely, not just
+  // advancing to the next one — currently has zero fanfare: the countdown
+  // text simply stops rendering and milestoneLabel quietly switches to its
+  // own "every milestone reached" string. Reuses travelDroplet's own arc
+  // mechanics as a one-shot burst from the meter itself, scoped to only
+  // THIS crossing (LiquidMeter's own `celebration` prop, and the trickle
+  // effect above, already both fire on every ordinary milestone) — this is
+  // additional fanfare for the rarer, bigger moment, not a duplicate of it.
+  const prevNextMilestoneRef = useRef(nextMilestone);
+
+  useEffect(() => {
+    const prevNext = prevNextMilestoneRef.current;
+    prevNextMilestoneRef.current = nextMilestone;
+    if (reduceMotion || prevNext === null || nextMilestone !== null) return;
+
+    const meterEl = panelRef.current?.querySelector(".liquid-meter");
+    if (!meterEl) return;
+    const rect = meterEl.getBoundingClientRect();
+    const originX = rect.left + rect.width / 2;
+    const originY = rect.top + rect.height / 2;
+
+    for (let i = 0; i < MILESTONE_CELEBRATION_DROPLETS; i++) {
+      const angle = (Math.PI * 2 * i) / MILESTONE_CELEBRATION_DROPLETS - Math.PI / 2 + (Math.random() - .5) * .4;
+      const dist = 70 + Math.random() * 40;
+      const destX = originX + Math.cos(angle) * dist;
+      const destY = originY + Math.sin(angle) * dist * .6;
+      const apexX = originX + Math.cos(angle) * dist * .5;
+      const apexY = Math.min(originY, destY) - DROP_ARC_HEIGHT;
+      const colorName = PALETTE_NAMES[i % PALETTE_NAMES.length];
+
+      const dot = document.createElement("span");
+      dot.className = `ink-levels-travel-drop ${ colorName }-bg`;
+      document.body.appendChild(dot);
+
+      gsap.timeline({ delay: i * .02, onComplete: () => dot.remove() })
+        .set(dot, { x: originX, y: originY, opacity: 1, scale: .4 })
+        .to(dot, { x: apexX, y: apexY, duration: DROP_LEG_DURATION, ease: "power1.out" })
+        .to(dot, { x: destX, y: destY, scale: .7, duration: DROP_LEG_DURATION, ease: "power1.in" })
+        .to(dot, { opacity: 0, scale: .2, duration: .2 }, "-=0.1");
+    }
+  }, [nextMilestone, reduceMotion]);
+
+  // Hold-to-agitate — see AGITATE_INTERVAL_MS above.
+  const agitateTimerRef = useRef(null);
+
+  const stopAgitate = () => {
+    clearInterval(agitateTimerRef.current);
+    agitateTimerRef.current = null;
+  };
+
+  const startAgitate = (index) => {
+    if (reduceMotion) return;
+    stopAgitate();
+    agitateTimerRef.current = setInterval(() => {
+      vialRefs.current[index]?.strike(AGITATE_STRIKE);
+    }, AGITATE_INTERVAL_MS);
+  };
+
+  useEffect(() => () => stopAgitate(), []);
 
   // Drag-to-scrub across the whole row — press anywhere in .ink-levels-bars
   // and drag to scrub the active filter live through whichever color is
@@ -297,6 +384,19 @@ const InkLevelsPanel = ({
         el.setAttribute("d", catenaryPath(a.x, a.y, b.x, b.y, {
           k: THREAD_K, samples: THREAD_SAMPLES, maxSag: THREAD_MAX_SAG, wobble,
         }));
+
+        // The gradient this segment's own stroke reads (see the <defs>
+        // below) tracks the same live endpoints as the path itself, so a
+        // vial's lift/entrance/resize never leaves the color blend
+        // pointing a stale direction relative to where the line actually
+        // runs now.
+        const gradEl = threadGradRefs.current[i];
+        if (gradEl) {
+          gradEl.setAttribute("x1", a.x);
+          gradEl.setAttribute("y1", a.y);
+          gradEl.setAttribute("x2", b.x);
+          gradEl.setAttribute("y2", b.y);
+        }
       }
     }
 
@@ -422,12 +522,35 @@ const InkLevelsPanel = ({
             {
               !reduceMotion && (
                 <svg className="ink-levels-thread-layer" aria-hidden="true">
+                  {/* Each segment's own stroke blends the two vial colors
+                      it actually connects, rather than a flat ink line —
+                      real per-segment color, not decoration. Coordinates
+                      are written every frame alongside the path's own `d`
+                      (see the tick loop above), gradientUnits="userSpaceOnUse"
+                      so they read as real page-space points, matching what
+                      the path itself is drawn in. */}
+                  <defs>
+                    {
+                      PALETTE_NAMES.slice(1).map((name, i) => (
+                        <linearGradient
+                          key={ `grad-${ i }` }
+                          ref={ (el) => { threadGradRefs.current[i] = el; } }
+                          id={ `ink-thread-grad-${ i }` }
+                          gradientUnits="userSpaceOnUse"
+                        >
+                          <stop offset="0%" stopColor={ NOTE_COLORS[PALETTE_NAMES[i]] || "var(--page-ink-color)" } />
+                          <stop offset="100%" stopColor={ NOTE_COLORS[name] || "var(--page-ink-color)" } />
+                        </linearGradient>
+                      ))
+                    }
+                  </defs>
                   {
                     PALETTE_NAMES.slice(1).map((_, i) => (
                       <path
                         key={ i }
                         ref={ (el) => { threadPathRefs.current[i] = el; } }
                         className="ink-levels-thread"
+                        style={{ stroke: `url(#ink-thread-grad-${ i })` }}
                       />
                     ))
                   }
@@ -455,6 +578,7 @@ const InkLevelsPanel = ({
                     aria-pressed={ sortColor === name }
                     data-color={ name }
                     className={ `ink-levels-column ink-levels-button ${ isActive ? "active" : "" } ${ isLeading ? "leading" : "" }` }
+                    style={ isLeading ? { "--lead-margin": leadMargin } : undefined }
                     /* Selecting a color doesn't just ring it — the picked
                        column visibly lifts while the rest ease back and
                        dim, one physical "this one rises, the rest yield"
@@ -466,6 +590,10 @@ const InkLevelsPanel = ({
                     }}
                     transition={{ type: "spring", stiffness: 360, damping: 18 }}
                     onMouseEnter={ () => vialRefs.current[index]?.strike(HOVER_STRIKE) }
+                    onPointerDown={ () => startAgitate(index) }
+                    onPointerUp={ stopAgitate }
+                    onPointerLeave={ stopAgitate }
+                    onPointerCancel={ stopAgitate }
                     onClick={ () => {
                       // A real drag-scrub across the row (see
                       // handleBarsPointerMove) already landed on its own
