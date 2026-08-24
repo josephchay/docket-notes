@@ -84,22 +84,6 @@ import DropZoneOverlay from "../components/DropZone/DropZoneOverlay";
 import SprintPanel, { SPRINT_EVENT } from "../components/Sprint/SprintPanel";
 import QuickDock from "../components/Dock/QuickDock";
 import AmbientField from "../components/Ambient/AmbientField";
-import GravityFieldPanel, { GRAVITY_FIELD_EVENT } from "../components/Particles/GravityFieldPanel";
-import FluidFieldPanel, { FLUID_FIELD_EVENT } from "../components/Particles/FluidFieldPanel";
-import AudioWaveStringPanel, { AUDIO_WAVE_STRING_EVENT } from "../components/Particles/AudioWaveStringPanel";
-import FluidVisualizerPanel, { FLUID_VISUALIZER_EVENT } from "../components/Particles/FluidVisualizerPanel";
-import FluidPlayerDock from "../components/Particles/FluidPlayerDock";
-import ClothPanel, { CLOTH_EVENT } from "../components/Particles/ClothPanel";
-import InkBloomPanel, { INK_BLOOM_EVENT } from "../components/Particles/InkBloomPanel";
-import ChladniPanel, { CHLADNI_EVENT } from "../components/Particles/ChladniPanel";
-import BoidPanel, { BOID_EVENT } from "../components/Particles/BoidPanel";
-import CrystalPanel, { CRYSTAL_EVENT } from "../components/Particles/CrystalPanel";
-import PendulumPanel, { PENDULUM_EVENT } from "../components/Particles/PendulumPanel";
-import LeniaPanel, { LENIA_EVENT } from "../components/Particles/LeniaPanel";
-import EpicyclePanel, { EPICYCLE_EVENT } from "../components/Particles/EpicyclePanel";
-import InterferencePanel, { INTERFERENCE_EVENT } from "../components/Particles/InterferencePanel";
-import LSystemPanel, { LSYSTEM_EVENT } from "../components/Particles/LSystemPanel";
-import MetaballPanel, { METABALL_EVENT } from "../components/Particles/MetaballPanel";
 import NoteConstellationPanel, { NOTE_CONSTELLATION_EVENT } from "../components/Constellation/NoteConstellationPanel";
 import useLenisScroll from "../hooks/useLenisScroll";
 
@@ -178,7 +162,17 @@ const Home = () => {
   const [wipe, setWipe] = useState(null);
   const THEME_BG = { light: "#fffeff", dark: "#161616" };
 
-  const toggleTheme = (origin) => {
+  // A live preview of that same wash, driven by a press-and-drag on the
+  // theme toggle (see Header's own handleThemeToggle) instead of a
+  // one-shot click — dragging grows the real wash's own radius directly,
+  // so releasing far enough in just lets the already-showing bloom finish
+  // its elastic settle rather than restarting it from nothing (see
+  // startProgress below), and releasing early lets ThemeWipe ease it back
+  // out on its own.
+  const [wipePreview, setWipePreview] = useState(null);
+  const themePreviewOriginRef = useRef(null);
+
+  const toggleTheme = (origin, startProgress = 0) => {
     playThemeToggle();
     setTheme((prev) => {
       const next = prev === "dark" ? "light" : "dark";
@@ -186,7 +180,7 @@ const Home = () => {
 
       if (origin) {
         const wipeId = id();
-        setWipe({ key: wipeId, x: origin.x, y: origin.y, color: THEME_BG[next] });
+        setWipe({ key: wipeId, x: origin.x, y: origin.y, color: THEME_BG[next], startProgress });
         setTimeout(() => {
           setWipe((current) => (current?.key === wipeId ? null : current));
         }, 950);
@@ -195,6 +189,26 @@ const Home = () => {
       return next;
     });
   }
+
+  const beginThemePreview = (origin) => {
+    themePreviewOriginRef.current = origin;
+    const previewColor = THEME_BG[theme === "dark" ? "light" : "dark"];
+    setWipePreview({ x: origin.x, y: origin.y, progress: 0, color: previewColor });
+  };
+  const updateThemePreview = (progress) => {
+    const clamped = Math.min(1, Math.max(0, progress));
+    setWipePreview((current) => (current ? { ...current, progress: clamped } : current));
+  };
+  const cancelThemePreview = () => {
+    themePreviewOriginRef.current = null;
+    setWipePreview(null);
+  };
+  const commitThemePreview = (progress) => {
+    const origin = themePreviewOriginRef.current;
+    themePreviewOriginRef.current = null;
+    setWipePreview(null);
+    toggleTheme(origin || undefined, progress);
+  };
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -1264,96 +1278,6 @@ const Home = () => {
       icon: <FaChartSimple />,
       perform: () => window.dispatchEvent(new CustomEvent(INK_LEVELS_EVENT)),
     },
-    // {
-    //   key: "gravity-field",
-    //   label: "Show the gravity field",
-    //   icon: <FaMeteor />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(GRAVITY_FIELD_EVENT)),
-    // },
-    // {
-    //   key: "fluid-field",
-    //   label: "Show the fluid field",
-    //   icon: <FaDroplet />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(FLUID_FIELD_EVENT)),
-    // },
-    // {
-    //   key: "audio-wave-string",
-    //   label: "Show the wavy line",
-    //   icon: <FaWaveSquare />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(AUDIO_WAVE_STRING_EVENT)),
-    // },
-    // {
-    //   key: "fluid-visualizer",
-    //   label: "Show the fluid visualizer",
-    //   icon: <FaWater />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(FLUID_VISUALIZER_EVENT)),
-    // },
-    // {
-    //   key: "cloth-field",
-    //   label: "Show the cloth field",
-    //   icon: <FaFlag />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(CLOTH_EVENT)),
-    // },
-    // {
-    //   key: "ink-bloom",
-    //   label: "Show the ink bloom",
-    //   icon: <FaFillDrip />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(INK_BLOOM_EVENT)),
-    // },
-    // {
-    //   key: "chladni-field",
-    //   label: "Show the ink plate",
-    //   icon: <FaAtom />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(CHLADNI_EVENT)),
-    // },
-    // {
-    //   key: "boid-field",
-    //   label: "Show the murmuration",
-    //   icon: <FaDove />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(BOID_EVENT)),
-    // },
-    // {
-    //   key: "crystal-field",
-    //   label: "Show the ink frost",
-    //   icon: <FaSnowflake />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(CRYSTAL_EVENT)),
-    // },
-    // {
-    //   key: "pendulum-field",
-    //   label: "Show the chaos",
-    //   icon: <FaInfinity />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(PENDULUM_EVENT)),
-    // },
-    // {
-    //   key: "lenia-field",
-    //   label: "Show the ink life",
-    //   icon: <FaBacterium />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(LENIA_EVENT)),
-    // },
-    // {
-    //   key: "epicycle-field",
-    //   label: "Show the orbits",
-    //   icon: <FaCompassDrafting />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(EPICYCLE_EVENT)),
-    // },
-    // {
-    //   key: "interference-field",
-    //   label: "Show the ripples",
-    //   icon: <FaBullseye />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(INTERFERENCE_EVENT)),
-    // },
-    // {
-    //   key: "lsystem-field",
-    //   label: "Show the growth",
-    //   icon: <FaSeedling />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(LSYSTEM_EVENT)),
-    // },
-    // {
-    //   key: "metaball-field",
-    //   label: "Show the droplets",
-    //   icon: <FaCircleHalfStroke />,
-    //   perform: () => window.dispatchEvent(new CustomEvent(METABALL_EVENT)),
-    // },
     {
       key: "note-constellation",
       label: "Map your notes",
@@ -1416,7 +1340,7 @@ const Home = () => {
           id="colorSelectors"
         />
         <LiquidTextFilter />
-        <AmbientField />
+        <AmbientField reduceMotion={ reduceMotion } dimmed={ !!editingNote || focusMode } />
         <Header
           searchText={ notesSortText }
           setNotesSortText={ setNotesSortText }
@@ -1430,6 +1354,10 @@ const Home = () => {
           colorCounts={ colorCounts }
           theme={ theme }
           toggleTheme={ toggleTheme }
+          beginThemePreview={ beginThemePreview }
+          updateThemePreview={ updateThemePreview }
+          cancelThemePreview={ cancelThemePreview }
+          commitThemePreview={ commitThemePreview }
           focusMode={ focusMode }
           toggleFocusMode={ toggleFocusMode }
           persistNotes={ persistNotes }
@@ -1612,7 +1540,7 @@ const Home = () => {
           )
         }
       </AnimatePresence>
-      <ThemeWipe wipe={ wipe } />
+      <ThemeWipe wipe={ wipe } preview={ wipePreview } />
       <InkCelebration celebration={ celebration } />
       <ActionStamp stamp={ stamp } />
       <ScrollProgress containerRef={ homeRef } markers={ scrollMarkers } reduceMotion={ reduceMotion } />

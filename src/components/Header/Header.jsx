@@ -103,6 +103,10 @@ const Header = ({
   colorCounts,
   theme,
   toggleTheme,
+  beginThemePreview,
+  updateThemePreview,
+  cancelThemePreview,
+  commitThemePreview,
   focusMode,
   toggleFocusMode,
   persistNotes,
@@ -321,6 +325,90 @@ const Header = ({
     const rect = themeRef.current?.getBoundingClientRect();
     toggleTheme(rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : undefined);
   }
+
+  // Press-and-drag the same button to preview the wash growing live instead
+  // of only ever getting the one-shot click version — a plain tap (no real
+  // movement) still falls through to handleThemeToggle above unchanged.
+  // DRAG_PREVIEW_MAX_PX is how far a drag has to travel to preview the wash
+  // at its full eventual size; releasing past DRAG_COMMIT_THRESHOLD commits
+  // (Home.jsx's toggleTheme picks the wash up from exactly this progress
+  // rather than restarting it), releasing short springs it back to nothing.
+  const DRAG_PREVIEW_MAX_PX = 140;
+  const DRAG_START_THRESHOLD_PX = 10;
+  const DRAG_COMMIT_THRESHOLD = 0.5;
+  // Keyed by pointerId so a second finger touching the button while the
+  // first is already mid-drag can't clobber it — the second pointer is
+  // simply ignored until the first one releases (a toggle button has no
+  // sensible "two simultaneous drags" behavior anyway).
+  const themeDragRef = useRef(null);
+  // Set for the duration of a pointer-driven activation so the native
+  // 'click' DOM event that immediately follows (real pointer input always
+  // fires one) can recognize it already handled the toggle and skip —
+  // see handleThemeClick below.
+  const themeClickHandledRef = useRef(false);
+
+  const handleThemePointerDown = (e) => {
+    if (themeDragRef.current) return; // another pointer already owns a drag in progress
+    const rect = themeRef.current?.getBoundingClientRect();
+    const origin = rect
+      ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      : { x: e.clientX, y: e.clientY };
+    themeDragRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, origin, dragging: false, progress: 0 };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const handleThemePointerMove = (e) => {
+    const drag = themeDragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const dist = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
+    if (!drag.dragging) {
+      if (dist < DRAG_START_THRESHOLD_PX) return;
+      drag.dragging = true;
+      beginThemePreview(drag.origin);
+    }
+    drag.progress = Math.min(1, dist / DRAG_PREVIEW_MAX_PX);
+    updateThemePreview(drag.progress);
+  };
+  const handleThemePointerUp = (e) => {
+    const drag = themeDragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    themeDragRef.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    themeClickHandledRef.current = true;
+    // Self-expires rather than only ever being reset by the native click
+    // this pointerup normally triggers next — some browsers suppress that
+    // trailing click once a drag has moved far enough (common touch-drag
+    // click-suppression behavior), which would otherwise leave this stuck
+    // true forever and silently swallow the next unrelated bare click.
+    setTimeout(() => { themeClickHandledRef.current = false; }, 400);
+    if (drag.dragging) {
+      if (drag.progress >= DRAG_COMMIT_THRESHOLD) {
+        commitThemePreview(drag.progress);
+      } else {
+        cancelThemePreview();
+      }
+    } else {
+      handleThemeToggle();
+    }
+  };
+  const handleThemePointerCancel = (e) => {
+    const drag = themeDragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    if (drag.dragging) cancelThemePreview();
+    themeDragRef.current = null;
+  };
+  // Real pointer-driven activation is already fully handled above by the
+  // time the browser's own 'click' event follows it, so this only ever
+  // does real work for an activation path that dispatches a bare click
+  // with no preceding pointer events at all (assistive-tech virtual
+  // activation, a synthetic .click() call) — restoring the capability the
+  // old plain onClick handler had, without double-toggling on a real tap.
+  const handleThemeClick = () => {
+    if (themeClickHandledRef.current) {
+      themeClickHandledRef.current = false;
+      return;
+    }
+    handleThemeToggle();
+  };
 
   return (
     <motion.header
@@ -699,7 +787,11 @@ const Header = ({
           scale: 0.9,
         }}
         transition={ springy }
-        onClick={ handleThemeToggle }
+        onPointerDown={ handleThemePointerDown }
+        onPointerMove={ handleThemePointerMove }
+        onPointerUp={ handleThemePointerUp }
+        onPointerCancel={ handleThemePointerCancel }
+        onClick={ handleThemeClick }
         className="theme"
       >
         {/* The old icon spins out, the new one springs in — a tiny

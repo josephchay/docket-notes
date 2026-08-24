@@ -10,6 +10,31 @@ THREE.ColorManagement.enabled = false;
 
 const COUNT = 50;
 
+// Whole-number JS floats stringify without a decimal point (`(1.0).toString()
+// === "1"`), which template-interpolates into GLSL ES 1.00 as an untyped
+// `int` literal — illegal against a `float` operand in relational/arithmetic
+// ops (no implicit int->float conversion) and fails the WHOLE shader
+// program's compile, not just the feature using it. Use this for any JS
+// constant spliced into a float-typed GLSL expression.
+const glslFloat = (n) => (Number.isInteger(n) ? `${ n }.0` : `${ n }`);
+
+// How many recent clicks/taps can be scattering the field at once — extra
+// clicks beyond this overwrite the oldest active slot (see nextPulseSlot).
+const PULSE_COUNT = 4;
+const PULSE_LIFE_S = 1.0; // must match the `age < 1.0` cutoff in VERT below
+const PULSE_STRENGTH = 0.045;
+
+// How much drift/repel amplitude idle damps away at uIdle=1 (0..1) — never
+// fully to zero, so the field still reads as faintly alive at rest.
+const IDLE_DRIFT_DAMP = 0.7;
+const IDLE_DELAY_MS = 6000;
+const IDLE_TWEEN_MS = 1400;
+
+const BASE_OPACITY = 0.16;
+const DIMMED_OPACITY = 0.05;
+const ENTRANCE_FADE_MS = 1600;
+const DIM_TWEEN_MS = 500;
+
 const VERT = `
   attribute vec3 aSeed;   // x: phase, y: drift radius (NDC units), z: speed
   attribute float aSize;  // point size, px
@@ -22,14 +47,22 @@ const VERT = `
   // started, the same way LiquidMeter.jsx's own uBalls[] loop already reads
   // a fixed-size uniform array by index rather than a texture or SSBO.
   uniform vec2 uBasePositions[${ COUNT }];
+  // xy = NDC click position, z = the uTime it landed at; z < 0.0 means the
+  // slot is unused (see PULSE_COUNT/handlePointerDown in the component).
+  uniform vec3 uPulses[${ PULSE_COUNT }];
+  // 0..1, tweened toward 1 after a stretch of no input (see armIdleTimer
+  // below) — damps drift/repel so the field visibly calms rather than
+  // drifting at full amplitude forever regardless of whether anyone's here.
+  uniform float uIdle;
 
   varying float vAlpha;
 
   void main() {
+    float motion = 1.0 - uIdle * ${ glslFloat(IDLE_DRIFT_DAMP) };
     vec2 drift = vec2(
       sin(uTime * aSeed.z + aSeed.x) * aSeed.y,
       cos(uTime * aSeed.z * 0.8 + aSeed.x * 1.3) * aSeed.y
-    );
+    ) * motion;
     // Larger (nearer-reading) dots parallax toward the pointer a little
     // more than small ones — a cheap sense of depth without a real z-axis.
     vec2 parallax = uMouse * 0.05 * (aSize / 7.0);
@@ -55,7 +88,7 @@ const VERT = `
         repel += d / dist2;
       }
     }
-    repel *= 0.00035;
+    repel *= 0.00035 * motion;
     // A hard cap on top of that near-field guard — belt and suspenders —
     // so no random initial scatter can ever push a mote meaningfully off
     // its own patch of the field regardless of how the 50 points happened
@@ -65,7 +98,25 @@ const VERT = `
       repel = repel / repelLen * 0.06;
     }
 
-    vec2 p = position.xy + drift + parallax + repel;
+    // Click/tap scatter: reuses the exact same 1/r 2D falloff and
+    // near-field guard as the mutual repel term above, just keyed off
+    // recent pulse origins instead of every other mote's rest position,
+    // and fading out linearly over PULSE_LIFE_S instead of staying
+    // permanent. Inactive slots (uPulses[k].z < 0.0) contribute nothing.
+    vec2 pulseForce = vec2(0.0);
+    for (int k = 0; k < ${ PULSE_COUNT }; k++) {
+      float age = uTime - uPulses[k].z;
+      if (uPulses[k].z >= 0.0 && age >= 0.0 && age < ${ glslFloat(PULSE_LIFE_S) }) {
+        vec2 d = position.xy - uPulses[k].xy;
+        float dist2 = dot(d, d);
+        if (dist2 > 0.0002) {
+          float fade = 1.0 - age / ${ glslFloat(PULSE_LIFE_S) };
+          pulseForce += normalize(d) * fade * ${ glslFloat(PULSE_STRENGTH) };
+        }
+      }
+    }
+
+    vec2 p = position.xy + drift + parallax + repel + pulseForce;
     gl_Position = vec4(p, 0.0, 1.0);
     gl_PointSize = aSize;
     vAlpha = 0.45 + 0.55 * sin(uTime * aSeed.z * 1.7 + aSeed.x * 2.0);
@@ -92,6 +143,30 @@ const FRAG = `
   }
 `;
 
+// A cancelable, one-shot rAF-driven linear tween — shared shape for the
+// idle settle and the opacity fade-in/dim transitions below (the
+// pre-existing theme re-tint above needs its own RGB-triple version and is
+// left untouched). Each call site only supplies what actually differs: the
+// current/target values and a per-frame setter.
+const makeTweener = () => {
+  let raf = null;
+  const cancel = () => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = null;
+  };
+  const to = (from, target, duration, setValue) => {
+    cancel();
+    const startTime = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - startTime) / duration);
+      setValue(from + (target - from) * t);
+      raf = t < 1 ? requestAnimationFrame(step) : null;
+    };
+    raf = requestAnimationFrame(step);
+  };
+  return { to, cancel };
+};
+
 // A faint field of drifting dust behind the desk — barely-there specks in
 // the page's own ink, so it reads as dust motes on fresh paper in light
 // mode and faint stars in the Ink theme, without changing anything but
@@ -100,8 +175,23 @@ const FRAG = `
 // than a heavier scene-graph abstraction — one THREE.Points cloud, driven
 // entirely by uniforms so there's no per-frame JS work beyond updating a
 // clock and a smoothed pointer position.
-const AmbientField = () => {
+const AmbientField = ({ reduceMotion = false, dimmed = false }) => {
   const canvasRef = useRef(null);
+  const reduceMotionRef = useRef(reduceMotion);
+  reduceMotionRef.current = reduceMotion;
+  const dimmedRef = useRef(dimmed);
+  dimmedRef.current = dimmed;
+  // Lets the separate `dimmed`-watching effect below reach the live
+  // uniforms/opacity tweener/idle-canceler the mount effect owns, mirroring
+  // the uniformsHandleRef pattern InkBloomField.jsx's own round established.
+  const uniformsHandleRef = useRef(null);
+  // The opacity target the entrance fade or the last dimmed-effect run is
+  // already heading toward — lets the dimmed effect no-op when it's already
+  // correct (including right after mount, if `dimmed` started true) instead
+  // of relying on a "skip the first run" guard, which a real remount (React
+  // StrictMode's mount->cleanup->mount replay) would desync from whatever
+  // the mount effect's own most recent run actually set up.
+  const lastOpacityTargetRef = useRef(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -145,12 +235,21 @@ const AmbientField = () => {
     geometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
 
     const ink = getComputedStyle(document.documentElement).getPropertyValue("--page-ink-color").trim() || "#191919";
+    // Read once at mount (this effect only ever runs with `[]` deps) — if
+    // `dimmed` is already true on the very first render, the entrance fade
+    // below targets DIMMED_OPACITY directly instead of always fading up to
+    // BASE_OPACITY and only correcting itself whenever `dimmed` next flips.
+    const initialOpacityTarget = dimmed ? DIMMED_OPACITY : BASE_OPACITY;
     const uniforms = {
       uTime: { value: 0 },
       uMouse: { value: new THREE.Vector2(0, 0) },
       uColor: { value: new THREE.Color(ink || "#191919") },
-      uOpacity: { value: 0.16 },
+      // Starts at 0 (not the real target) so the entrance-fade tween below
+      // can own the ramp-up — reduceMotion skips straight to the target.
+      uOpacity: { value: 0 },
       uBasePositions: { value: basePositions },
+      uPulses: { value: Array.from({ length: PULSE_COUNT }, () => new THREE.Vector3(0, 0, -1)) },
+      uIdle: { value: 0 },
     };
 
     const material = new THREE.ShaderMaterial({
@@ -178,8 +277,47 @@ const AmbientField = () => {
     const handlePointerMove = (e) => {
       mouseTarget.x = (e.clientX / window.innerWidth) * 2 - 1;
       mouseTarget.y = -((e.clientY / window.innerHeight) * 2 - 1);
+      armIdleTimer();
     };
     window.addEventListener("pointermove", handlePointerMove);
+
+    // Click/tap scatter: overwrites the oldest of PULSE_COUNT slots with
+    // this click's NDC position and current clock time — VERT reads uTime
+    // each frame to compute each slot's own age/fade, so no further JS
+    // work is needed per click beyond this one uniform write.
+    let nextPulseSlot = 0;
+    const handlePointerDown = (e) => {
+      armIdleTimer();
+      if (reduceMotionRef.current) return;
+      const nx = (e.clientX / window.innerWidth) * 2 - 1;
+      const ny = -((e.clientY / window.innerHeight) * 2 - 1);
+      const slot = nextPulseSlot % PULSE_COUNT;
+      nextPulseSlot += 1;
+      uniforms.uPulses.value[slot].set(nx, ny, uniforms.uTime.value);
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+
+    // Idle settle/wake: after IDLE_DELAY_MS of no pointer input, tween
+    // uIdle up so drift/repel visibly calm down (see `motion` in VERT);
+    // any fresh input tweens it back down and restarts the wait. Its own
+    // tweener/timeout, independent of the opacity one below.
+    const idleTweener = makeTweener();
+    let idleTimeout = null;
+    const armIdleTimer = () => {
+      if (reduceMotionRef.current) return;
+      if (idleTimeout) clearTimeout(idleTimeout);
+      if (uniforms.uIdle.value > 0) {
+        idleTweener.to(uniforms.uIdle.value, 0, IDLE_TWEEN_MS, (v) => { uniforms.uIdle.value = v; });
+      }
+      idleTimeout = setTimeout(() => {
+        // Re-checked here (not just on arm/re-arm) since reduceMotion can
+        // flip true during the wait with no further pointer event to
+        // re-run armIdleTimer's own guard above.
+        if (reduceMotionRef.current) return;
+        idleTweener.to(uniforms.uIdle.value, 1, IDLE_TWEEN_MS, (v) => { uniforms.uIdle.value = v; });
+      }, IDLE_DELAY_MS);
+    };
+    armIdleTimer();
 
     // Re-tints between the light and dark theme's own ink color whenever
     // .home's data-theme attribute flips — mirrors InkGoo.jsx's own
@@ -237,20 +375,89 @@ const AmbientField = () => {
     };
     document.addEventListener("visibilitychange", handleVisibility);
 
+    // Settle-in entrance fade: uOpacity started at 0 above, so the field
+    // fades up to initialOpacityTarget rather than popping in at full
+    // density on first paint (reduceMotion skips the animated path and
+    // jumps straight there). Shares opacityTweener with the dimmed-panel
+    // effect below so the two can never both drive uOpacity at once — see
+    // lastOpacityTargetRef for how they hand off cleanly instead of racing.
+    const opacityTweener = makeTweener();
+    lastOpacityTargetRef.current = initialOpacityTarget;
+    if (reduceMotionRef.current) {
+      uniforms.uOpacity.value = initialOpacityTarget;
+    } else {
+      opacityTweener.to(0, initialOpacityTarget, ENTRANCE_FADE_MS, (v) => { uniforms.uOpacity.value = v; });
+    }
+
+    // Snaps every new-feature-added animated state straight to its
+    // reduceMotion-appropriate resting value — called from the effect
+    // below whenever the `reduceMotion` prop flips true, so a tween that
+    // was already in flight (or a timer already armed) before the flip
+    // can't keep animating after it.
+    const snapForReducedMotion = () => {
+      if (idleTimeout) clearTimeout(idleTimeout);
+      idleTimeout = null;
+      idleTweener.cancel();
+      uniforms.uIdle.value = 0;
+      opacityTweener.cancel();
+      uniforms.uOpacity.value = dimmedRef.current ? DIMMED_OPACITY : BASE_OPACITY;
+    };
+    uniformsHandleRef.current = { uniforms, opacityTweener, snapForReducedMotion };
+
     tick();
 
     return () => {
       if (raf) cancelAnimationFrame(raf);
       if (colorRaf) cancelAnimationFrame(colorRaf);
+      if (idleTimeout) clearTimeout(idleTimeout);
+      idleTweener.cancel();
+      opacityTweener.cancel();
+      uniformsHandleRef.current = null;
+      lastOpacityTargetRef.current = null;
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("resize", resize);
       window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerdown", handlePointerDown);
       themeObserver.disconnect();
       geometry.dispose();
       material.dispose();
       renderer.dispose();
     };
   }, []);
+
+  // Panel-aware dimming: reuses the exact same "the page recedes" signal
+  // Home.jsx already computes for its own `.home` receded/focus classes
+  // (see the `dimmed` prop) rather than inventing a new one, so the dust
+  // visibly recedes behind a foreground panel/editor instead of competing
+  // with it at constant brightness. No-ops when the target already matches
+  // lastOpacityTargetRef — correctly covers both "dimmed hasn't actually
+  // changed since the entrance fade already aimed here" (including right
+  // after mount) and a StrictMode replay, without needing a separate
+  // "skip the first run" flag that could desync from a real remount.
+  useEffect(() => {
+    const handle = uniformsHandleRef.current;
+    if (!handle) return undefined;
+    const target = dimmed ? DIMMED_OPACITY : BASE_OPACITY;
+    if (lastOpacityTargetRef.current === target) return undefined;
+    lastOpacityTargetRef.current = target;
+    const { uniforms, opacityTweener } = handle;
+    if (reduceMotionRef.current) {
+      opacityTweener.cancel();
+      uniforms.uOpacity.value = target;
+    } else {
+      opacityTweener.to(uniforms.uOpacity.value, target, DIM_TWEEN_MS, (v) => { uniforms.uOpacity.value = v; });
+    }
+    return undefined;
+  }, [dimmed]);
+
+  // Immediately snaps idle/opacity state to their resting values the
+  // instant reduceMotion flips true, so a tween or idle timer already in
+  // flight from before the flip can't keep animating after it.
+  useEffect(() => {
+    if (!reduceMotion) return undefined;
+    uniformsHandleRef.current?.snapForReducedMotion?.();
+    return undefined;
+  }, [reduceMotion]);
 
   return <canvas ref={ canvasRef } className="ambient-field" aria-hidden="true" />;
 };

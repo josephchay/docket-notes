@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import gsap from "gsap";
 
 import { resolveCssColor } from "../History/HistoryAmbient";
 
@@ -75,6 +76,44 @@ const INITIAL_SEED_RADIUS = 3;
 
 const STATS_EMIT_MS = 150;
 
+// Up to this many simultaneous pointers (fingers) can each paint their own
+// ink at once — see uMultiSeedPos in SIM_FRAG. Extra pointers beyond this
+// cap are simply not tracked, same "cap and ignore the rest" approach
+// MAX_RIPPLES takes in CursorDot.jsx.
+const MAX_SEEDS = 4;
+const OFFGRID = -9999; // parks an unused multi-seed slot far outside the 0..SIM_DIM domain so its smoothstep falloff is always exactly 0
+
+// Pointer-drag velocity (in sim texels/ms, see handlePointerMove) is turned
+// into uFlowDir's magnitude by this factor, then smoothed and capped —
+// tuned by feel against this exact SIM_DIM/DOM mapping the same way every
+// other constant in this file is, not trusted from a formula alone.
+const FLOW_VELOCITY_TO_MAG = 1.2;
+const MAX_FLOW_MAG = 1.4;
+const FLOW_SMOOTH = 0.25; // low-pass factor, same shape as CursorDot's VEL_SMOOTH
+const FLOW_DECAY = 0.94; // per-frame decay back toward isotropic once the pointer stops/lifts
+
+// A scripted tour through Pearson's own named regimes, recovered verbatim
+// from InkBloomPanel.jsx's own hand-tuned PRESETS table (that panel is
+// gone, but these coordinates were tuned against this exact grid/timestep
+// and are worth keeping rather than re-guessing). Deliberately skips
+// "worms" (visually the least distinct next to coral) and ends on mitosis
+// — DEFAULT_FEED/DEFAULT_KILL above — so an autoplay sweep settles back on
+// the same look the sim already opens with.
+const PRESET_SWEEP = [
+  { feed: 0.03, kill: 0.062 }, // spots
+  { feed: 0.03, kill: 0.057 }, // stripes
+  { feed: 0.0545, kill: 0.062 }, // coral
+  { feed: DEFAULT_FEED, kill: DEFAULT_KILL }, // mitosis
+];
+const SWEEP_EASE_S = 1.8; // time spent morphing between two regimes
+const SWEEP_HOLD_S = 2.2; // time spent sitting in a regime before the next morph
+
+// How many sim steps it takes a freshly-crossed texel's age to fully
+// saturate (see the age channel comment on SIM_FRAG below) — chosen so a
+// bloom visibly reads as "young" for a couple of seconds at STEPS_PER_FRAME
+// * 60fps before settling into its final aged tone.
+const AGE_RATE = 1 / 1500;
+
 const PASSTHROUGH_VERT = `
   void main() {
     gl_Position = vec4(position, 1.0);
@@ -103,27 +142,55 @@ const SIM_FRAG = `
   uniform float uSeedActive;
   uniform vec2 uSeedPos;
   uniform float uSeedRadius;
+  uniform vec2 uMultiSeedPos[${MAX_SEEDS}];
+  uniform vec2 uFlowDir;
 
+  // Same 9-point isotropic kernel as before, but each neighbor's own
+  // contribution is now nudged up or down by how well its direction lines
+  // up with uFlowDir (paper-grain / gravity bias, fed from pointer drag
+  // velocity — see handlePointerMove below) before the center weight is
+  // derived as the negative sum of every neighbor. That's what keeps the
+  // operator summing to exactly zero for ANY uFlowDir, not just the
+  // isotropic (0,0) case — a perfectly uniform field still can't drift for
+  // no reason, the same invariant the original fixed kernel held (see the
+  // file-level comment above).
   vec2 laplacian(vec2 uv, vec2 texel) {
+    vec2 dNW = vec2(-1.0, -1.0); vec2 dN = vec2(0.0, -1.0); vec2 dNE = vec2(1.0, -1.0);
+    vec2 dW  = vec2(-1.0,  0.0);                             vec2 dE  = vec2(1.0,  0.0);
+    vec2 dSW = vec2(-1.0,  1.0); vec2 dS = vec2(0.0,  1.0); vec2 dSE = vec2(1.0,  1.0);
+
+    float FLOW_STRENGTH = 0.6;
+    float wNW = 0.05 * (1.0 + dot(normalize(dNW), uFlowDir) * FLOW_STRENGTH);
+    float wN  = 0.2  * (1.0 + dot(normalize(dN),  uFlowDir) * FLOW_STRENGTH);
+    float wNE = 0.05 * (1.0 + dot(normalize(dNE), uFlowDir) * FLOW_STRENGTH);
+    float wW  = 0.2  * (1.0 + dot(normalize(dW),  uFlowDir) * FLOW_STRENGTH);
+    float wE  = 0.2  * (1.0 + dot(normalize(dE),  uFlowDir) * FLOW_STRENGTH);
+    float wSW = 0.05 * (1.0 + dot(normalize(dSW), uFlowDir) * FLOW_STRENGTH);
+    float wS  = 0.2  * (1.0 + dot(normalize(dS),  uFlowDir) * FLOW_STRENGTH);
+    float wSE = 0.05 * (1.0 + dot(normalize(dSE), uFlowDir) * FLOW_STRENGTH);
+
     vec2 sum = vec2(0.0);
-    sum += texture2D(uState, uv + texel * vec2(-1.0, -1.0)).rg * 0.05;
-    sum += texture2D(uState, uv + texel * vec2( 0.0, -1.0)).rg * 0.2;
-    sum += texture2D(uState, uv + texel * vec2( 1.0, -1.0)).rg * 0.05;
-    sum += texture2D(uState, uv + texel * vec2(-1.0,  0.0)).rg * 0.2;
-    sum += texture2D(uState, uv).rg * -1.0;
-    sum += texture2D(uState, uv + texel * vec2( 1.0,  0.0)).rg * 0.2;
-    sum += texture2D(uState, uv + texel * vec2(-1.0,  1.0)).rg * 0.05;
-    sum += texture2D(uState, uv + texel * vec2( 0.0,  1.0)).rg * 0.2;
-    sum += texture2D(uState, uv + texel * vec2( 1.0,  1.0)).rg * 0.05;
+    sum += texture2D(uState, uv + texel * dNW).rg * wNW;
+    sum += texture2D(uState, uv + texel * dN ).rg * wN;
+    sum += texture2D(uState, uv + texel * dNE).rg * wNE;
+    sum += texture2D(uState, uv + texel * dW ).rg * wW;
+    sum += texture2D(uState, uv + texel * dE ).rg * wE;
+    sum += texture2D(uState, uv + texel * dSW).rg * wSW;
+    sum += texture2D(uState, uv + texel * dS ).rg * wS;
+    sum += texture2D(uState, uv + texel * dSE).rg * wSE;
+
+    float wCenter = wNW + wN + wNE + wW + wE + wSW + wS + wSE;
+    sum += texture2D(uState, uv).rg * -wCenter;
     return sum;
   }
 
   void main() {
     vec2 texel = 1.0 / uResolution;
     vec2 uv = gl_FragCoord.xy * texel;
-    vec2 state = texture2D(uState, uv).rg;
-    float u = state.r;
-    float v = state.g;
+    vec4 raw = texture2D(uState, uv);
+    float u = raw.r;
+    float v = raw.g;
+    float age = raw.b;
 
     vec2 lap = laplacian(uv, texel);
     float reaction = u * v * v;
@@ -140,7 +207,9 @@ const SIM_FRAG = `
     // down u, the substrate it's converting) centered on wherever the
     // pointer currently is, in the exact same grid-pixel space
     // gl_FragCoord already uses — see simPosFromEvent in the component
-    // below for the DOM-event -> grid-pixel conversion.
+    // below for the DOM-event -> grid-pixel conversion. This single-seed
+    // path stays reserved for one-shot bursts (the initial scatter,
+    // reduced-motion taps) — see seedAt() below.
     if (uSeedActive > 0.5) {
       float d = distance(gl_FragCoord.xy, uSeedPos);
       float s = smoothstep(uSeedRadius, 0.0, d);
@@ -148,7 +217,30 @@ const SIM_FRAG = `
       u = mix(u, 0.0, s * 0.6);
     }
 
-    gl_FragColor = vec4(clamp(u, 0.0, 1.0), clamp(v, 0.0, 1.0), 0.0, 1.0);
+    // Continuous multi-pointer painting: up to MAX_SEEDS simultaneous
+    // fingers/pointers each deposit their own blob every step, reusing the
+    // exact smoothstep-deposit math above. Inactive slots are parked far
+    // off the 0..uResolution domain (see OFFGRID in the component) so
+    // their distance is always huge and s is always ~0 — no branch or
+    // count uniform needed.
+    for (int i = 0; i < ${MAX_SEEDS}; i++) {
+      float d2 = distance(gl_FragCoord.xy, uMultiSeedPos[i]);
+      float s2 = smoothstep(uSeedRadius, 0.0, d2);
+      v = mix(v, 1.0, s2);
+      u = mix(u, 0.0, s2 * 0.6);
+    }
+
+    // Bloom-age tracking: once a texel first crosses the same v > 0.1
+    // threshold DISPLAY_FRAG uses to start rendering ink, its age climbs
+    // every step it stays inked, saturating at 1.0. Pausing (not
+    // resetting) while v dips back below the threshold means age reads as
+    // "how long has this texel actually been inked," not "is it inked
+    // right now" — see DISPLAY_FRAG for how it's turned into a color.
+    if (v > 0.1 && age < 1.0) {
+      age += ${AGE_RATE};
+    }
+
+    gl_FragColor = vec4(clamp(u, 0.0, 1.0), clamp(v, 0.0, 1.0), clamp(age, 0.0, 1.0), 1.0);
   }
 `;
 
@@ -174,7 +266,9 @@ const DISPLAY_FRAG = `
   void main() {
     vec2 texel = 1.0 / uResolution;
     vec2 uv = gl_FragCoord.xy * texel;
-    float v = texture2D(uState, uv).g;
+    vec4 raw = texture2D(uState, uv);
+    float v = raw.g;
+    float age = raw.b;
     float t = smoothstep(0.1, 0.5, v);
 
     float vL = texture2D(uState, uv - vec2(texel.x, 0.0)).g;
@@ -184,8 +278,19 @@ const DISPLAY_FRAG = `
     float grad = length(vec2(vR - vL, vU - vD));
     float edge = smoothstep(0.02, 0.4, grad) * t;
 
-    vec3 col = mix(uPaper, uInk, t);
-    col = mix(col, uInk, edge * 0.3);
+    // Age-driven 3-stop ink gradient: a texel that just crossed the ink
+    // threshold starts a touch darker/wetter-looking than the resting
+    // uInk tone, then bleeds toward a softer, slightly paper-lightened
+    // tone as it matures — so a bloom visibly records which part grew
+    // first instead of every drop of ink, old or new, reading identically.
+    vec3 inkFresh = clamp(uInk * 1.18, 0.0, 1.0);
+    vec3 inkFaded = mix(uInk, uPaper, 0.32);
+    vec3 agedInk = age < 0.5
+      ? mix(inkFresh, uInk, age * 2.0)
+      : mix(uInk, inkFaded, (age - 0.5) * 2.0);
+
+    vec3 col = mix(uPaper, agedInk, t);
+    col = mix(col, agedInk, edge * 0.3);
 
     gl_FragColor = vec4(col, 1.0);
   }
@@ -209,6 +314,7 @@ const InkBloomField = ({
   feed = DEFAULT_FEED,
   kill = DEFAULT_KILL,
   resetToken = 0,
+  autoplay = false,
   onSteps,
 }) => {
   const canvasRef = useRef(null);
@@ -221,6 +327,15 @@ const InkBloomField = ({
   const onStepsRef = useRef(onSteps);
   useEffect(() => { onStepsRef.current = onSteps; });
   const resetFnRef = useRef(null);
+  // Lets the separate autoplay effect below reach the live simUniforms
+  // object the mount effect owns, without re-running the whole WebGL setup
+  // whenever the `autoplay` prop flips.
+  const uniformsHandleRef = useRef(null);
+  // True only while the autoplay GSAP sweep is actively driving uF/uK
+  // itself — tick() checks this so the sweep's own values aren't
+  // immediately stomped by the ordinary feedRef/killRef assignment every
+  // frame runs otherwise.
+  const autoplayActiveRef = useRef(false);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -268,6 +383,8 @@ const InkBloomField = ({
       uSeedActive: { value: 0 },
       uSeedPos: { value: new THREE.Vector2(0, 0) },
       uSeedRadius: { value: PAINT_SEED_RADIUS },
+      uMultiSeedPos: { value: Array.from({ length: MAX_SEEDS }, () => new THREE.Vector2(OFFGRID, OFFGRID)) },
+      uFlowDir: { value: new THREE.Vector2(0, 0) },
     };
     const simMaterial = new THREE.ShaderMaterial({
       uniforms: simUniforms,
@@ -278,6 +395,7 @@ const InkBloomField = ({
     });
     const simScene = new THREE.Scene();
     simScene.add(new THREE.Mesh(quadGeometry, simMaterial));
+    uniformsHandleRef.current = { sim: simUniforms };
 
     const displayUniforms = {
       uState: { value: null },
@@ -343,6 +461,11 @@ const InkBloomField = ({
       read = targetA;
       write = targetB;
       totalSteps = 0;
+      // A reset can land mid-drag (a preset pick while actively painting)
+      // — clear any live multi-seed positions tick() last wrote so the
+      // fresh scatter/burst below isn't co-deposited on top of wherever
+      // the pointer happens to currently be.
+      for (let i = 0; i < MAX_SEEDS; i++) simUniforms.uMultiSeedPos.value[i].set(OFFGRID, OFFGRID);
 
       for (let i = 0; i < INITIAL_SEED_COUNT; i++) {
         seedAt(
@@ -374,9 +497,19 @@ const InkBloomField = ({
     // convention, consistent between this render target and the default
     // framebuffer alike, which is exactly what keeps the display pass
     // right-side-up with no separate flip of its own anywhere else).
-    let seeding = false;
-    let seedX = 0;
-    let seedY = 0;
+    // pointerId -> {x, y} in sim-grid space, one entry per currently-down
+    // pointer (up to MAX_SEEDS) — replaces the old single seeding/seedX/
+    // seedY trio so multiple simultaneous fingers each paint their own ink.
+    const activePointers = new Map();
+    // Smoothed drag-velocity direction+magnitude fed straight into
+    // uFlowDir every ambient frame (see tick() below); decays back toward
+    // (0,0) — isotropic diffusion — once no pointer is moving.
+    const flow = { x: 0, y: 0 };
+    // pointerId -> { x, y, t } (sim-grid space / performance.now() ms) —
+    // keyed per-pointer so a second finger's move event can never compute
+    // its "velocity" as the delta from a DIFFERENT finger's last position.
+    const lastMoveByPointer = new Map();
+
     const simPosFromEvent = (e) => {
       const rect = canvas.getBoundingClientRect();
       const nx = (e.clientX - rect.left) / rect.width;
@@ -386,35 +519,63 @@ const InkBloomField = ({
 
     const handlePointerDown = (e) => {
       const p = simPosFromEvent(e);
-      seeding = true;
-      seedX = p.x;
-      seedY = p.y;
+      // Tracked regardless of reduceMotion so handlePointerMove's own
+      // reduceMotion branch below (gated on activePointers.has) still
+      // recognizes this pointer as down; capped at MAX_SEEDS either way.
+      if (activePointers.size < MAX_SEEDS) activePointers.set(e.pointerId, p);
       if (reduceMotionRef.current) {
         // The ambient loop below won't carry this any further while motion
         // is reduced, so a tap gets its own small synchronous burst right
         // here instead — interaction still visibly spreads ink, ambient
-        // auto-blooming just doesn't continue on its own afterward.
+        // auto-blooming just doesn't continue on its own afterward. Still
+        // single-point (uses seedAt's original uSeedPos, not
+        // uMultiSeedPos) since reduced motion only needs a tap to
+        // register, not true simultaneous-touch fidelity.
         simUniforms.uF.value = feedRef.current;
         simUniforms.uK.value = killRef.current;
-        for (let i = 0; i < REDUCED_MOTION_PAINT_STEPS; i++) seedAt(seedX, seedY, PAINT_SEED_RADIUS);
+        for (let i = 0; i < REDUCED_MOTION_PAINT_STEPS; i++) seedAt(p.x, p.y, PAINT_SEED_RADIUS);
       }
     };
     const handlePointerMove = (e) => {
-      if (!seeding) return;
-      const p = simPosFromEvent(e);
-      seedX = p.x;
-      seedY = p.y;
       if (reduceMotionRef.current) {
+        if (!activePointers.has(e.pointerId)) return;
+        const p = simPosFromEvent(e);
+        activePointers.set(e.pointerId, p);
         simUniforms.uF.value = feedRef.current;
         simUniforms.uK.value = killRef.current;
-        for (let i = 0; i < 8; i++) seedAt(seedX, seedY, PAINT_SEED_RADIUS);
+        for (let i = 0; i < 8; i++) seedAt(p.x, p.y, PAINT_SEED_RADIUS);
+        return;
       }
+      if (!activePointers.has(e.pointerId)) return;
+      const p = simPosFromEvent(e);
+      activePointers.set(e.pointerId, p);
+
+      const now = performance.now();
+      const prev = lastMoveByPointer.get(e.pointerId);
+      if (prev) {
+        const dt = Math.max(now - prev.t, 1);
+        const vx = (p.x - prev.x) / dt;
+        const vy = (p.y - prev.y) / dt;
+        const speed = Math.hypot(vx, vy);
+        if (speed > 1e-4) {
+          const mag = Math.min(speed * FLOW_VELOCITY_TO_MAG, MAX_FLOW_MAG);
+          const nx = (vx / speed) * mag;
+          const ny = (vy / speed) * mag;
+          flow.x += (nx - flow.x) * FLOW_SMOOTH;
+          flow.y += (ny - flow.y) * FLOW_SMOOTH;
+        }
+      }
+      lastMoveByPointer.set(e.pointerId, { x: p.x, y: p.y, t: now });
     };
-    const handlePointerUp = () => { seeding = false; };
+    const handlePointerUp = (e) => {
+      activePointers.delete(e.pointerId);
+      lastMoveByPointer.delete(e.pointerId);
+    };
 
     canvas.addEventListener("pointerdown", handlePointerDown);
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
 
     let raf = null;
     let lastStatsEmit = 0;
@@ -422,17 +583,37 @@ const InkBloomField = ({
     const tick = () => {
       raf = requestAnimationFrame(tick);
 
-      simUniforms.uF.value = feedRef.current;
-      simUniforms.uK.value = killRef.current;
+      // While the autoplay sweep (see the effect below) is actively
+      // driving uF/uK itself via its own GSAP onUpdate, leave them alone
+      // here — otherwise this line would stomp the sweep's tweened value
+      // right back to the plain feed/kill prop every single frame.
+      if (!autoplayActiveRef.current) {
+        simUniforms.uF.value = feedRef.current;
+        simUniforms.uK.value = killRef.current;
+      }
+
+      // Kept fresh every frame regardless of reduceMotion (cheap CPU-side
+      // writes, no GPU cost) so any step() call — the ambient loop below,
+      // or a reduced-motion seedAt() burst in handlePointerDown/Move —
+      // never reads a multi-seed slot or brush radius left stale from
+      // before reduceMotion last flipped, or from resetSim()'s own
+      // temporary INITIAL_SEED_RADIUS.
+      simUniforms.uSeedRadius.value = PAINT_SEED_RADIUS;
+      const posArray = simUniforms.uMultiSeedPos.value;
+      let seedIdx = 0;
+      for (const p of activePointers.values()) {
+        if (seedIdx >= MAX_SEEDS) break;
+        posArray[seedIdx].set(p.x, p.y);
+        seedIdx++;
+      }
+      for (; seedIdx < MAX_SEEDS; seedIdx++) posArray[seedIdx].set(OFFGRID, OFFGRID);
 
       if (!reduceMotionRef.current) {
-        simUniforms.uSeedActive.value = seeding ? 1 : 0;
-        if (seeding) {
-          simUniforms.uSeedPos.value.set(seedX, seedY);
-          simUniforms.uSeedRadius.value = PAINT_SEED_RADIUS;
-        }
-        for (let i = 0; i < STEPS_PER_FRAME; i++) step();
-        simUniforms.uSeedActive.value = 0;
+        flow.x *= FLOW_DECAY;
+        flow.y *= FLOW_DECAY;
+        simUniforms.uFlowDir.value.set(flow.x, flow.y);
+
+        for (let s = 0; s < STEPS_PER_FRAME; s++) step();
       }
 
       displayUniforms.uState.value = read.texture;
@@ -464,9 +645,11 @@ const InkBloomField = ({
       canvas.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
       resizeObserver.disconnect();
       themeObserver.disconnect();
       resetFnRef.current = null;
+      uniformsHandleRef.current = null;
       quadGeometry.dispose();
       simMaterial.dispose();
       displayMaterial.dispose();
@@ -485,6 +668,36 @@ const InkBloomField = ({
   useEffect(() => {
     if (resetToken > 0) resetFnRef.current?.();
   }, [resetToken]);
+
+  // Scripted feed/kill sweep — an idle/tour pass through Pearson's named
+  // regimes (see PRESET_SWEEP above), morphing the LIVE simulation from
+  // one pattern language to the next rather than reseeding between them,
+  // so the transition itself is watchable. Skipped under reduced motion,
+  // same as every other purely-decorative continuous motion in this app.
+  useEffect(() => {
+    if (!active || !autoplay || reduceMotion) return undefined;
+    const handle = uniformsHandleRef.current;
+    if (!handle) return undefined;
+
+    autoplayActiveRef.current = true;
+    const sweep = { feed: DEFAULT_FEED, kill: DEFAULT_KILL };
+    const tl = gsap.timeline({
+      onUpdate: () => {
+        handle.sim.uF.value = sweep.feed;
+        handle.sim.uK.value = sweep.kill;
+      },
+      onComplete: () => { autoplayActiveRef.current = false; },
+    });
+    PRESET_SWEEP.forEach((preset) => {
+      tl.to(sweep, { feed: preset.feed, kill: preset.kill, duration: SWEEP_EASE_S, ease: "sine.inOut" })
+        .to(sweep, { duration: SWEEP_HOLD_S });
+    });
+
+    return () => {
+      tl.kill();
+      autoplayActiveRef.current = false;
+    };
+  }, [active, autoplay, reduceMotion]);
 
   return (
     <canvas
