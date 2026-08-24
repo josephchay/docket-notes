@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import gsap from "gsap";
 
 import { resolveCssColor } from "../History/HistoryAmbient";
 import { NOTE_COLORS } from "../../constants/colors";
@@ -89,6 +90,35 @@ const PICK_RADIUS = 46; // px — screen-space click tolerance for grabbing a pa
 const ROTATE_SPEED = 0.22; // rad/s
 const PHYSICS_DT_MAX = 0.05;
 
+// Release-fling: the pointer's own last swipe velocity (converted from NDC
+// to world units at the grabbed particle's depth, the same project/
+// unproject trick the grab spring already uses) is added as a one-time
+// impulse to particle.vel right as it's let go — the grab spring's own
+// heavy GRAB_SPRING_DAMPING mostly damps out velocity WHILE dragging (it's
+// tuned for a smooth, controlled follow, not for building up throw speed),
+// so without this a "flick and release" would read as barely more than a
+// slow drift back home.
+const FLING_SAMPLE_DT = 1 / 60;
+const FLING_STRENGTH = 1.0;
+
+// Double-click/tap toggles the whole lattice between the cuboid arrangement
+// and a Fibonacci-sphere one — a second named target for restLocal, blended
+// per-frame by morphState.t (see tick() below) rather than a separate
+// tween-the-position system, so the existing spring integrator does all the
+// actual morphing motion itself once its target is time-varying.
+const SPHERE_RADIUS = 1.8;
+const MORPH_DURATION = 0.9;
+
+// Assembly intro: each particle starts scattered outward from its own
+// lattice point and gets pulled home by the SAME spring integrator as
+// always, just with its restoring strength ramped from 0 to full over
+// ASSEMBLY_DURATION (see assembly.k below) instead of snapping to full
+// strength the instant the component mounts — no separate position-tween
+// needed, the existing integrator does the assembling on its own once it
+// has a nonzero k to pull with.
+const ASSEMBLY_SCATTER = 3.5; // world units
+const ASSEMBLY_DURATION = 0.75;
+
 const VERT = `
   void main() {
     gl_Position = vec4(position, 1.0);
@@ -115,6 +145,13 @@ const FRAG = `
   uniform float uDpr;
   uniform vec3 uBalls[${ PARTICLE_COUNT }];
   uniform vec3 uBallColors[${ PARTICLE_COUNT }];
+  // 0..1 per particle, VELOCITY_CLAMP-normalized real speed (see tick()) —
+  // a fast-moving particle (freshly repelled, grabbed, or just released
+  // from a fling) both flares its own field radius wider and flashes
+  // toward white, then relaxes back to its resting look as SPRING_DAMPING
+  // bleeds its velocity off. Reuses the exact gaussian/colorSum
+  // accumulation already below, just modulated per-particle by this.
+  uniform float uBallEnergy[${ PARTICLE_COUNT }];
   uniform vec3 uRim;
   uniform vec3 uBg;
 
@@ -126,10 +163,13 @@ const FRAG = `
     vec3 colorSum = vec3(0.0);
     for (int i = 0; i < ${ PARTICLE_COUNT }; i++) {
       vec3 b = uBalls[i];
+      float energy = uBallEnergy[i];
+      float radiusBoost = 1.0 + energy * 0.35;
       vec2 d = p - b.xy;
-      float contribution = exp(-dot(d, d) / (b.z * b.z));
+      float contribution = exp(-dot(d, d) / (b.z * b.z * radiusBoost * radiusBoost));
       field += contribution;
-      colorSum += uBallColors[i] * contribution;
+      vec3 tint = mix(uBallColors[i], vec3(1.0), energy * 0.5);
+      colorSum += tint * contribution;
     }
 
     vec3 blended = field > 0.0001 ? colorSum / field : uRim;
@@ -154,6 +194,10 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
   const canvasRef = useRef(null);
   const reduceMotionRef = useRef(reduceMotion);
   reduceMotionRef.current = reduceMotion;
+  // Lets the separate reduceMotion-watching effect below reach into the
+  // mount effect's own live assembly/morph tweens — mirrors the
+  // uniformsHandleRef pattern established in AmbientField.jsx's own round.
+  const cuboidHandleRef = useRef(null);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -207,6 +251,7 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
       // below) don't change with the light/dark theme, so they're set once
       // here and never touched by the theme observer further down.
       uBallColors: { value: Array.from({ length: PARTICLE_COUNT }, () => new THREE.Color()) },
+      uBallEnergy: { value: new Array(PARTICLE_COUNT).fill(0) },
       uRim: { value: new THREE.Color(resolveCssColor("var(--page-bg-color)")) },
       uBg: { value: new THREE.Color(resolveCssColor("var(--page-bg-color)")) },
     };
@@ -237,6 +282,10 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
     // The lattice itself: each particle's own rest point (unrotated, local
     // space), current position, and velocity.
     const half = { x: (NX - 1) / 2, y: (NY - 1) / 2, z: (NZ - 1) / 2 };
+    // A Fibonacci sphere — points evenly distributed over a sphere's
+    // surface via the golden-angle spiral construction — as the second
+    // named shape restLocal can morph toward (see morphState.t in tick()).
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
     const particles = [];
     for (let ix = 0; ix < NX; ix++) {
       for (let iy = 0; iy < NY; iy++) {
@@ -247,29 +296,114 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
             (iz - half.z) * SPACING,
           );
           const index = particles.length;
+          const sy = 1 - (index / (PARTICLE_COUNT - 1)) * 2; // 1..-1
+          const ringRadius = Math.sqrt(Math.max(0, 1 - sy * sy));
+          const theta = goldenAngle * index;
+          const sphereLocal = new THREE.Vector3(
+            Math.cos(theta) * ringRadius,
+            sy,
+            Math.sin(theta) * ringRadius,
+          ).multiplyScalar(SPHERE_RADIUS);
+
           uniforms.uBallColors.value[index].copy(palette[(ix + iy + iz) % palette.length]);
+          // Assembly intro: starts scattered outward from its own lattice
+          // point rather than already resting there — skipped under
+          // reduceMotion, which starts the lattice already fully formed
+          // (assembly.k below is seeded at 1 in that case).
+          const pos = restLocal.clone();
+          if (!reduceMotionRef.current) {
+            const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+            pos.addScaledVector(dir, ASSEMBLY_SCATTER);
+          }
           particles.push({
             restLocal,
+            sphereLocal,
             restWorld: restLocal.clone(),
-            pos: restLocal.clone(),
+            pos,
             vel: new THREE.Vector3(),
           });
         }
       }
     }
 
+    // Assembly intro: k ramps 0->1 over ASSEMBLY_DURATION and multiplies
+    // the normal (non-grabbed) spring constant in tick() below, so the
+    // scattered particles above visibly gather themselves home under the
+    // same integrator rather than a separate position tween. Reduced
+    // motion skips the tween and starts at full strength (k=1) instead.
+    const assembly = { k: reduceMotionRef.current ? 1 : 0 };
+    const assemblyTween = reduceMotionRef.current
+      ? null
+      : gsap.to(assembly, { k: 1, duration: ASSEMBLY_DURATION, ease: "power2.out" });
+
+    // Double-click/tap toggles between the cuboid and sphere targets —
+    // blended into restWorld each frame by morphState.t (see tick()).
+    const morphState = { t: 0 };
+    let morphTween = null;
+    let morphTarget = 0;
+    const handleDoubleClick = () => {
+      if (reduceMotionRef.current) return;
+      morphTarget = morphState.t > 0.5 ? 0 : 1;
+      morphTween?.kill();
+      morphTween = gsap.to(morphState, { t: morphTarget, duration: MORPH_DURATION, ease: "power2.inOut" });
+    };
+
+    // reduceMotion is a live-toggleable prop on this same mounted instance
+    // (SettingsPanel's own "Reduce motion" switch, no remount involved),
+    // unlike every other reduceMotion check in this file — which only ever
+    // gates something from STARTING — this needs to actively interrupt
+    // whichever of the two tweens above might already be mid-flight the
+    // instant it flips true, jumping straight to each one's own end state
+    // rather than freezing partway (assembly.k=1 so the lattice reads as
+    // fully formed, morphState.t snapped to whichever shape it was already
+    // headed toward) — the same "skip the animated path, land on the
+    // target" rule reduceMotion gets everywhere else in this app.
+    cuboidHandleRef.current = () => {
+      assemblyTween?.kill();
+      assembly.k = 1;
+      morphTween?.kill();
+      morphTween = null;
+      morphState.t = morphTarget;
+    };
+    canvas.addEventListener("dblclick", handleDoubleClick);
+
     // Pointer tracked in NDC (-1..1), the coordinate space Camera.project
     // already returns and Camera.unproject already expects — no separate
     // pixel→NDC conversion needed anywhere else below.
     const pointerNdc = { x: 2, y: 2 }; // starts well off-screen so nothing repels before a real pointer event
+    // NDC units/s, refreshed once per tick() frame (see the pointerSpeed
+    // block below) — read by handlePointerUp's own fling impulse so a
+    // release always uses the most recently measured swipe velocity.
+    const pointerVelNdc = { x: 0, y: 0 };
     const handlePointerMove = (e) => {
       const rect = canvas.getBoundingClientRect();
       pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       pointerNdc.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
     };
-    const handlePointerLeave = () => { pointerNdc.x = 2; pointerNdc.y = 2; };
+    // A drag that carries the cursor past the canvas's own edge (a fast
+    // flick, matching handlePointerUp's own window-level listener below)
+    // would otherwise go untracked here — canvas-scoped pointermove simply
+    // stops firing once the cursor leaves it. Gated on an active grab so
+    // the ordinary ambient cursor-repulsion case stays canvas-scoped only,
+    // unchanged from before.
+    const handleWindowPointerMove = (e) => {
+      if (grabbed === -1) return;
+      handlePointerMove(e);
+    };
+    // Snapping pointerNdc to the off-screen sentinel here used to also fire
+    // mid-drag the instant the cursor left the canvas — corrupting both the
+    // live grab target (which would freeze onto that sentinel's own world
+    // position) and the release-fling velocity (a synthetic jump to the
+    // sentinel reads as an enormous, bogus swipe). Skipped entirely while a
+    // particle is grabbed; handleWindowPointerMove above keeps pointerNdc
+    // live instead until the real pointerup actually releases it.
+    const handlePointerLeave = () => {
+      if (grabbed !== -1) return;
+      pointerNdc.x = 2; pointerNdc.y = 2;
+    };
     canvas.addEventListener("pointermove", handlePointerMove);
     canvas.addEventListener("pointerleave", handlePointerLeave);
+    window.addEventListener("pointermove", handleWindowPointerMove);
 
     // Which particle (if any) is currently held — picked by nearest
     // screen-space distance against last frame's own rendered ball
@@ -296,7 +430,27 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
       }
       grabbed = nearest;
     };
-    const handlePointerUp = () => { grabbed = -1; };
+    const handlePointerUp = () => {
+      if (grabbed !== -1 && !reduceMotionRef.current) {
+        const particle = particles[grabbed];
+        // Same project/unproject trick the grab spring itself already uses
+        // to place the cursor in 3D at the particle's own depth — sampled
+        // at two nearby NDC points (now, and one FLING_SAMPLE_DT earlier
+        // per the last measured swipe velocity) to derive a real world-
+        // space velocity vector, added as a one-time impulse on release.
+        const depthZ = new THREE.Vector3().copy(particle.pos).project(worldCamera).z;
+        const p0 = new THREE.Vector3(
+          pointerNdc.x - pointerVelNdc.x * FLING_SAMPLE_DT,
+          pointerNdc.y - pointerVelNdc.y * FLING_SAMPLE_DT,
+          depthZ,
+        ).unproject(worldCamera);
+        const p1 = new THREE.Vector3(pointerNdc.x, pointerNdc.y, depthZ).unproject(worldCamera);
+        particle.vel.x += ((p1.x - p0.x) / FLING_SAMPLE_DT) * FLING_STRENGTH;
+        particle.vel.y += ((p1.y - p0.y) / FLING_SAMPLE_DT) * FLING_STRENGTH;
+        particle.vel.z += ((p1.z - p0.z) / FLING_SAMPLE_DT) * FLING_STRENGTH;
+      }
+      grabbed = -1;
+    };
     canvas.addEventListener("pointerdown", handlePointerDown);
     window.addEventListener("pointerup", handlePointerUp);
 
@@ -307,6 +461,7 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
 
     const projected = new THREE.Vector3();
     const cursorAtDepth = new THREE.Vector3();
+    const morphLocal = new THREE.Vector3();
     const mutualForce = Array.from({ length: PARTICLE_COUNT }, () => ({ x: 0, y: 0, z: 0 }));
     const prevPointerNdc = { x: 2, y: 2 };
     const rotationMatrix = new THREE.Matrix4();
@@ -327,8 +482,12 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
       // a real pointermove first lands would otherwise spike this) reads as
       // zero. dt is already clamped above, so this can't spike from a huge
       // divide-by-tiny-dt either.
-      const pointerSpeed = Math.hypot(pointerNdc.x - prevPointerNdc.x, pointerNdc.y - prevPointerNdc.y) / dt;
+      const dxNdc = pointerNdc.x - prevPointerNdc.x;
+      const dyNdc = pointerNdc.y - prevPointerNdc.y;
+      const pointerSpeed = Math.hypot(dxNdc, dyNdc) / dt;
       const speedBoost = Math.min(REPEL_SPEED_MAX_BOOST, pointerSpeed * REPEL_SPEED_GAIN);
+      pointerVelNdc.x = dxNdc / dt;
+      pointerVelNdc.y = dyNdc / dt;
       prevPointerNdc.x = pointerNdc.x;
       prevPointerNdc.y = pointerNdc.y;
 
@@ -350,7 +509,15 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
             const dist = Math.max(MUTUAL_MIN_DIST, Math.hypot(dx, dy, dz));
             if (dist >= MUTUAL_RANGE) continue;
 
-            const push = MUTUAL_K / (dist * dist);
+            // Scaled by the same assembly.k ramp as the restoring spring
+            // (see tick()'s own k = SPRING_K * assembly.k below) — without
+            // this, particles scattered for the assembly intro can land
+            // within MUTUAL_RANGE of each other by pure chance and shove
+            // at full personal-space strength while the spring pulling
+            // them home is still barely ramped up, an unrelated jostle
+            // (and possible surprise impact-sound cue) the moment this
+            // panel opens.
+            const push = (MUTUAL_K * assembly.k) / (dist * dist);
             const fx = (dx / dist) * push;
             const fy = (dy / dist) * push;
             const fz = (dz / dist) * push;
@@ -367,15 +534,23 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
 
       for (let i = 0; i < particles.length; i++) {
         const particle = particles[i];
-        particle.restWorld.copy(particle.restLocal).applyMatrix4(rotationMatrix);
+        // Blends toward the sphere target as morphState.t goes 0->1 (see
+        // handleDoubleClick above) before rotating — a genuinely time-
+        // varying restLocal is all the spring integrator below needs to
+        // morph the whole lattice on its own, no separate tween-the-
+        // position code required.
+        morphLocal.lerpVectors(particle.restLocal, particle.sphereLocal, morphState.t);
+        particle.restWorld.copy(morphLocal).applyMatrix4(rotationMatrix);
         const isGrabbed = i === grabbed;
 
         // A held particle springs toward the cursor's own 3D position (at
         // its own depth) on the stiffer GRAB_SPRING instead of toward its
         // lattice point on the normal one — everyone else keeps springing
-        // home as usual.
+        // home as usual, at a strength ramped by the assembly intro above
+        // (1 once it's finished, so this is a no-op past the first
+        // ASSEMBLY_DURATION seconds of the component's life).
         let targetX = particle.restWorld.x, targetY = particle.restWorld.y, targetZ = particle.restWorld.z;
-        let k = SPRING_K, damping = SPRING_DAMPING;
+        let k = SPRING_K * assembly.k, damping = SPRING_DAMPING;
 
         if (isGrabbed && !reduceMotionRef.current) {
           projected.copy(particle.pos).project(worldCamera);
@@ -417,8 +592,15 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
         particle.vel.y += (ay + ry + mutualForce[i].y) * dt;
         particle.vel.z += (az + rz + mutualForce[i].z) * dt;
 
-        const speed = particle.vel.length();
-        if (speed > VELOCITY_CLAMP) particle.vel.multiplyScalar(VELOCITY_CLAMP / speed);
+        let speed = particle.vel.length();
+        if (speed > VELOCITY_CLAMP) {
+          particle.vel.multiplyScalar(VELOCITY_CLAMP / speed);
+          speed = VELOCITY_CLAMP;
+        }
+        // Reuses VELOCITY_CLAMP as the normalization reference — the clamp
+        // just above guarantees speed never exceeds it, so this is always
+        // already in [0,1] with no separate Math.min needed.
+        uniforms.uBallEnergy.value[i] = speed / VELOCITY_CLAMP;
 
         particle.pos.x += particle.vel.x * dt;
         particle.pos.y += particle.vel.y * dt;
@@ -477,10 +659,15 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
 
     return () => {
       if (raf) cancelAnimationFrame(raf);
+      assemblyTween?.kill();
+      morphTween?.kill();
+      cuboidHandleRef.current = null;
       document.removeEventListener("visibilitychange", handleVisibility);
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerleave", handlePointerLeave);
       canvas.removeEventListener("pointerdown", handlePointerDown);
+      canvas.removeEventListener("dblclick", handleDoubleClick);
+      window.removeEventListener("pointermove", handleWindowPointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       resizeObserver.disconnect();
       themeObserver.disconnect();
@@ -489,6 +676,16 @@ const ParticleCuboid = ({ active, reduceMotion = false }) => {
       renderer.dispose();
     };
   }, [active]);
+
+  // reduceMotion can flip live on an already-mounted instance (see
+  // cuboidHandleRef's own comment above) — this is what actually reacts to
+  // that, immediately snapping any in-flight assembly/morph tween to its
+  // resting state rather than letting it keep animating to completion.
+  useEffect(() => {
+    if (!reduceMotion) return undefined;
+    cuboidHandleRef.current?.();
+    return undefined;
+  }, [reduceMotion]);
 
   // No width/height attributes — the canvas fills its parent (position:
   // absolute; inset:0, see ParticleCuboid.css) and the ResizeObserver above
