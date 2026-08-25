@@ -1,0 +1,60 @@
+/* Zero-size — this <svg> exists purely to host the per-instance gooey
+   filter def (see filterId in SheetPanel.jsx), never to render anything
+   itself. Same convention as QuickDock's own .quick-dock-splash-defs. */
+.sheet-panel-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/* A small grabber bar at the top of every sheet — the one place drag="y"
+   is actually armed from (see dragControls in SheetPanel.jsx), so a
+   caller's own scrollable content is never mistaken for a dismiss drag.
+   touch-action: none keeps a touch-drag here from also trying to scroll
+   the page underneath. */
+.sheet-panel-handle {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--page-ink-color);
+  opacity: .18;
+  cursor: grab;
+  touch-action: none;
+}
+
+.sheet-panel-handle:active {
+  cursor: grabbing;
+}
+
+/* Specular sheen — opacity/background-position both driven live from
+   rotateX (see handlePanelUpdate in SheetPanel.jsx); border-radius:inherit
+   keeps it clipped to whatever radius the panel itself is currently
+   animating through, regardless of which caller's own `radius` prop is in
+   play. */
+.sheet-panel-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  overflow: hidden;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, .85) 50%, transparent 65%);
+  background-size: 240% 240%;
+  background-position: 0% 0%;
+  opacity: 0;
+  mix-blend-mode: overlay;
+}
+
+/* Opt-in content stagger (see staggerContent in SheetPanel.jsx) — display:
+   contents means this wrapper generates no box of its own, so its children
+   become direct flex/grid items of the actual panel underneath exactly as
+   if this element weren't there at all. Several panels' own panelClassName
+   (.insights-panel, .settings-panel, .trash-panel, .sprint-panel, ...) lay
+   their direct children out via display:flex; a real wrapper box here
+   would collapse that into a single flex item and break the layout. */
+.sheet-panel-stagger {
+  display: contents;
+}
