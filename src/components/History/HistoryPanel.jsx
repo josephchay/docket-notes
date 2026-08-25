@@ -1582,7 +1582,7 @@ const HistoryPanel = ({ timeline, cursor, onJump, branchStash = [], onRestoreBra
                       {
                         previewEntry ? (
                           <>
-                            <HistoryAmbient color={ previewStyle.color } reduceMotion={ reduceMotion } />
+                            <HistoryAmbient color={ previewStyle.color } />
                             <div className="history-preview-header">
                               <span className="history-preview-icon" style={{ "--action-color": previewStyle.color }}>
                                 <PreviewIcon />

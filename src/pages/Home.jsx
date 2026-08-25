@@ -1467,21 +1467,6 @@ const Home = () => {
         reduceMotion={ reduceMotion }
         celebration={ celebration }
       />
-      {/* <GravityFieldPanel reduceMotion={ reduceMotion } />
-      <FluidFieldPanel reduceMotion={ reduceMotion } />
-      <AudioWaveStringPanel reduceMotion={ reduceMotion } />
-      <FluidVisualizerPanel reduceMotion={ reduceMotion } />
-      <ClothPanel reduceMotion={ reduceMotion } />
-      <InkBloomPanel reduceMotion={ reduceMotion } />
-      <ChladniPanel reduceMotion={ reduceMotion } />
-      <BoidPanel reduceMotion={ reduceMotion } />
-      <CrystalPanel reduceMotion={ reduceMotion } />
-      <PendulumPanel reduceMotion={ reduceMotion } />
-      <LeniaPanel reduceMotion={ reduceMotion } />
-      <EpicyclePanel reduceMotion={ reduceMotion } />
-      <InterferencePanel reduceMotion={ reduceMotion } />
-      <LSystemPanel reduceMotion={ reduceMotion } />
-      <MetaballPanel reduceMotion={ reduceMotion } /> */}
       <NoteConstellationPanel notes={ notes } openEditor={ setEditingNoteId } reduceMotion={ reduceMotion } />
       <TrashPanel
         entries={ deletedNotes }
