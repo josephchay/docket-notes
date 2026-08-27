@@ -133,7 +133,10 @@
 .note .header {
   right: 0;
   top: 0;
-  justify-content: flex-end;
+  /* space-between (inherited from the shared rule above) rather than the
+     flex-end this used to override — the star is the header's only child
+     now, pinned to the end via its own margin-left: auto below rather
+     than by this alone. */
 }
 
 .note .header .star,
@@ -151,10 +154,16 @@
   background: var(--black-color);
 }
 
+/* Pinned to the header's own far end via margin-left: auto rather than
+   relying purely on the parent's justify-content — the star is the
+   header's only child, and a bare flex row with one child under
+   space-between would otherwise land it at the START, not the end. */
 .note .header .star {
   position: relative;
   height: 34px;
   width: 34px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 /* The handful of ink drops thrown when a note is starred — see

@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
-import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle, FaTag, FaCalendarDay, FaListCheck } from "react-icons/fa6";
+import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle, FaTag, FaCalendarDay, FaListCheck, FaBookBible, FaBookOpen, FaMagnifyingGlass, FaLocationCrosshairs } from "react-icons/fa6";
 import { FaEye } from "react-icons/fa";
 
 import { NOTE_COLORS } from "../../constants/colors";
@@ -12,8 +12,14 @@ import HistoryAmbient from "../History/HistoryAmbient";
 import { EXIT_SPRING, coinFlip } from "../Motion";
 import { dueLabel } from "../../utils/date";
 import { isChecklistText, toChecklistText, fromChecklistText } from "../../utils/checklist";
+import { isStudyText, toStudyText, fromStudyText } from "../../utils/study";
+import { parseCitations, parseBareCitation, findPrecedingSpan } from "../../utils/citations";
+import { fetchVerseText, isFetchablePath } from "../../utils/bibleApi";
 import ChecklistBody from "../Note/ChecklistBody";
+import StudyBody from "../Note/StudyBody";
 import DueDatePicker from "./DueDatePicker";
+import ReferencePicker from "./ReferencePicker";
+import HoverCitationOverlay from "./HoverCitationOverlay";
 
 import "./NoteEditor.css";
 
@@ -94,17 +100,342 @@ const NoteEditor = ({
   updateTags,
   setNoteDueDate,
   toggleChecklist,
+  toggleStudy,
+  scriptureIndex,
+  onFindCitation,
+  tagCitation,
 }) => {
   const [draftTitle, setDraftTitle] = useState(note.title);
   const [draftText, setDraftText] = useState(note.text);
   const [size, setSize] = useState("roomy");
   const [copied, setCopied] = useState(false);
 
-  // The body renders as an interactive checklist the moment its own text
-  // reads as one — see Note.jsx's identical read for why this is derived
-  // rather than a stored mode.
+  // The body renders as an interactive checklist or a three-part Bible
+  // study the moment its own text reads as one or the other — see Note.jsx
+  // and utils/checklist.js/utils/study.js for why both are derived rather
+  // than a stored mode. The two are mutually exclusive by construction
+  // (their marker grammars don't overlap), so at most one of these is ever
+  // true.
   const isChecklist = isChecklistText(draftText);
+  const isStudy = isStudyText(draftText);
   const due = dueLabel(note.dueAt);
+
+  // Inline parenthetical citations woven through the note's own prose —
+  // "(Genesis 1:1:7, 1:3:9-10)" — a purely derived read (see
+  // utils/citations.js), never a stored mode the way checklist/study are;
+  // it just re-scans whenever the text itself changes, and works the same
+  // regardless of whether the body is plain text, a checklist, or a study.
+  const citations = useMemo(() => parseCitations(draftText), [draftText]);
+
+  // A highlighted piece of plain text offers a scripture reference — two
+  // different flavors depending on what the selection already reads as.
+  // If it's already a complete, valid citation on its own ("Genesis 1:1"
+  // typed inline, not "(Genesis 1:1)" yet — see parseBareCitation), the
+  // offer is a one-tap "Tag it" that just wraps it in place, no picker
+  // needed. Any OTHER highlighted text — a sentence, a phrase, anything at
+  // all — offers "Add reference" instead, opening ReferencePicker to
+  // choose one, which then gets appended as a trailing parenthetical
+  // citation right after the highlight, the exact style this app's own
+  // placeholder quotes and the user's own original sample writing already
+  // use ("...the earth was without form and void (Genesis 1:2)."). Both
+  // share one state shape (start/end/text, a `kind` discriminant) since
+  // they're mutually-exclusive outcomes of the same selection-
+  // classification decision, not two independent concerns that happen to
+  // overlap — keeping them one state means the staleness guard below only
+  // has to be written, and trusted, once. Cleared the instant the
+  // selection changes to something the current kind's own offer no longer
+  // applies to.
+  const [pendingSelection, setPendingSelection] = useState(null);
+
+  // The native `select` event alone is unreliable for this — several
+  // browsers don't fire it for a keyboard-driven selection (Shift+Arrow),
+  // only a mouse drag — so this is also wired to onMouseUp/onKeyUp on the
+  // same field (see the textarea below), the standard belt-and-braces way
+  // text editors track "did the selection just change" across both input
+  // methods.
+  const handleTextSelect = (e) => {
+    if (note.lock) { setPendingSelection(null); return; }
+
+    const { selectionStart, selectionEnd } = e.target;
+    if (selectionStart === selectionEnd) { setPendingSelection(null); return; }
+
+    // Trimmed before it's ever stored, not just before matching — a
+    // double-click or drag that happens to catch a trailing space would
+    // otherwise get wrapped/inserted-after verbatim later, a real, if
+    // cosmetic, gap. start/end are adjusted inward by the same amount
+    // trimmed off, so they still point at exactly the matched text, not
+    // the original untrimmed span.
+    const raw = draftText.slice(selectionStart, selectionEnd);
+    const leading = raw.match(/^\s*/)[0].length;
+    const trailing = raw.match(/\s*$/)[0].length;
+    const start = selectionStart + leading;
+    const end = selectionEnd - trailing;
+    const selected = draftText.slice(start, end);
+    // A selection that's entirely whitespace trims down to nothing — there
+    // is no text left to offer either flavor of reference for.
+    if (!selected) { setPendingSelection(null); return; }
+
+    const parsed = parseBareCitation(selected);
+    if (parsed) {
+      setPendingSelection({ kind: "citation", start, end, text: selected, ...parsed });
+      return;
+    }
+
+    // Does this selection fall within the sentence/clause an EXISTING
+    // citation already in this note is attached to (see findPrecedingSpan)?
+    // If so, offer to reveal that citation's own verse text instead of
+    // offering to attach a brand new, different one to the same prose.
+    const linked = citations.find((citation) => {
+      const span = findPrecedingSpan(draftText, citation);
+      return start < span.end && end > span.start;
+    });
+    if (linked) {
+      setPendingSelection({ kind: "linked", start, end, text: selected, citation: linked });
+      return;
+    }
+
+    setPendingSelection({ kind: "annotate", start, end, text: selected });
+  };
+
+  // Wraps the current selection in parens right where it sits — the exact
+  // syntax parseCitations already reads — rather than opening any kind of
+  // reference-entry form, since the selected text already IS a complete,
+  // valid citation on its own; all this has to do is give it the
+  // punctuation that turns it from plain prose into one the app recognizes.
+  const tagSelectionAsCitation = () => {
+    if (note.lock || !pendingSelection || pendingSelection.kind !== "citation") return;
+    const { start, end, text } = pendingSelection;
+
+    // pendingSelection's own start/end are only ever as fresh as the
+    // selection event that set them — draftText itself can change out
+    // from under it without that event ever re-firing (an undo/redo
+    // landing while the offer is still showing, note.text syncing in from
+    // elsewhere, even just switching to checklist/study mode, which also
+    // clears this explicitly below but is worth a belt-and-braces check
+    // here too). Re-reading the same span and confirming it still holds
+    // exactly the text it did when selected is what actually keeps this
+    // safe against every one of those causes at once, rather than trying
+    // to separately catch each one — a slice that no longer matches means
+    // "stale," and this simply declines rather than corrupting whatever
+    // now sits at that old offset.
+    if (draftText.slice(start, end) !== text) { setPendingSelection(null); return; }
+
+    const nextText = `${ draftText.slice(0, start) }(${ text })${ draftText.slice(end) }`;
+
+    // Committed as its own named action (tagCitation, see Home.jsx) rather
+    // than through the plain debounced handleText path every keystroke
+    // uses — the same reasoning as the checklist/study toggles just above:
+    // cancel the still-armed debounce first so it can't fire moments later
+    // and silently overwrite this with stale pre-tag text, and update
+    // draftText locally so the wrap is instant regardless of the field's
+    // own focus state.
+    cancelPendingText();
+    setDraftText(nextText);
+    tagCitation(note.id, nextText);
+    setPendingSelection(null);
+
+    // Re-selects the same text (now shifted one character by the opening
+    // paren just inserted) so the visible selection lands right back on
+    // the citation it always was, rather than collapsing to a bare caret.
+    requestAnimationFrame(() => {
+      textRef.current?.focus({ preventScroll: true });
+      textRef.current?.setSelectionRange(start + 1, end + 1);
+    });
+  };
+
+  // The "Add reference" half — opens ReferencePicker rather than acting
+  // immediately, since arbitrary text (unlike an already-citation-shaped
+  // selection) needs a real book/chapter/verse choice, not just
+  // punctuation. Captures the insertion point (right after the highlight)
+  // and the highlight's own text into a ref rather than leaving it in
+  // pendingSelection, which is cleared immediately below — the offer
+  // banner's own job is done the moment this opens; ReferencePicker takes
+  // over from here, and may stay open a while (browsing, narrowing to a
+  // verse) with no further need for the original offer's own state.
+  const annotationTargetRef = useRef(null);
+  // The picker's own onChange can fire more than once per open session
+  // (a chapter pick that deliberately doesn't close, later refined to a
+  // verse) — rather than writing into the text on every intermediate
+  // value (noisy, and would spam pushUndo the same way addendum #7 already
+  // flagged for the singular reference field), this just remembers the
+  // LATEST picked value in a ref and only ever touches note.text once,
+  // when the picker actually closes. A ref rather than state specifically
+  // because onChange and onClose can both fire synchronously back to back
+  // from the same click (see ReferencePicker's own commitAndClose) — state
+  // set in onChange wouldn't be visible yet to onClose's own closure in
+  // that same call, a ref reads back immediately with no such lag.
+  const latestAnnotationRef = useRef(null);
+  const [annotationPickerOpen, setAnnotationPickerOpen] = useState(false);
+  const annotationTriggerRef = useRef(null);
+  // Forces a fresh ReferencePicker instance every time "Add reference" is
+  // clicked, bumped in openAnnotationPicker below — without this, clicking
+  // it a SECOND time while an earlier session is already open (open stays
+  // true -> true, a no-op transition) leaves the picker's own internal
+  // step/book/chapter/search/position state exactly as browsing left it,
+  // now silently misattached to a brand new highlight. A changed `key`
+  // guarantees React discards and remounts it clean every time, regardless
+  // of whether `open` itself actually changed.
+  const [annotationPickerKey, setAnnotationPickerKey] = useState(0);
+
+  const openAnnotationPicker = () => {
+    if (note.lock || !pendingSelection || pendingSelection.kind !== "annotate") return;
+    annotationTargetRef.current = { insertAt: pendingSelection.end, selectionStart: pendingSelection.start, originalText: pendingSelection.text };
+    latestAnnotationRef.current = null;
+    setPendingSelection(null);
+    setAnnotationPickerKey((k) => k + 1);
+    setAnnotationPickerOpen(true);
+  };
+
+  const closeAnnotationPicker = () => {
+    setAnnotationPickerOpen(false);
+    const target = annotationTargetRef.current;
+    const reference = latestAnnotationRef.current;
+    annotationTargetRef.current = null;
+    latestAnnotationRef.current = null;
+    if (note.lock || !target || !reference) return;
+
+    // Same staleness discipline as tagSelectionAsCitation's own guard —
+    // the picker can sit open a while (browsing books, hovering chapters
+    // for a preview), plenty of time for the text around the original
+    // highlight to have changed underneath it (undo/redo, more typing).
+    // Re-verifying the exact span the highlight occupied is still intact
+    // right before ever touching the text is what keeps this from ever
+    // inserting a citation into the wrong place.
+    if (draftText.slice(target.selectionStart, target.insertAt) !== target.originalText) return;
+
+    // Never splice a new citation's parens into the middle of an EXISTING
+    // one — a highlight that happens to end partway through an adjacent
+    // "(Book c:v)" (a plausible imprecise drag when a citation sits right
+    // next to prose with no separating space) would otherwise nest a new
+    // paren group inside the old one's. That breaks both: parseCitations'
+    // own group regex can't match nested parens, so the ORIGINAL citation
+    // silently vanishes from the pill row, and the text itself is left
+    // visibly malformed ("(Genesis (Genesis 1:2) 1:1)"). If the natural
+    // insertion point falls inside an unclosed paren, push it forward to
+    // just past that group's own close instead — the new citation lands
+    // right after the existing one rather than inside it.
+    let insertAt = target.insertAt;
+    let depth = 0;
+    for (let i = 0; i < insertAt; i++) {
+      if (draftText[i] === "(") depth++;
+      else if (draftText[i] === ")") depth = Math.max(0, depth - 1);
+    }
+    if (depth > 0) {
+      const closeIndex = draftText.indexOf(")", insertAt);
+      if (closeIndex === -1) return; // an unterminated group — decline rather than guess
+      insertAt = closeIndex + 1;
+    }
+
+    cancelPendingText();
+    const nextText = `${ draftText.slice(0, insertAt) } (${ reference })${ draftText.slice(insertAt) }`;
+    setDraftText(nextText);
+    tagCitation(note.id, nextText);
+  };
+
+  // Proactively clears a pending selection offer the instant it goes
+  // stale, rather than only ever catching it reactively inside
+  // tagSelectionAsCitation's own guard above — that guard keeps the
+  // ACTION safe (it will never corrupt text), but on its own it leaves a
+  // dead offer button sitting on screen that silently does nothing when
+  // clicked, which reads as broken rather than safe. Three ways it goes
+  // stale: switching to checklist/study mode replaces the plain textarea
+  // entirely, so there's no longer a single field the old offsets could
+  // even mean anything against; draftText changing at those same offsets
+  // to something other than what was actually selected (an undo/redo
+  // landing, note.text syncing in from elsewhere) — checked the same way
+  // the action's own guard checks it, just ahead of a click rather than
+  // only at one; or, for a "linked" offer specifically, its `citation`
+  // going stale even though the {start,end,text} span it also carries
+  // still matches — findPrecedingSpan's span always ends right BEFORE the
+  // citation's own "(...)" text, so deleting only the citation elsewhere
+  // (e.g. via a History-panel jump, a sibling overlay that never unmounts
+  // this editor) leaves that prefix slice unchanged and the span check
+  // above none the wiser, the same reason previewCitation's own staleness
+  // effect just below checks citation identity against `citations`
+  // directly rather than trusting a text span.
+  useEffect(() => {
+    if (!pendingSelection) return;
+    if (note.lock || isChecklist || isStudy) { setPendingSelection(null); return; }
+    if (draftText.slice(pendingSelection.start, pendingSelection.end) !== pendingSelection.text) {
+      setPendingSelection(null);
+      return;
+    }
+    if (pendingSelection.kind === "linked" && !citations.some((c) => c.full === pendingSelection.citation.full)) {
+      setPendingSelection(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftText, isChecklist, isStudy, note.lock, citations]);
+
+  // Jumps to where a recognized citation actually lives in this note's own
+  // text — only meaningful in plain-text mode, where there's a single
+  // textarea to select within at all (a checklist/study body is several
+  // separate fields, none of which is "the" text this citation's own
+  // start/end offsets were measured against).
+  const selectCitationInText = (citation) => {
+    if (isChecklist || isStudy) return;
+    const field = textRef.current;
+    if (!field) return;
+
+    field.focus({ preventScroll: false });
+    field.setSelectionRange(citation.start, citation.end);
+  };
+
+  // The one place this app ever fetches anything — clicking a citation's
+  // own label asks bible-api.com what it actually says (see utils/
+  // bibleApi.js). Unlike the jump button, this has nothing to do with
+  // where the citation sits in THIS note's own text, so it works the same
+  // in checklist/study mode as in plain text, and needs no note.lock guard
+  // either — a read-only lookup, same as the magnifier's cross-note search
+  // right next to it. previewRequestRef guards against a slower first
+  // fetch landing after a second click already moved on to a different
+  // citation (or closed the preview) — without it, clicking pill A then
+  // quickly pill B could show A's answer under B's label the moment A's
+  // request finally resolves.
+  const [previewCitation, setPreviewCitation] = useState(null);
+  const [previewResult, setPreviewResult] = useState(null);
+  const previewRequestRef = useRef(0);
+
+  const togglePreview = (citation) => {
+    if (previewCitation === citation.full) {
+      previewRequestRef.current += 1;
+      setPreviewCitation(null);
+      setPreviewResult(null);
+      return;
+    }
+
+    const requestId = ++previewRequestRef.current;
+    setPreviewCitation(citation.full);
+    setPreviewResult({ status: "loading" });
+
+    fetchVerseText(citation).then((result) => {
+      if (previewRequestRef.current !== requestId) return;
+      setPreviewResult(result);
+    });
+  };
+
+  // Proactively closes a stale preview the same way pendingSelection's own
+  // effect above does — if the citation being previewed no longer appears
+  // in the note at all (its text was edited or deleted), there's nothing
+  // left for the open card to actually be showing text FOR.
+  useEffect(() => {
+    if (previewCitation && !citations.some((c) => c.full === previewCitation)) {
+      previewRequestRef.current += 1;
+      setPreviewCitation(null);
+      setPreviewResult(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [citations]);
+
+  // Strips whichever structured form (if either) is currently active back
+  // to plain text — the shared first step both toggle handlers below take
+  // before applying the OTHER form's markers, so switching directly from a
+  // checklist to a study (or back) never layers one marker grammar on top
+  // of the other's leftover syntax.
+  const normalizeStructuredText = (text) => {
+    if (isChecklistText(text)) return fromChecklistText(text);
+    if (isStudyText(text)) return fromStudyText(text);
+    return text;
+  };
 
   // Tags pop in bouncy, shrink away when removed. Notes from before this
   // feature existed simply have none yet.
@@ -133,6 +464,24 @@ const NoteEditor = ({
     updateTags(tags.filter((t) => t !== tag), note.id);
   };
 
+  // The annotation ReferencePicker is NOT inside any {!note.lock && (...)}
+  // or {!isChecklist && !isStudy && (...)} conditional the way the offer
+  // banner that opens it is — the picker itself is rendered unconditionally
+  // (only its own `open` prop controls visibility), so nothing unmounts it
+  // automatically the instant a lock or a mode switch makes it stop making
+  // sense. Both transitions are reachable while it's open WITHOUT the
+  // picker's own outside-pointerdown listener ever firing to close it
+  // first — a keyboard-activated (Enter/Space) toggle button fires only a
+  // `click`, never a `pointerdown` — so this force-closes it directly on
+  // either. Deliberately bypasses closeAnnotationPicker's own insert-
+  // whatever-was-last-picked step: locking, or leaving plain-text mode
+  // entirely, should discard whatever pick was still in progress, not race
+  // to sneak one last commit in right as the field it was even happening
+  // over stops existing.
+  useEffect(() => {
+    if (note.lock || isChecklist || isStudy) setAnnotationPickerOpen(false);
+  }, [note.lock, isChecklist, isStudy]);
+
   // The gluey wobble: whenever the paper opens or changes size it squashes
   // and stretches like jelly while the bouncy size spring overshoots.
   const jelly = useAnimationControls();
@@ -146,6 +495,7 @@ const NoteEditor = ({
   const lockTap = useJellyTap();
   const remindTap = useJellyTap();
   const checklistTap = useJellyTap();
+  const studyTap = useJellyTap();
   const copyTap = useJellyTap();
   const resizeTap = useJellyTap();
 
@@ -156,11 +506,18 @@ const NoteEditor = ({
   const closeTap = useJellyTap();
 
   const wobble = useCallback(() => {
+    // .start()'s own promise rejects when a fresh call on the same
+    // controls (the next resize, fired before this one's .6s settles)
+    // interrupts it mid-flight — a real, pre-existing gap this session's
+    // testing happened to surface by clicking resize faster than a person
+    // normally would, not anything the resize feature itself got wrong.
+    // The wobble is purely decorative, so a cancelled one is never an
+    // error worth surfacing — just nothing left to catch it before now.
     jelly.start({
       scaleX: [1, 1.05, .96, 1.02, 1],
       scaleY: [1, .94, 1.06, .98, 1],
       transition: { duration: .6, times: [0, .25, .5, .75, 1], ease: "easeInOut" },
-    });
+    }).catch(() => {});
   }, [jelly]);
 
   useEffect(() => {
@@ -173,6 +530,7 @@ const NoteEditor = ({
   const titleTimerRef = useRef(null);
   const textTimerRef = useRef(null);
   const copiedTimerRef = useRef(null);
+  const hoverOverlayRef = useRef(null);
 
   // The focus-draw ring (see FocusRing below) — measured via offsetLeft/
   // offsetTop/offsetWidth/offsetHeight rather than wrapping the title
@@ -498,13 +856,41 @@ const NoteEditor = ({
                     // over to this button without an intervening blur) —
                     // updating locally keeps the toggle instant and
                     // correct regardless of that timing.
-                    const nextText = isChecklist ? fromChecklistText(draftText) : toChecklistText(draftText);
+                    const nextText = isChecklist ? fromChecklistText(draftText) : toChecklistText(normalizeStructuredText(draftText));
                     setDraftText(nextText);
                     toggleChecklist(note.id, draftText);
                   } }
                 >
                   <motion.span animate={ checklistTap.jelly } style={{ display: "inline-flex" }}>
                     <FaListCheck className={ `note-editor-action-icon ${ isChecklist ? "light" : "" }` } />
+                  </motion.span>
+                </motion.button>
+                <motion.button
+                  type="button"
+                  aria-label={ isStudy ? "Turn this back into plain text" : "Turn this into a Bible study" }
+                  aria-pressed={ isStudy }
+                  disabled={ note.lock }
+                  className="note-editor-action"
+                  style={{
+                    backgroundColor: isStudy ? "var(--black-color)" : "var(--black-even-more-transclucent-color)",
+                    opacity: note.lock ? .4 : 1,
+                  }}
+                  whileHover={ note.lock ? undefined : { scale: 1.15, rotate: -8 } }
+                  whileTap={ note.lock ? undefined : { scale: .9 } }
+                  transition={ actionSpring }
+                  onTapStart={ studyTap.squash }
+                  onClick={ () => {
+                    if (note.lock) return;
+                    cancelPendingText();
+                    // Same instant-local-update reasoning as the checklist
+                    // toggle just above.
+                    const nextText = isStudy ? fromStudyText(draftText) : toStudyText(normalizeStructuredText(draftText));
+                    setDraftText(nextText);
+                    toggleStudy(note.id, draftText);
+                  } }
+                >
+                  <motion.span animate={ studyTap.jelly } style={{ display: "inline-flex" }}>
+                    <FaBookOpen className={ `note-editor-action-icon ${ isStudy ? "light" : "" }` } />
                   </motion.span>
                 </motion.button>
                 <motion.button
@@ -634,17 +1020,233 @@ const NoteEditor = ({
                   className="editor-checklist"
                   autoFocus={ !note.lock }
                 />
+              ) : isStudy ? (
+                <StudyBody
+                  text={ draftText }
+                  onChange={ handleText }
+                  locked={ note.lock }
+                  className="editor-study"
+                  autoFocus={ !note.lock }
+                />
               ) : (
-                <textarea
-                  ref={ textRef }
-                  readOnly={ note.lock }
-                  placeholder={ note.placeholder }
-                  value={ draftText }
-                  onChange={ (e) => handleText(e.target.value) }
-                  className={ `note-editor-text custom-scroll ${ note.color }-highlight` }
-                ></textarea>
+                <div className="note-editor-text-wrap">
+                  <textarea
+                    ref={ textRef }
+                    readOnly={ note.lock }
+                    placeholder={ note.placeholder }
+                    value={ draftText }
+                    onChange={ (e) => handleText(e.target.value) }
+                    onSelect={ handleTextSelect }
+                    onMouseUp={ handleTextSelect }
+                    onKeyUp={ handleTextSelect }
+                    onMouseMove={ (e) => hoverOverlayRef.current?.handleMouseMove(e) }
+                    onMouseLeave={ () => hoverOverlayRef.current?.clearHover() }
+                    className={ `note-editor-text custom-scroll ${ note.color }-highlight` }
+                  ></textarea>
+                  {/* A real hover affordance over the plain textarea above —
+                      see HoverCitationOverlay's own comment for how a
+                      native <textarea>, with no DOM node per character
+                      range, can be hovered at all. Mounted (and torn down)
+                      by this same ternary, note.lock included — this only
+                      ever reads, never mutates, the same as the citation
+                      pills' own hover-free click-to-preview. The textarea
+                      above owns the real pointer events (see its own
+                      z-index in NoteEditor.css) and forwards
+                      mousemove/mouseleave into this component via ref,
+                      since the overlay itself no longer sits on top. */}
+                  <HoverCitationOverlay
+                    ref={ hoverOverlayRef }
+                    text={ draftText }
+                    citations={ citations }
+                    textareaRef={ textRef }
+                  />
+                </div>
               )
             }
+            {/* Offered the instant a selection exists in the plain text
+                above — one of three readings, in priority order. A bare
+                "Genesis 1:1" already reads as a complete citation on its
+                own (no parens yet) and offers a one-tap "Tag it." Text
+                that falls within the sentence/clause an EXISTING citation
+                is already attached to (see findPrecedingSpan) offers to
+                reveal what that citation actually says instead — the
+                selection didn't create this association, it's just
+                recognizing one that's already there from how the citation
+                sits right after its own prose. Any OTHER highlighted text
+                — a sentence, a phrase, anything at all with no citation of
+                its own yet — offers "Add reference," opening
+                ReferencePicker to choose one and appending it as a
+                trailing citation right after the highlight. */}
+            <AnimatePresence>
+              {
+                pendingSelection && !isChecklist && !isStudy && !note.lock && (
+                  <motion.div
+                    className="note-editor-citation-offer"
+                    initial={{ opacity: 0, scale: .9, translateY: -6 }}
+                    animate={{ opacity: 1, scale: 1, translateY: 0 }}
+                    exit={{ opacity: 0, scale: .9, translateY: -6, transition: { duration: .15 } }}
+                    transition={{ type: "spring", stiffness: 420, damping: 22 }}
+                  >
+                    <FaBookBible className="note-editor-reference-icon" />
+                    {
+                      pendingSelection.kind === "citation" ? (
+                        <>
+                          <span>Tag “{ pendingSelection.text }” as a citation</span>
+                          <button type="button" onClick={ tagSelectionAsCitation }>
+                            Tag it
+                          </button>
+                        </>
+                      ) : pendingSelection.kind === "linked" ? (
+                        <>
+                          <span>This belongs to { pendingSelection.citation.full }</span>
+                          <button
+                            type="button"
+                            onClick={ () => { togglePreview(pendingSelection.citation); setPendingSelection(null); } }
+                          >
+                            Show verse
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span>Add a scripture reference to “{ pendingSelection.text }”</span>
+                          <button type="button" ref={ annotationTriggerRef } onClick={ openAnnotationPicker }>
+                            Add reference
+                          </button>
+                        </>
+                      )
+                    }
+                  </motion.div>
+                )
+              }
+            </AnimatePresence>
+            <ReferencePicker
+              key={ annotationPickerKey }
+              open={ annotationPickerOpen }
+              value={ null }
+              colorName={ note.color }
+              anchorRef={ annotationTriggerRef }
+              scriptureIndex={ scriptureIndex }
+              noteCitations={ citations }
+              onChange={ (reference) => { latestAnnotationRef.current = reference; } }
+              onClose={ closeAnnotationPicker }
+              onReturnHome={ () => { latestAnnotationRef.current = null; } }
+            />
+            {/* Every citation this note's own prose mentions, auto-detected
+                — a table of contents for a densely cross-referenced note.
+                Purely a read of the text just written, so it appears and
+                updates on its own with no toggle to find.
+                Each pill carries two distinct actions rather than one:
+                the crosshair jumps straight to where THIS citation sits
+                in this note's own text (plain-text mode only — see
+                selectCitationInText), the magnifier finds every OTHER
+                note mentioning the same passage. */}
+            {
+              citations.length > 0 && (
+                <motion.div
+                  className="note-editor-citations custom-scroll"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: .2 }}
+                >
+                  {
+                    citations.map((citation) => (
+                      <span key={ citation.full } className="note-editor-citation">
+                        {
+                          !isChecklist && !isStudy && (
+                            <motion.button
+                              type="button"
+                              aria-label={ `Jump to ${ citation.full } in this note` }
+                              title="Jump to it in this note"
+                              className="note-editor-citation-jump"
+                              whileHover={{ scale: 1.15 }}
+                              whileTap={{ scale: .88 }}
+                              transition={{ type: "spring", stiffness: 420, damping: 18 }}
+                              onClick={ () => selectCitationInText(citation) }
+                            >
+                              <FaLocationCrosshairs />
+                            </motion.button>
+                          )
+                        }
+                        <motion.button
+                          type="button"
+                          aria-label={ `${ previewCitation === citation.full ? "Hide" : "Show" } what ${ citation.full } says` }
+                          aria-pressed={ previewCitation === citation.full }
+                          title="Preview the verse text"
+                          className={ `note-editor-citation-label ${ previewCitation === citation.full ? "active" : "" }` }
+                          whileTap={{ scale: .96 }}
+                          transition={{ type: "spring", stiffness: 420, damping: 18 }}
+                          onClick={ () => togglePreview(citation) }
+                        >
+                          { citation.full }
+                        </motion.button>
+                        <motion.button
+                          type="button"
+                          aria-label={ `Find every note mentioning ${ citation.full }` }
+                          title="Find other notes on this passage"
+                          className="note-editor-citation-search"
+                          whileHover={{ scale: 1.15 }}
+                          whileTap={{ scale: .88 }}
+                          transition={{ type: "spring", stiffness: 420, damping: 18 }}
+                          onClick={ () => onFindCitation?.(citation.full) }
+                        >
+                          <FaMagnifyingGlass />
+                        </motion.button>
+                      </span>
+                    ))
+                  }
+                </motion.div>
+              )
+            }
+            {/* The verse text itself, fetched live from bible-api.com only
+                once a pill's own label is clicked (see togglePreview) —
+                never eagerly for the whole row, both because that service
+                is tightly rate-limited and because most citations in a
+                dense note are never actually re-read once written. A
+                three-number citation (this app's own chapter:verse:
+                subverse shorthand, see isFetchablePath) has no real
+                reference to look up at all, so it says so rather than
+                guessing at a verse that might not be the one meant. */}
+            <AnimatePresence>
+              {
+                previewCitation && (
+                  <motion.div
+                    className="note-editor-citation-preview"
+                    initial={{ opacity: 0, scale: .96, height: 0 }}
+                    animate={{ opacity: 1, scale: 1, height: "auto" }}
+                    exit={{ opacity: 0, scale: .96, height: 0, transition: { duration: .15 } }}
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  >
+                    <div className="note-editor-citation-preview-head">
+                      <FaBookOpen className="note-editor-citation-preview-icon" />
+                      <span>{ previewCitation }</span>
+                      <button
+                        type="button"
+                        aria-label="Close preview"
+                        className="note-editor-citation-preview-close"
+                        onClick={ () => togglePreview({ full: previewCitation }) }
+                      >
+                        <FaXmark />
+                      </button>
+                    </div>
+                    <div className="note-editor-citation-preview-body custom-scroll">
+                      {
+                        previewResult?.status === "loading" ? (
+                          <span className="note-editor-citation-preview-muted">Looking it up…</span>
+                        ) : previewResult?.status === "unsupported" ? (
+                          <span className="note-editor-citation-preview-muted">
+                            The third number here is this app's own shorthand, not a standard verse — no text to look up.
+                          </span>
+                        ) : previewResult?.status === "error" ? (
+                          <span className="note-editor-citation-preview-muted">{ previewResult.message || "Couldn't load this verse." }</span>
+                        ) : (
+                          <p>{ previewResult?.text }</p>
+                        )
+                      }
+                    </div>
+                  </motion.div>
+                )
+              }
+            </AnimatePresence>
             <div className="note-editor-footer">
               <div className="note-editor-footer-left">
                 <span className="note-editor-date">{ note.time }</span>
@@ -696,7 +1298,7 @@ const NoteEditor = ({
                 </AnimatePresence>
               </div>
               {
-                !isChecklist && (
+                !isChecklist && !isStudy && (
                   <div className="note-editor-meta">
                     <motion.span
                       key={ words }

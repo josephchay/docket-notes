@@ -33,10 +33,17 @@ export function stringifyChecklist(items) {
 // already carries one is left untouched, so re-entering checklist mode on a
 // note that was only half-converted never resets what's already checked
 // off. An empty note gets one blank item to start typing into rather than
-// an empty checklist with nothing to check.
+// an empty checklist with nothing to check. Genuinely blank lines (a
+// paragraph break in ordinary prose, or the blank line fromStudyText joins
+// its sections with) are dropped rather than turned into their own empty
+// item — a blank line was never a list entry to begin with, just
+// whitespace between two that were; a line that already carries a marker
+// survives this even with no content after it ("[ ] ".trim() is "[ ]", not
+// ""), so a genuinely blank CHECKLIST item a visitor left on purpose is
+// never the one this removes.
 export function toChecklistText(text) {
-  const lines = (text ?? "").split("\n");
-  const source = lines.some((line) => line.trim() !== "") ? lines : [""];
+  const lines = (text ?? "").split("\n").filter((line) => line.trim() !== "");
+  const source = lines.length > 0 ? lines : [""];
   return source.map((line) => (MARKER.test(line) ? line : `[ ] ${ line }`)).join("\n");
 }
 
@@ -44,13 +51,4 @@ export function toChecklistText(text) {
 // visitor typing right over the checkboxes by hand would have produced.
 export function fromChecklistText(text) {
   return (text ?? "").split("\n").map((line) => line.replace(MARKER, "$2")).join("\n");
-}
-
-// Trash/Archive panel row labels and NotePile's own toss-view text preview
-// all just read note.text as a raw snippet — none of them know or care
-// about checklist syntax. This strips the markers first so a checklist
-// note previews as its actual content instead of raw "[ ] "/"[x] "
-// brackets; a plain note passes through completely unchanged.
-export function checklistAwareText(text) {
-  return isChecklistText(text) ? fromChecklistText(text) : (text ?? "");
 }

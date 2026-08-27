@@ -1,0 +1,362 @@
+/* Same recipe as due-picker.css: a torn-off page from the note's own pad
+   (the ${color}-bg utility class, applied via className in
+   ReferencePicker.jsx — never set here), portaled to document.body and
+   positioned in fixed/viewport coordinates. Wider than the date picker —
+   66 books and a chapter grid need more room than a 7-wide calendar. */
+.reference-picker {
+  position: fixed;
+  z-index: 980;
+  width: 300px;
+  padding: 14px;
+  border-radius: 18px;
+  box-shadow: 0 20px 46px -14px rgba(25, 25, 25, 0.45);
+  color: var(--black-color);
+}
+
+.reference-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.reference-picker-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-size: 11px;
+}
+
+.reference-picker-crumb {
+  font-size: 13px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reference-picker-quick-section {
+  margin-bottom: 8px;
+}
+
+.reference-picker-quick-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  opacity: .5;
+}
+
+.reference-picker-quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.reference-picker-quick-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.reference-picker-quick-pill.current {
+  background: var(--black-color);
+  color: var(--white-color);
+}
+
+.reference-picker-quick-count {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--black-more-transclucent-color);
+  font-size: 9px;
+  opacity: .8;
+}
+
+.reference-picker-search {
+  margin-top: 6px;
+}
+
+.reference-picker-search input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: var(--black-even-more-transclucent-color);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--black-color);
+}
+
+.reference-picker-search input::placeholder {
+  color: var(--black-more-transclucent-color);
+  font-weight: 500;
+}
+
+.reference-picker-use-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border: none;
+  outline: none;
+  border-radius: 10px;
+  background: var(--black-color);
+  color: var(--white-color);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.reference-picker-use-chip svg {
+  font-size: 9px;
+  opacity: .8;
+}
+
+.reference-picker-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--black-even-more-transclucent-color);
+}
+
+.reference-picker-tabs button {
+  flex: 1;
+  padding: 6px 4px;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: .55;
+}
+
+.reference-picker-tabs button.active {
+  background: var(--black-color);
+  color: var(--white-color);
+  opacity: 1;
+}
+
+.reference-picker-body {
+  max-height: 220px;
+  margin-top: 8px;
+  overflow-y: auto;
+}
+
+.reference-picker-empty {
+  margin: 20px 0;
+  text-align: center;
+  font-size: 12px;
+  opacity: .5;
+}
+
+.reference-picker-section {
+  margin-bottom: 8px;
+}
+
+.reference-picker-section-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  opacity: .45;
+}
+
+.reference-picker-book-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.reference-picker-book {
+  padding: 6px 10px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.reference-picker-chapter-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.reference-picker-chapter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 10px;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.reference-picker-chapter.selected {
+  background: var(--black-color);
+  color: var(--white-color);
+}
+
+.reference-picker-preview {
+  overflow: hidden;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--black-even-more-transclucent-color);
+}
+
+.reference-picker-preview-muted {
+  font-size: 11px;
+  font-style: italic;
+  opacity: .55;
+}
+
+.reference-picker-preview-text {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.reference-picker-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--black-even-more-transclucent-color);
+  font-size: 11px;
+  font-weight: 700;
+  opacity: .8;
+}
+
+.reference-picker-narrow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.reference-picker-narrow svg {
+  font-size: 8px;
+}
+
+.reference-picker-verse-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.reference-picker-verse {
+  min-width: 30px;
+  padding: 6px 4px;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.reference-picker-verse-more {
+  padding: 6px 10px;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: .5;
+}
+
+.reference-picker-verse-manual {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--black-even-more-transclucent-color);
+}
+
+.reference-picker-verse-manual input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: var(--black-even-more-transclucent-color);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--black-color);
+}
+
+.reference-picker-verse-manual button {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background: var(--black-color);
+  color: var(--white-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}

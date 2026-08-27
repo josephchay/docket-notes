@@ -339,6 +339,23 @@ const HISTORY_ACTION_SOUNDS = {
     noise(context, { duration: .05, freqFrom: 1800, freqTo: 2600, peak: .14, filterType: "highpass" });
     tone(context, { freq: 780, duration: .05, type: "sine", peak: .16, delay: .04 });
   }),
+  // Three unhurried, evenly-spaced tones (as opposed to milestone's quick
+  // bright run) — the three sections of a study landing in turn, at a
+  // steadier, more contemplative pace.
+  studied: () => play((context) => {
+    tone(context, { freq: 440, duration: .16, type: "sine", peak: .16 });
+    tone(context, { freq: 523.25, duration: .16, type: "sine", peak: .18, delay: .14 });
+    tone(context, { freq: 587.33, duration: .2, type: "sine", peak: .2, delay: .28 });
+  }),
+  // Two brief square-wave ticks bracketing a softer sine — literally
+  // sonifying the punctuation this action adds (wrapping a selection in
+  // parens), kept at a different frequency from tagged (880Hz) so the two
+  // still read apart from each other.
+  cited: () => play((context) => {
+    tone(context, { freq: 900, duration: .03, type: "square", peak: .14 });
+    tone(context, { freq: 700, duration: .07, type: "sine", peak: .18, delay: .045 });
+    tone(context, { freq: 900, duration: .03, type: "square", peak: .14, delay: .13 });
+  }),
 };
 
 export const playHistoryAction = (key) => {

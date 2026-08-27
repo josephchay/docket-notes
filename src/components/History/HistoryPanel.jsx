@@ -6,12 +6,12 @@ import gsap from "gsap";
 import Lenis from "lenis";
 import {
   FaXmark, FaClockRotateLeft, FaPlus, FaTrash, FaArrowRotateLeft, FaTrashCan,
-  FaBoxArchive, FaBoxesStacked, FaBoxOpen, FaCalendarDay, FaListCheck,
+  FaBoxArchive, FaBoxesStacked, FaBoxOpen, FaCalendarDay, FaListCheck, FaBookOpen,
   FaFileArrowUp, FaCopy, FaPalette, FaUpDownLeftRight, FaStar,
   FaLock, FaTag, FaShuffle, FaPlay, FaPause, FaChevronLeft, FaChevronRight,
   FaBackwardStep, FaGaugeHigh, FaMagnifyingGlass, FaFileArrowDown,
   FaUpRightAndDownLeftFromCenter, FaDownLeftAndUpRightToCenter, FaThumbtack,
-  FaCodeBranch, FaCircleNodes,
+  FaCodeBranch, FaCircleNodes, FaQuoteRight,
 } from "react-icons/fa6";
 
 import { timeAgo } from "../../utils/date";
@@ -94,6 +94,8 @@ const ACTION_STYLES = [
   { key: "unarchived", chipLabel: "Unarchives", test: (l) => l.startsWith("unarchived"), icon: FaBoxOpen, color: "var(--blue-color)" },
   { key: "reminded", chipLabel: "Reminders", test: (l) => l.startsWith("edited a reminder"), icon: FaCalendarDay, color: "var(--orange-color)" },
   { key: "checklisted", chipLabel: "Checklists", test: (l) => l.startsWith("edited a checklist"), icon: FaListCheck, color: "var(--green-color)" },
+  { key: "studied", chipLabel: "Studies", test: (l) => l.startsWith("edited a study"), icon: FaBookOpen, color: "var(--blue-color)" },
+  { key: "cited", chipLabel: "Citations", test: (l) => l.startsWith("edited a citation"), icon: FaQuoteRight, color: "var(--pink-color)" },
 ];
 export const DEFAULT_STYLE = { icon: FaClockRotateLeft, color: "var(--page-ink-color)" };
 

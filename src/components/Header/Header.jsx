@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
 import gsap from "gsap";
-import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan, FaBoxArchive, FaClockRotateLeft, FaGear, FaLayerGroup } from "react-icons/fa6";
+import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan, FaBoxArchive, FaBookBible, FaClockRotateLeft, FaGear, FaLayerGroup } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { COMMAND_EVENT } from "../Command/CommandPalette";
 import { INSIGHTS_EVENT } from "../Insights/InsightsPanel";
 import { TRASH_EVENT } from "../Trash/TrashPanel";
 import { ARCHIVE_EVENT } from "../Archive/ArchivePanel";
+import { SCRIPTURE_INDEX_EVENT } from "../Scripture/ScriptureIndexPanel";
 import { HISTORY_EVENT } from "../History/HistoryPanel";
 import { SETTINGS_EVENT } from "../Settings/SettingsPanel";
 import { INK_LEVELS_EVENT } from "./InkLevelsPanel";
@@ -114,6 +115,7 @@ const Header = ({
   togglePersistNotes,
   trashCount,
   archivedCount,
+  scriptureCount,
   pileView,
   togglePileView,
   reduceMotion,
@@ -134,6 +136,7 @@ const Header = ({
   const focusJelly = useJellyTap();
   const trashJelly = useJellyTap();
   const archiveJelly = useJellyTap();
+  const scriptureJelly = useJellyTap();
   const settingsJelly = useJellyTap();
   const pileJelly = useJellyTap();
 
@@ -761,6 +764,33 @@ const Header = ({
                 transition={ POP }
               >
                 { archivedCount }
+              </motion.span>
+            )
+          }
+        </AnimatePresence>
+      </WandButton>
+      <WandButton
+        ariaLabel={ scriptureCount > 0 ? `Open the Scripture Index — ${ scriptureCount } distinct ${ scriptureCount === 1 ? "passage" : "passages" }` : "Open the Scripture Index" }
+        title="Scripture Index"
+        rotate={ 10 }
+        jelly={ scriptureJelly }
+        magnetRef={ toolbarMagnetic.registerItem(12) }
+        onClick={ () => window.dispatchEvent(new CustomEvent(SCRIPTURE_INDEX_EVENT)) }
+        className="scripture-index-trigger"
+        icon={ FaBookBible }
+      >
+        <AnimatePresence>
+          {
+            scriptureCount > 0 && (
+              <motion.span
+                key="badge"
+                className="trash-badge"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0, opacity: 0 }}
+                transition={ POP }
+              >
+                { scriptureCount }
               </motion.span>
             )
           }

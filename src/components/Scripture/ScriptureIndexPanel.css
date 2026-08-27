@@ -1,0 +1,561 @@
+.scripture-index-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+
+.scripture-index-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(25, 25, 25, 0.28);
+}
+
+:root[data-theme="dark"] .scripture-index-backdrop {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* border-radius is animated by framer during the drop-to-sheet morph, so it
+   is deliberately not set here. */
+.scripture-index-panel {
+  position: relative;
+  width: min(420px, 92vw);
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--page-bg-color);
+  border: 1px solid var(--page-line-color);
+  box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
+  will-change: transform;
+  transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
+  outline: none;
+}
+
+.scripture-index-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--page-line-color);
+  transition: border-color 0.4s ease-in-out;
+}
+
+.scripture-index-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--page-ink-color);
+  transition: color 0.4s ease-in-out;
+}
+
+.scripture-index-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 9px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 12px;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+/* The panel's own second job — not just browsing what's already cited, but
+   looking up any reference at all, live. Sits right under the header, the
+   same "search bar just below the title" placement CommandPalette/NoteList
+   already use elsewhere in this app. */
+.scripture-index-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 14px 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.scripture-index-search-icon {
+  font-size: 12px;
+  color: var(--page-ink-color);
+  opacity: .5;
+  flex-shrink: 0;
+}
+
+.scripture-index-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.scripture-index-search input::placeholder {
+  color: var(--page-ink-color);
+  opacity: .4;
+}
+
+/* Cited (the aggregated-list view below) vs Browse (the zero-typing
+   book -> chapter [-> verse] picker, merged in from the old single
+   dedicated note.reference field's own control) — same pill-tab language
+   ReferencePicker's own Old/New Testament toggle uses, just themed to
+   this panel's page-chrome variables instead of a note's own color. */
+.scripture-index-mode-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 14px 10px;
+  padding: 3px;
+  border-radius: 12px;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.scripture-index-mode-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  padding: 7px 4px;
+  border: none;
+  outline: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: .55;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.scripture-index-mode-tabs button.active {
+  background-color: var(--page-bg-color);
+  opacity: 1;
+}
+
+.scripture-index-body {
+  padding: 10px 14px 14px;
+  overflow-y: auto;
+}
+
+/* The live lookup result — shown above the (possibly filtered) list
+   whenever the search box holds a complete, recognized reference, same
+   rounded-pill ink language NoteEditor's own citation preview card already
+   uses. */
+.scripture-index-lookup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  margin-bottom: 8px;
+  border-radius: 14px;
+  background-color: var(--page-surface-color);
+  transition: background-color 0.4s ease-in-out;
+}
+
+.scripture-index-lookup-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  opacity: .7;
+}
+
+.scripture-index-lookup-head span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mirrors a list row's own magnifier — the same "find notes on this
+   passage" action, just reachable from a fetched-live result instead of
+   an already-cited one. */
+.scripture-index-lookup-search {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--page-ink-color);
+  font-size: 10px;
+  opacity: .8;
+}
+
+.scripture-index-lookup-search:hover {
+  background-color: var(--page-bg-color);
+}
+
+.scripture-index-lookup-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.scripture-index-lookup-text {
+  margin: 0;
+  color: var(--page-ink-color);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.scripture-index-lookup-muted {
+  display: block;
+  color: var(--page-ink-color);
+  font-size: 12px;
+  opacity: .5;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.scripture-index-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.scripture-index-empty-icon {
+  font-size: 26px;
+  color: var(--page-ink-color);
+  opacity: .3;
+}
+
+.scripture-index-empty p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--page-ink-color);
+  opacity: .5;
+}
+
+.scripture-index-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+
+.scripture-index-item {
+  display: flex;
+}
+
+.scripture-index-item-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  outline: none;
+  border-radius: 12px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  text-align: left;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.scripture-index-item-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scripture-index-item-count {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: .55;
+}
+
+.scripture-index-item-icon {
+  font-size: 10px;
+}
+
+/* Browse mode — book -> chapter [-> verse], see ScriptureIndexPanel.jsx's
+   own top-of-file comment for why this is a fresh implementation rather
+   than a reuse of ReferencePicker's own JSX (only the underlying book/
+   chapter data and fetchVerseText are shared). Styled with this panel's
+   own --page-* theme rather than ReferencePicker's --black-*/--white-*
+   note-color language, since this sheet has no note color of its own. */
+.scripture-index-browse-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.scripture-index-browse-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-size: 11px;
+}
+
+.scripture-index-browse-crumb {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--page-ink-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scripture-index-browse-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 3px;
+  border-radius: 10px;
+  background-color: var(--page-surface-color);
+}
+
+.scripture-index-browse-tabs button {
+  flex: 1;
+  padding: 6px 4px;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: .55;
+}
+
+.scripture-index-browse-tabs button.active {
+  background-color: var(--page-bg-color);
+  opacity: 1;
+}
+
+.scripture-index-browse-sections {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.scripture-index-browse-section {
+  margin-bottom: 10px;
+}
+
+.scripture-index-browse-section-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--page-ink-color);
+  opacity: .45;
+}
+
+.scripture-index-browse-book-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.scripture-index-browse-book {
+  padding: 6px 10px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.scripture-index-browse-chapter-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.scripture-index-browse-chapter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 9px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.scripture-index-browse-chapter.selected {
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
+}
+
+.scripture-index-browse-preview {
+  overflow: hidden;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background-color: var(--page-surface-color);
+}
+
+.scripture-index-browse-preview-muted {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--page-ink-color);
+  opacity: .55;
+}
+
+.scripture-index-browse-preview-text {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--page-ink-color);
+}
+
+.scripture-index-browse-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--page-line-color);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--page-ink-color);
+  opacity: .8;
+}
+
+.scripture-index-browse-narrow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.scripture-index-browse-narrow svg {
+  font-size: 8px;
+}
+
+.scripture-index-browse-verse-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.scripture-index-browse-verse {
+  min-width: 32px;
+  padding: 6px 4px;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.scripture-index-browse-verse-more {
+  padding: 6px 10px;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: .5;
+}
+
+.scripture-index-browse-verse-manual {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--page-line-color);
+}
+
+.scripture-index-browse-verse-manual input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background-color: var(--page-surface-color);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--page-ink-color);
+}
+
+.scripture-index-browse-verse-manual button {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}

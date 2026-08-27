@@ -1,0 +1,72 @@
+/* Fills the exact same box the textarea it sits behind occupies (both are
+   plain children of .note-editor-text-wrap, see NoteEditor.jsx/.css) —
+   clipped so a mark scrolled out of view via the translateY sync below
+   never spills past the textarea's own visible area. pointer-events:none
+   so it never intercepts real interaction with the textarea on top; the
+   marks inside opt back in individually (see .hover-citation-mark). */
+.hover-citation-hit-layer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Shares the .note-editor-text class itself (see NoteEditor.jsx) so every
+   font/size/line-height/padding/margin rule that class already carries —
+   including the per-editor-size variants (.cozy/.grand/.epic) — applies
+   here identically with zero duplication, keeping this pixel-aligned with
+   the real textarea by construction rather than by hand-copied numbers
+   that could drift out of sync later. Only what genuinely differs from
+   the real field is overridden below: invisible text (only a mark's own
+   border reads), no interaction of its own, and wrapping behavior a plain
+   div doesn't do by default the way a textarea always has. */
+.hover-citation-backdrop {
+  position: relative;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* Compound selector, not a bare .hover-citation-backdrop rule — this and
+   .note-editor-text's own `color: var(--black-color)` are an exact
+   specificity tie on the same element (this div carries both classes), so
+   which one actually wins would otherwise depend on which stylesheet
+   happens to get inserted into the document later, an accident of import
+   order rather than anything declared here. The extra .note-editor-text
+   qualifier raises this rule's own specificity above the plain one-class
+   rule it needs to beat, so this stays invisible regardless of load
+   order. Without it, this "invisible" mirror silently rendered as a real
+   opaque duplicate of the note's own black text sitting directly behind
+   the real textarea. */
+.hover-citation-backdrop.note-editor-text {
+  color: transparent;
+}
+
+/* Reset the browser's own default yellow highlight — this marks a HIT
+   TARGET, not a visual highlight in its own right; the only visible trace
+   at rest is a quiet dotted underline, discoverable rather than loud. */
+.hover-citation-mark {
+  background: none;
+  color: transparent;
+  pointer-events: auto;
+  cursor: help;
+  border-bottom: 1px dotted var(--black-more-transclucent-color);
+}
+
+.hover-citation-tooltip {
+  position: fixed;
+  z-index: 1200;
+  transform: translate(-50%, calc(-100% - 10px));
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--black-color);
+  color: var(--white-color);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 10px 24px -8px rgba(25, 25, 25, 0.45);
+}

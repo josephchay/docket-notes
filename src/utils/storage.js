@@ -27,7 +27,7 @@ const INTRO_KEY = "docket-intro-seen";
 //   tags: string[],
 //   archived: boolean,
 //   archivedAt: number | null,
-//   dueAt: string | null
+//   dueAt: string | null,
 // }
 
 // StoredSettings shape:

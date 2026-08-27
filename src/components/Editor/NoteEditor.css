@@ -86,6 +86,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* The palette and the action row have both grown well past what they
+     started with (a checklist toggle, a reminder, a study toggle) — wrap
+     is a safety net for a narrow "cozy" paper on a small viewport rather
+     than a change to how this normally lays out; on anything roomy enough
+     it never engages and this row reads exactly as it always has. */
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 
 .note-editor-palette {
@@ -220,6 +227,206 @@
   margin-top: 10px;
 }
 
+/* Sits between the body and the footer (see NoteEditor.jsx) — capped and
+   internally scrollable rather than left to grow unbounded, since a
+   densely cross-referenced note can carry a couple dozen of these at once
+   and shouldn't be able to crowd the writing area itself out. */
+.note-editor-citations {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  flex-shrink: 0;
+  max-height: 72px;
+  margin-top: 10px;
+  padding: 2px 2px 2px 0;
+  overflow-y: auto;
+}
+
+/* Two distinct actions share one pill — a jump-to-it-in-this-note button
+   (hidden in checklist/study mode, where there's no single textarea for
+   "in this note" to mean anything) and a find-other-notes button either
+   side of the plain label in between. */
+.note-editor-citation {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--black-even-more-transclucent-color);
+  opacity: .75;
+}
+
+.note-editor-citation:hover {
+  opacity: 1;
+}
+
+/* A real <button> (it toggles the verse-text preview below), not just a
+   label — reset back to plain text with no button chrome of its own, then
+   given the same pressed-state treatment the offer's own "Tag it" pattern
+   already uses elsewhere in this file. */
+.note-editor-citation-label {
+  padding: 0 4px;
+  border: none;
+  outline: none;
+  background: transparent;
+  border-radius: 999px;
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.note-editor-citation-label:hover {
+  background: var(--black-more-transclucent-color);
+}
+
+.note-editor-citation-label.active {
+  background: var(--black-color);
+  color: var(--white-color);
+}
+
+.note-editor-citation-jump,
+.note-editor-citation-search {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--black-color);
+  font-size: 9px;
+  opacity: .6;
+}
+
+.note-editor-citation-jump:hover,
+.note-editor-citation-search:hover {
+  opacity: 1;
+  background: var(--black-more-transclucent-color);
+}
+
+/* The "tag this selection" offer — same pill language the old dedicated
+   reference field used to carry, since it's the same kind of action
+   (turning plain text into a real citation), just triggered by a
+   selection instead of typing into a field that no longer exists. */
+.note-editor-citation-offer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 999px;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.note-editor-citation-offer span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-editor-citation-offer button {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background: var(--black-color);
+  color: var(--white-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* The one fetched-from-the-network surface in this whole app (see utils/
+   bibleApi.js) — kept visually close to the offer/reference pills just
+   above it (same rounded-page, same ink colors) rather than reaching for
+   anything that reads as "a widget," since the actual scripture text is
+   the point, not the chrome around it. */
+.note-editor-citation-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--black-even-more-transclucent-color);
+  overflow: hidden;
+}
+
+.note-editor-citation-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--black-color);
+  opacity: .7;
+}
+
+.note-editor-citation-preview-icon {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.note-editor-citation-preview-head span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-editor-citation-preview-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--black-color);
+  font-size: 9px;
+  opacity: .6;
+}
+
+.note-editor-citation-preview-close:hover {
+  opacity: 1;
+  background: var(--black-more-transclucent-color);
+}
+
+.note-editor-citation-preview-body {
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.note-editor-citation-preview-body p {
+  margin: 0;
+  color: var(--black-color);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.note-editor-citation-preview-muted {
+  display: block;
+  color: var(--black-color);
+  font-size: 12px;
+  opacity: .55;
+  font-style: italic;
+}
+
 .note-editor-tag {
   display: flex;
   align-items: center;
@@ -262,6 +469,27 @@
   color: var(--black-more-transclucent-color);
 }
 
+/* Shared by the citation-offer banner's own FaBookBible icon (see
+   NoteEditor.jsx) — kept even though the single dedicated reference field
+   that originally introduced this class has been removed. */
+.note-editor-reference-icon {
+  font-size: 10px;
+  opacity: .65;
+  flex-shrink: 0;
+}
+
+/* A positioned container purely so HoverCitationOverlay.jsx's own overlay
+   pieces (position: absolute) can anchor exactly to the textarea's own
+   box rather than the whole .note-editor panel — flex:1 here (not on the
+   textarea's own parent-relative sizing alone) is what keeps the textarea
+   filling the same space it always did now that it's one layer deeper. */
+.note-editor-text-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
 .note-editor-text {
   flex: 1;
   background: none;
@@ -277,6 +505,28 @@
   font-family: inherit;
   color: var(--black-color);
   transition: color 0.3s ease-in-out, font-size 0.3s ease-in-out;
+}
+
+/* Tag-qualified so this only ever matches the real <textarea> and never
+   HoverCitationOverlay's own backdrop <div> — which deliberately reuses
+   this SAME .note-editor-text class (see HoverCitationOverlay.css) to
+   inherit its font/size/line-height/padding for pixel-perfect alignment,
+   and must NOT also inherit a stacking position from it. Position+z-index
+   (not just DOM order) is what actually decides paint order against that
+   backdrop's own absolutely-positioned hit layer — without this, the
+   overlay would sit ON TOP of this flex-in-flow textarea by default
+   (positioned elements paint above static ones regardless of source
+   order), and its invisible <mark> hit targets (pointer-events: auto,
+   needed so its mousemove handler can find them via elementFromPoint)
+   would silently swallow every real click/drag meant for the textarea
+   underneath — breaking ordinary typing and selection anywhere a
+   citation's own prose span sits. This keeps the real, always-interactive
+   field on top; the overlay is only ever "seen" through its own
+   deliberate elementFromPoint peek, which briefly hides this element's
+   own pointer-events to look past it. */
+textarea.note-editor-text {
+  position: relative;
+  z-index: 2;
 }
 
 .note-editor-text::placeholder {
@@ -378,6 +628,19 @@
   margin-top: 18px;
   padding-right: 10px;
   width: 100%;
+}
+
+/* Same slot, same reasoning — see .editor-checklist just above. */
+.editor-study {
+  flex: 1;
+  min-height: 0;
+  margin-top: 18px;
+  padding-right: 10px;
+  width: 100%;
+}
+
+.note-editor.locked .editor-study {
+  opacity: .7;
 }
 
 /* The copy confirmation, floating just under the action buttons. */

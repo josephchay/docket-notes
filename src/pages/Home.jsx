@@ -51,6 +51,7 @@ import { formattedDateNow } from "../utils/date";
 import { randomQuote } from "../utils/data";
 import { isChecklistText, toChecklistText, fromChecklistText } from "../utils/checklist";
 import { isStudyText, toStudyText, fromStudyText } from "../utils/study";
+import { parseCitations, BIBLE_BOOKS } from "../utils/citations";
 import { loadNotes, saveNotes, loadSettings, saveSettings, getPersistPref, setPersistPref } from "../utils/storage";
 import {
   setSoundEnabled as setSoundEngineEnabled,
@@ -80,6 +81,7 @@ import InsightsPanel, { INSIGHTS_EVENT } from "../components/Insights/InsightsPa
 import InkLevelsPanel, { INK_LEVELS_EVENT } from "../components/Header/InkLevelsPanel";
 import TrashPanel, { TRASH_EVENT } from "../components/Trash/TrashPanel";
 import ArchivePanel, { ARCHIVE_EVENT } from "../components/Archive/ArchivePanel";
+import ScriptureIndexPanel, { SCRIPTURE_INDEX_EVENT } from "../components/Scripture/ScriptureIndexPanel";
 import HistoryPanel, { HISTORY_EVENT } from "../components/History/HistoryPanel";
 import SettingsPanel, { SETTINGS_EVENT } from "../components/Settings/SettingsPanel";
 import usePrefersReducedMotion from "../hooks/usePrefersReducedMotion";
@@ -115,7 +117,18 @@ import "./Home.css";
 //                                 // place rather than moving the note (see
 //                                 // archiveNote below), so array position
 //                                 // alone can't tell that order apart
-//   dueAt: string | null   // "YYYY-MM-DD", or null for no reminder
+//   dueAt: string | null,  // "YYYY-MM-DD", or null for no reminder
+//                          // studyText lives in `text` itself, the
+//                          // same marker-derived approach as
+//                          // checklists (see utils/study.js) — as do
+//                          // scripture citations, which live entirely as
+//                          // "(Book c:v)" text woven through `text` (see
+//                          // utils/citations.js) rather than a dedicated
+//                          // field; this app tried a separate singular
+//                          // note.reference field for a while and removed
+//                          // it once highlight-and-annotate could attach a
+//                          // reference to any span of the note's own prose
+//                          // directly, which fully subsumed it
 // }
 
 // DeletedEntry shape:
@@ -1052,6 +1065,36 @@ const Home = () => {
     ));
   }
 
+  // Commits a citation-tagging action as its own named step, the same way
+  // toggleChecklist/toggleStudy above each earn their own pushUndo + sound
+  // + History-panel entry instead of silently blending into ordinary
+  // typing. There's no currentText to convert here — NoteEditor.jsx has
+  // already computed the exact resulting text itself (wrapping/inserting
+  // at char offsets only it has, whether tagging a bare selection or
+  // annotating arbitrary highlighted prose with a picked reference), so
+  // this is simply handed the final text and commits it.
+  const tagCitation = (id, nextText) => {
+    pushUndo("edited a citation");
+    playHistoryAction("cited");
+    setNotes((prev) => prev.map((note) =>
+      note.id === id ? { ...note, text: nextText } : note
+    ));
+  }
+
+  // Checklist and Bible-study text share one field (note.text) but read it
+  // through two entirely different marker grammars — a note can only ever
+  // honestly be one of the two at once. Switching FROM whichever structured
+  // form is currently active goes through plain text first (stripping that
+  // form's own markers) rather than layering the new form's markers
+  // straight on top of the old ones, which would otherwise turn e.g. a
+  // checklist's "[ ] " lines into a single garbled "Observation" section
+  // containing literal checkbox syntax.
+  const normalizeStructuredText = (text) => {
+    if (isChecklistText(text)) return fromChecklistText(text);
+    if (isStudyText(text)) return fromStudyText(text);
+    return text;
+  }
+
   // Converts note.text to/from the checklist markers utils/checklist.js
   // reads (see that file's own comment for why the markers ARE the state,
   // with no separate field). The conversion itself is a real, discrete
@@ -1070,7 +1113,21 @@ const Home = () => {
   const toggleChecklist = (id, currentText) => {
     pushUndo("edited a checklist");
     playHistoryAction("checklisted");
-    const nextText = isChecklistText(currentText) ? fromChecklistText(currentText) : toChecklistText(currentText);
+    const nextText = isChecklistText(currentText)
+      ? fromChecklistText(currentText)
+      : toChecklistText(normalizeStructuredText(currentText));
+    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, text: nextText } : n)));
+  }
+
+  // The Bible-study counterpart to toggleChecklist above — same shape,
+  // same reasoning for taking currentText as an argument rather than
+  // reading it back out of `notes`.
+  const toggleStudy = (id, currentText) => {
+    pushUndo("edited a study");
+    playHistoryAction("studied");
+    const nextText = isStudyText(currentText)
+      ? fromStudyText(currentText)
+      : toStudyText(normalizeStructuredText(currentText));
     setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, text: nextText } : n)));
   }
 
@@ -1298,6 +1355,74 @@ const Home = () => {
     return counts;
   }, [notes]);
 
+  // Jumps the desk to every note mentioning this passage — the desk's
+  // lightweight cross-reference finder for inline citations (see utils/
+  // citations.js), reused by both the citation-pill row's own magnifier
+  // and the Scripture Index panel. A fuzzy substring search over
+  // title+text rather than an exact match: a citation is a mention woven
+  // through a note's own prose, not a single defining field, so this
+  // should find every note that MENTIONS this passage, not only one
+  // narrowly-matching form of it.
+  const searchByCitation = (citationText) => {
+    if (!citationText) return;
+    clearFilters();
+    setNotesSortText(citationText);
+    setEditingNoteId(null);
+    setTimeout(() => scrollHomeToTop(), 0);
+  }
+
+  // Every distinct inline citation across the whole desk, with how many
+  // notes mention each — the corpus-wide counterpart to a single note's own
+  // pill row (see NoteEditor.jsx), letting the Scripture Index panel show
+  // what's been written about at a glance instead of only searching one
+  // passage a caller already knows about. Scoped to desklikeNotes only, not
+  // `notes` — an archived note counted here but not reachable through
+  // searchByCitation's own desk-only search would promise a click this
+  // can't deliver. Sorted in canonical Bible order (BIBLE_BOOKS' own index,
+  // not localeCompare — "Genesis" doesn't sort before "Exodus"
+  // alphabetically past a few books), then numerically through each path's
+  // own chapter/verse segments so e.g. "Genesis 3" lands right before
+  // "Genesis 3:5" rather than wherever string order happens to put it.
+  const scriptureIndex = useMemo(() => {
+    const counts = new Map();
+    for (const note of desklikeNotes) {
+      for (const citation of parseCitations(note.text)) {
+        const key = citation.full.toLowerCase();
+        const entry = counts.get(key);
+        if (entry) entry.count += 1;
+        else counts.set(key, { book: citation.book, path: citation.path, full: citation.full, count: 1 });
+      }
+    }
+
+    // A path's colon-segments (chapter/verse/subverse) and a trailing
+    // range end are NOT the same kind of number — splitting on both ":"
+    // and "-" in one pass, as an earlier version of this comparator did,
+    // collapses "1:2:3" (a 3-part chapter:verse:subverse path) and "1:2-3"
+    // (a 2-part path with a "-3" range) onto the identical key [1,2,3],
+    // making the sort silently unstable between two genuinely different
+    // citations. Splitting the range off FIRST keeps the two apart: the
+    // segments array alone decides order at any depth where they differ,
+    // and the range (or -1 for "no range") only breaks a tie between two
+    // paths whose own segments are identical.
+    const sortKey = (path) => {
+      const [main, rangeEnd] = path.split("-");
+      return { segments: main.split(":").map(Number), range: rangeEnd !== undefined ? Number(rangeEnd) : -1 };
+    };
+
+    return Array.from(counts.values()).sort((a, b) => {
+      const bookDiff = BIBLE_BOOKS.indexOf(a.book) - BIBLE_BOOKS.indexOf(b.book);
+      if (bookDiff !== 0) return bookDiff;
+
+      const keyA = sortKey(a.path);
+      const keyB = sortKey(b.path);
+      for (let i = 0; i < Math.max(keyA.segments.length, keyB.segments.length); i++) {
+        const diff = (keyA.segments[i] ?? -1) - (keyB.segments[i] ?? -1);
+        if (diff !== 0) return diff;
+      }
+      return keyA.range - keyB.range;
+    });
+  }, [desklikeNotes]);
+
   // The desk insights panel's numbers: how many notes were poured each day,
   // how many are starred, and the average length of what's written. Notes
   // only carry a calendar day (not a time), and sessionStorage means the
@@ -1417,6 +1542,12 @@ const Home = () => {
       perform: () => window.dispatchEvent(new CustomEvent(ARCHIVE_EVENT)),
     },
     {
+      key: "scripture-index",
+      label: scriptureIndex.length > 0 ? `Open the Scripture Index · ${ scriptureIndex.length }` : "Open the Scripture Index",
+      icon: <FaBookBible />,
+      perform: () => window.dispatchEvent(new CustomEvent(SCRIPTURE_INDEX_EVENT)),
+    },
+    {
       key: "settings",
       label: "Open settings",
       icon: <FaGear />,
@@ -1490,6 +1621,7 @@ const Home = () => {
           togglePersistNotes={ togglePersistNotes }
           trashCount={ deletedNotes.length }
           archivedCount={ archivedNotes.length }
+          scriptureCount={ scriptureIndex.length }
           pileView={ pileView }
           togglePileView={ togglePileView }
           reduceMotion={ reduceMotion }
@@ -1550,6 +1682,10 @@ const Home = () => {
               updateTags={ updateTags }
               setNoteDueDate={ setNoteDueDate }
               toggleChecklist={ toggleChecklist }
+              toggleStudy={ toggleStudy }
+              scriptureIndex={ scriptureIndex }
+              onFindCitation={ searchByCitation }
+              tagCitation={ tagCitation }
             />
           )
         }
@@ -1609,6 +1745,11 @@ const Home = () => {
         entries={ archivedNotes }
         onUnarchive={ unarchiveNote }
         onOpen={ setEditingNoteId }
+        reduceMotion={ reduceMotion }
+      />
+      <ScriptureIndexPanel
+        entries={ scriptureIndex }
+        onSearch={ searchByCitation }
         reduceMotion={ reduceMotion }
       />
       <HistoryPanel

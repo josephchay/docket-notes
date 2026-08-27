@@ -4,7 +4,7 @@ import { FaXmark, FaArrowRotateLeft, FaBoxArchive, FaPen } from "react-icons/fa6
 
 import SheetPanel from "../Sheet/SheetPanel";
 import SparkBurst from "../Spark/SparkBurst";
-import { checklistAwareText } from "../../utils/checklist";
+import { notePreviewText } from "../../utils/notePreview";
 
 import "./ArchivePanel.css";
 
@@ -59,7 +59,7 @@ const ArchivePanel = ({ entries, onUnarchive, onOpen, reduceMotion }) => {
     const title = note.title?.trim();
     if (title) return title;
 
-    const text = checklistAwareText(note.text).trim();
+    const text = notePreviewText(note.text).trim();
     if (text) return text.length > 60 ? `${ text.slice(0, 60) }…` : text;
 
     return "Untitled note";
