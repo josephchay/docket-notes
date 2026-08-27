@@ -42,11 +42,15 @@ import {
   FaBullseye,
   FaSeedling,
   FaCircleHalfStroke,
+  FaBoxArchive,
+  FaBookBible,
 } from "react-icons/fa6";
 
 import { id } from "../utils/math";
 import { formattedDateNow } from "../utils/date";
 import { randomQuote } from "../utils/data";
+import { isChecklistText, toChecklistText, fromChecklistText } from "../utils/checklist";
+import { isStudyText, toStudyText, fromStudyText } from "../utils/study";
 import { loadNotes, saveNotes, loadSettings, saveSettings, getPersistPref, setPersistPref } from "../utils/storage";
 import {
   setSoundEnabled as setSoundEngineEnabled,
@@ -75,6 +79,7 @@ import BulkActionBar from "../components/Bulk/BulkActionBar";
 import InsightsPanel, { INSIGHTS_EVENT } from "../components/Insights/InsightsPanel";
 import InkLevelsPanel, { INK_LEVELS_EVENT } from "../components/Header/InkLevelsPanel";
 import TrashPanel, { TRASH_EVENT } from "../components/Trash/TrashPanel";
+import ArchivePanel, { ARCHIVE_EVENT } from "../components/Archive/ArchivePanel";
 import HistoryPanel, { HISTORY_EVENT } from "../components/History/HistoryPanel";
 import SettingsPanel, { SETTINGS_EVENT } from "../components/Settings/SettingsPanel";
 import usePrefersReducedMotion from "../hooks/usePrefersReducedMotion";
@@ -95,13 +100,22 @@ import "./Home.css";
 // {
 //   id: string,
 //   title: string,
-//   text: string,
+//   text: string,          // checklist notes live entirely in here too —
+//                           // see utils/checklist.js's marker convention
 //   placeholder: string,
 //   time: string,
 //   color: string,
 //   favorite: boolean,
 //   lock: boolean,
-//   tags: string[]
+//   tags: string[],
+//   archived: boolean,     // set aside, off the desk but never deleted
+//   archivedAt: number | null,   // Date.now() at the moment of archiving,
+//                                 // for ArchivePanel's own most-recent-first
+//                                 // order — archiving flips `archived` in
+//                                 // place rather than moving the note (see
+//                                 // archiveNote below), so array position
+//                                 // alone can't tell that order apart
+//   dueAt: string | null   // "YYYY-MM-DD", or null for no reminder
 // }
 
 // DeletedEntry shape:
@@ -472,6 +486,26 @@ const Home = () => {
     showStamp(`Backup saved · ${ selected.length } ${ selected.length === 1 ? "note" : "notes" }`);
   }
 
+  // Sets aside every selected note at once — the same flag flip
+  // archiveNote below does one at a time, batched into the one setNotes
+  // call every bulk action here uses so they don't each start from the
+  // same stale `notes` snapshot and clobber one another. Selection clears
+  // the same way bulkDelete's does: the notes just left the visible grid,
+  // so there's nothing left to keep selected.
+  const bulkArchive = () => {
+    if (selectedIds.size === 0) return;
+
+    pushUndo("archived the selection");
+    playHistoryAction("archived");
+    const archivedAt = Date.now();
+    setNotes((prev) => prev.map((note) => (selectedIds.has(note.id) ? { ...note, archived: true, archivedAt } : note)));
+
+    if (editingNoteId && selectedIds.has(editingNoteId)) setEditingNoteId(null);
+
+    setSelectedIds(new Set());
+    setSelectMode(false);
+  }
+
   const bulkDelete = () => {
     const toDelete = notes.filter((note) => selectedIds.has(note.id));
     if (toDelete.length === 0) return;
@@ -507,13 +541,31 @@ const Home = () => {
     setNotesSortTag(null);
   }, []);
 
+  // Archived notes never actually leave `notes` (see archiveNote below) —
+  // they just wear a flag every desk-facing view has to filter back out,
+  // the same way a locked note stays fully present but read-only. This is
+  // the one place that filter lives, reused by both filteredNotes just
+  // below AND the notes handed to the constellation map (see the
+  // <NoteConstellationPanel> render further down) — that panel keeps its
+  // own separate, unfiltered `notes` prop rather than reading
+  // filteredNotes, so without a shared memo it would need (and easily
+  // forget) this exact same filter a second time.
+  const desklikeNotes = useMemo(() => notes.filter((note) => !note.archived), [notes]);
+
+  // The Archive panel's own list — everything currently set aside, for the
+  // toolbar's badge count and ArchivePanel below.
+  const archivedNotes = useMemo(() => notes.filter((note) => note.archived), [notes]);
+
   // Every tag in use across the desk, for the tag filter strip — sorted so
-  // the strip doesn't reshuffle itself as notes come and go.
+  // the strip doesn't reshuffle itself as notes come and go. Reads off
+  // desklikeNotes rather than raw notes so the strip never offers a tag
+  // that only exists on notes currently archived out of view — picking it
+  // would just filter the grid down to nothing with no visible cause.
   const allTags = useMemo(() => {
     const set = new Set();
-    notes.forEach((note) => (note.tags || []).forEach((tag) => set.add(tag)));
+    desklikeNotes.forEach((note) => (note.tags || []).forEach((tag) => set.add(tag)));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [notes]);
+  }, [desklikeNotes]);
 
   // How the desk lays its papers out: freshest first, grouped by ink color,
   // or with the starred ones brought to the front. Switching modes lets the
@@ -540,7 +592,7 @@ const Home = () => {
   // Newest notes first, same as the desk renders them.
   const filteredNotes = useMemo(() => {
     const query = notesSortText.trim().toLowerCase();
-    let filtered = [...notes].reverse();
+    let filtered = [...desklikeNotes].reverse();
 
     if (query) {
       filtered = filtered.filter((note) =>
@@ -568,7 +620,7 @@ const Home = () => {
     }
 
     return filtered;
-  }, [notes, notesSortText, notesSortByFavorite, notesSortColor, notesSortTag, sortMode]);
+  }, [desklikeNotes, notesSortText, notesSortByFavorite, notesSortColor, notesSortTag, sortMode]);
 
   // Starred notes' rough position within the currently-filtered list, fed
   // to ScrollProgress as quick-jump tick marks — index/total is an honest
@@ -602,6 +654,9 @@ const Home = () => {
       favorite: false,
       lock: false,
       tags: [],
+      archived: false,
+      archivedAt: null,
+      dueAt: null,
     });
 
     pushUndo("poured a new note");
@@ -634,6 +689,28 @@ const Home = () => {
     setNotes(notes.filter((note) => note.id !== noteId));
 
     if (editingNoteId === noteId) setEditingNoteId(null);
+  }
+
+  // Tucks a note off the desk without touching the trash at all — unlike
+  // deleteNote, it never leaves `notes`, so there's no restore-to-original-
+  // position bookkeeping to do; flipping the flag back (unarchiveNote) is
+  // the entire operation. The one bit of care it does need mirrors
+  // deleteNote/bulkDelete's own guard: an archived note that happened to be
+  // open in the focus editor has just left every view that could still
+  // show it, so the editor closes rather than sitting open on a note the
+  // desk itself no longer displays.
+  const archiveNote = (noteId) => {
+    pushUndo("archived a note");
+    playHistoryAction("archived");
+    setNotes((prev) => prev.map((note) => (note.id === noteId ? { ...note, archived: true, archivedAt: Date.now() } : note)));
+
+    if (editingNoteId === noteId) setEditingNoteId(null);
+  }
+
+  const unarchiveNote = (noteId) => {
+    pushUndo("unarchived a note");
+    playHistoryAction("unarchived");
+    setNotes((prev) => prev.map((note) => (note.id === noteId ? { ...note, archived: false, archivedAt: null } : note)));
   }
 
   // Brings a note back — called from the toast's Undo button or from the
@@ -874,18 +951,23 @@ const Home = () => {
     return () => window.removeEventListener("keydown", handleKey);
   });
 
+  // Functional setNotes rather than mapping the outer `notes` closure — both
+  // are driven by NoteEditor/Note's own debounced timers (see debounceTimer
+  // there), which can still be armed from a keystroke several renders ago.
+  // A stale closure over `notes` would otherwise silently roll back
+  // whatever changed on this note in between (a checklist toggle, a
+  // reminder set) the instant that old timer finally fires — this way it
+  // always lands on top of the note's actual current state instead.
   const updateTitle = (title, id) => {
-    const newNotes = notes.map((note) =>
+    setNotes((prev) => prev.map((note) =>
       note.id === id ? { ...note, title } : note
-    );
-    setNotes(newNotes);
+    ));
   }
 
   const updateText = (text, id) => {
-    const newNotes = notes.map((note) =>
+    setNotes((prev) => prev.map((note) =>
       note.id === id ? { ...note, text } : note
-    );
-    setNotes(newNotes);
+    ));
   }
 
   const updateColor = (id) => {
@@ -957,6 +1039,41 @@ const Home = () => {
     setNotes(newNotes);
   }
 
+  // Setting or clearing a reminder is one discrete action either way (like
+  // updateTags above, one label covers both directions) rather than the
+  // continuous, debounced shape typing gets — a visitor picks a date once
+  // per sitting, not once per keystroke, so unlike updateText it earns its
+  // own undo entry every time.
+  const setNoteDueDate = (dueAt, id) => {
+    pushUndo("edited a reminder");
+    playHistoryAction("reminded");
+    setNotes((prev) => prev.map((note) =>
+      note.id === id ? { ...note, dueAt: dueAt || null } : note
+    ));
+  }
+
+  // Converts note.text to/from the checklist markers utils/checklist.js
+  // reads (see that file's own comment for why the markers ARE the state,
+  // with no separate field). The conversion itself is a real, discrete
+  // action worth its own undo entry — the individual checks/edits/line
+  // adds that happen afterward flow through updateText exactly like typing
+  // does, and deliberately don't push their own entries the same way a
+  // keystroke doesn't (see pushUndo's own comment above).
+  // Takes the current text as an argument rather than reading note.text
+  // back out of `notes` — NoteEditor.jsx's own draftText is debounced up to
+  // 500ms behind whatever's actually been typed (see its handleText), so a
+  // lookup here could convert stale, pre-keystroke text; the caller always
+  // has the true current value on hand already. NoteEditor also cancels
+  // its own pending debounced commit right before calling this, so that
+  // timer can't fire moments later and silently overwrite the conversion
+  // with the same stale text this sidesteps reading in the first place.
+  const toggleChecklist = (id, currentText) => {
+    pushUndo("edited a checklist");
+    playHistoryAction("checklisted");
+    const nextText = isChecklistText(currentText) ? fromChecklistText(currentText) : toChecklistText(currentText);
+    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, text: nextText } : n)));
+  }
+
   // A quick ink stamp confirming an export or import actually happened —
   // export and import are otherwise silent, and silently doing nothing
   // (an empty file, a backup with nothing importable) reads the same as
@@ -1024,6 +1141,9 @@ const Home = () => {
             favorite: !!note.favorite,
             lock: !!note.lock,
             tags: Array.isArray(note.tags) ? note.tags.filter((tag) => typeof tag === "string") : [],
+            archived: !!note.archived,
+            archivedAt: typeof note.archivedAt === "number" ? note.archivedAt : null,
+            dueAt: typeof note.dueAt === "string" && note.dueAt ? note.dueAt : null,
           }));
 
         showStamp(
@@ -1291,6 +1411,12 @@ const Home = () => {
       perform: () => window.dispatchEvent(new CustomEvent(TRASH_EVENT)),
     },
     {
+      key: "archive",
+      label: archivedNotes.length > 0 ? `Open the archive · ${ archivedNotes.length }` : "Open the archive",
+      icon: <FaBoxArchive />,
+      perform: () => window.dispatchEvent(new CustomEvent(ARCHIVE_EVENT)),
+    },
+    {
       key: "settings",
       label: "Open settings",
       icon: <FaGear />,
@@ -1363,6 +1489,7 @@ const Home = () => {
           persistNotes={ persistNotes }
           togglePersistNotes={ togglePersistNotes }
           trashCount={ deletedNotes.length }
+          archivedCount={ archivedNotes.length }
           pileView={ pileView }
           togglePileView={ togglePileView }
           reduceMotion={ reduceMotion }
@@ -1370,7 +1497,7 @@ const Home = () => {
         />
         <NoteList
           notes={ filteredNotes }
-          hasNotes={ notes.length > 0 }
+          hasNotes={ desklikeNotes.length > 0 }
           deskCleared={ deskCleared }
           focusMode={ focusMode }
           addNote={ addNote }
@@ -1391,6 +1518,7 @@ const Home = () => {
           setSortMode={ setSortMode }
           shuffleNotes={ shuffleNotes }
           deleteNote={ deleteNote }
+          archiveNote={ archiveNote }
           updateTitle={ updateTitle }
           updateText={ updateText }
           updateFavourite={ updateFavourite }
@@ -1420,6 +1548,8 @@ const Home = () => {
               setNoteColor={ setNoteColor }
               updateQuote={ updateQuote }
               updateTags={ updateTags }
+              setNoteDueDate={ setNoteDueDate }
+              toggleChecklist={ toggleChecklist }
             />
           )
         }
@@ -1467,12 +1597,18 @@ const Home = () => {
         reduceMotion={ reduceMotion }
         celebration={ celebration }
       />
-      <NoteConstellationPanel notes={ notes } openEditor={ setEditingNoteId } reduceMotion={ reduceMotion } />
+      <NoteConstellationPanel notes={ desklikeNotes } openEditor={ setEditingNoteId } reduceMotion={ reduceMotion } />
       <TrashPanel
         entries={ deletedNotes }
         onRestore={ restoreNote }
         onShred={ shredNote }
         onEmpty={ emptyTrash }
+        reduceMotion={ reduceMotion }
+      />
+      <ArchivePanel
+        entries={ archivedNotes }
+        onUnarchive={ unarchiveNote }
+        onOpen={ setEditingNoteId }
         reduceMotion={ reduceMotion }
       />
       <HistoryPanel
@@ -1499,6 +1635,7 @@ const Home = () => {
         onStar={ bulkStar }
         onRecolor={ bulkRecolor }
         onExport={ bulkExport }
+        onArchive={ bulkArchive }
         onDelete={ bulkDelete }
         onDone={ endSelection }
         reduceMotion={ reduceMotion }

@@ -3,14 +3,17 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useAnimationControls, useMotionValue, useSpring, useTransform } from "framer-motion";
 import anime from "animejs";
 
-import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRight, FaCheck } from "react-icons/fa6";
+import { FaPen, FaStar, FaPalette, FaDownload, FaCopy, FaExpand, FaUpDownLeftRight, FaCheck, FaBoxArchive } from "react-icons/fa6";
 import { FaEye, FaTrash } from "react-icons/fa";
 
 import useLongPress from "../../hooks/useLongPress";
 import useMagnetic from "../../hooks/useMagnetic";
 import { playDelete, playStar } from "../../utils/sound";
+import { dueLabel } from "../../utils/date";
+import { isChecklistText } from "../../utils/checklist";
 import PullString from "./PullString";
 import MoveString from "./MoveString";
+import ChecklistBody from "./ChecklistBody";
 import SparkBurst from "../Spark/SparkBurst";
 import { SNAPPY, EXIT_SPRING, coinFlip } from "../Motion";
 import { blobPath, roundedRectPath, createBlobMorph } from "../../utils/blob";
@@ -45,6 +48,7 @@ const Note = ({
   selected,
   onToggleSelect,
   deleteNote,
+  archiveNote,
   updateTitle,
   updateText,
   updateFavorite,
@@ -82,6 +86,13 @@ const Note = ({
   const trimmedQuery = searchQuery?.trim().toLowerCase();
   const isSearchMatch = !!trimmedQuery &&
     `${ note.title ?? "" } ${ note.text }`.toLowerCase().includes(trimmedQuery);
+
+  // A note's body renders as an interactive checklist instead of plain text
+  // the moment note.text itself reads as one — see utils/checklist.js for
+  // why that's a derived read rather than a stored flag. `due` is the same
+  // kind of derived, render-only read off note.dueAt (see utils/date.js).
+  const isChecklist = isChecklistText(draftText);
+  const due = dueLabel(note.dueAt);
 
   // A wordier note carries real weight in its own spring physics — `mass`
   // is a genuine parameter of framer's actual damped-harmonic-oscillator
@@ -354,6 +365,7 @@ const Note = ({
     { key: "star", icon: <FaStar />, label: note.favorite ? "Unstar" : "Star", onRun: handleFavorite },
     { key: "recolor", icon: <FaPalette />, label: "Recolor", onRun: () => updateColor(note.id) },
     { key: "duplicate", icon: <FaCopy />, label: "Duplicate", onRun: handleDuplicate },
+    { key: "archive", icon: <FaBoxArchive />, label: "Archive", onRun: () => archiveNote?.(note.id) },
     {
       key: "lock",
       icon: note.lock ? <FaPen /> : <FaEye size={ 12 } />,
@@ -888,32 +900,53 @@ const Note = ({
           }}
           className={ `note-title ${ note.color }-highlight` }
         />
-        <motion.textarea
-          initial={{
-            opacity: 0,
-            scale: 1,
-          }}
-          animate={
-            isDeleting ? {
-              opacity: 0,
-              scale: .4,
-            } : {
-              opacity: 1,
-              scale: 1,
-            }
-          }
-          ref={ textRef }
-          readOnly={ note.lock }
-          placeholder={ note.placeholder }
-          value={ draftText }
-          onChange={ (e) => handleTextUpdate(e.target.value) }
-          onFocus={ () => setIsTyping(true) }
-          onBlur={ () => setIsTyping(false) }
-          style={{
-            color: note.lock ? "var(--black-transclucent-color)" : "var(--black-color)",
-          }}
-          className={ `custom-scroll ${ note.color }-highlight` }
-        ></motion.textarea>
+        {
+          isChecklist ? (
+            <motion.div
+              initial={{ opacity: 0, scale: 1 }}
+              animate={
+                isDeleting ? { opacity: 0, scale: .4 } : { opacity: 1, scale: 1 }
+              }
+              className="note-checklist-wrap"
+            >
+              <ChecklistBody
+                text={ draftText }
+                onChange={ handleTextUpdate }
+                locked={ note.lock }
+                colorName={ note.color }
+                onFocus={ () => setIsTyping(true) }
+                onBlur={ () => setIsTyping(false) }
+              />
+            </motion.div>
+          ) : (
+            <motion.textarea
+              initial={{
+                opacity: 0,
+                scale: 1,
+              }}
+              animate={
+                isDeleting ? {
+                  opacity: 0,
+                  scale: .4,
+                } : {
+                  opacity: 1,
+                  scale: 1,
+                }
+              }
+              ref={ textRef }
+              readOnly={ note.lock }
+              placeholder={ note.placeholder }
+              value={ draftText }
+              onChange={ (e) => handleTextUpdate(e.target.value) }
+              onFocus={ () => setIsTyping(true) }
+              onBlur={ () => setIsTyping(false) }
+              style={{
+                color: note.lock ? "var(--black-transclucent-color)" : "var(--black-color)",
+              }}
+              className={ `custom-scroll ${ note.color }-highlight` }
+            ></motion.textarea>
+          )
+        }
         <div
           className="trash-container"
           style={{
@@ -1023,6 +1056,13 @@ const Note = ({
             >
               { note.time }
             </span>
+            {
+              due && (
+                <span className={ `note-due-badge ${ due.urgency }` }>
+                  { due.text }
+                </span>
+              )
+            }
           </motion.div>
           <motion.div
             initial={{

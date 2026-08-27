@@ -4,6 +4,7 @@ import gsap from "gsap";
 import { FaXmark, FaArrowRotateLeft, FaTrash, FaBoxArchive } from "react-icons/fa6";
 
 import { timeAgo } from "../../utils/date";
+import { checklistAwareText } from "../../utils/checklist";
 import TrashPhysics from "./TrashPhysics";
 import SheetPanel from "../Sheet/SheetPanel";
 import SparkBurst from "../Spark/SparkBurst";
@@ -262,7 +263,7 @@ const TrashPanel = ({ entries, onRestore, onShred, onEmpty, reduceMotion }) => {
     const title = note.title?.trim();
     if (title) return title;
 
-    const text = note.text?.trim();
+    const text = checklistAwareText(note.text).trim();
     if (text) return text.length > 60 ? `${ text.slice(0, 60) }…` : text;
 
     return "Untitled note";

@@ -316,6 +316,29 @@ const HISTORY_ACTION_SOUNDS = {
       noise(context, { duration: .05, freqFrom: 2000, freqTo: 1200, peak: .1, delay: i * .045, filterType: "bandpass", Q: 2 });
     }
   }),
+  // archived/unarchived mirror each other the same way restored already
+  // mirrors deleted — archived settles from a higher, brighter tone down
+  // into a muffled lowpass tail (tucked away), unarchived is that same
+  // shape run in reverse (brought back out).
+  archived: () => play((context) => {
+    tone(context, { freq: 300, glideTo: 170, duration: .16, type: "sine", peak: .18 });
+    noise(context, { duration: .14, freqFrom: 700, freqTo: 260, peak: .1, filterType: "lowpass", delay: .02 });
+  }),
+  unarchived: () => play((context) => {
+    tone(context, { freq: 170, glideTo: 300, duration: .16, type: "sine", peak: .2 });
+    noise(context, { duration: .12, freqFrom: 260, freqTo: 900, peak: .1, filterType: "lowpass" });
+  }),
+  // Two soft neutral ticks — a calendar page being flagged, not an alarm.
+  reminded: () => play((context) => {
+    tone(context, { freq: 500, duration: .05, type: "triangle", peak: .18 });
+    tone(context, { freq: 660, duration: .06, type: "triangle", peak: .2, delay: .08 });
+  }),
+  // A quick pen-tick swish — the same register as tagged, kept distinct so
+  // the two categories still read apart in the History rail's own preview.
+  checklisted: () => play((context) => {
+    noise(context, { duration: .05, freqFrom: 1800, freqTo: 2600, peak: .14, filterType: "highpass" });
+    tone(context, { freq: 780, duration: .05, type: "sine", peak: .16, delay: .04 });
+  }),
 };
 
 export const playHistoryAction = (key) => {

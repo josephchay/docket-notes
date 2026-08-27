@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from 'framer-motion';
 import gsap from "gsap";
-import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan, FaClockRotateLeft, FaGear, FaLayerGroup } from "react-icons/fa6";
+import { FaStar, FaMoon, FaSun, FaXmark, FaRotateLeft, FaChartSimple, FaChartLine, FaWandMagicSparkles, FaExpand, FaLock, FaLockOpen, FaTrashCan, FaBoxArchive, FaClockRotateLeft, FaGear, FaLayerGroup } from "react-icons/fa6";
 
 import { NOTE_COLORS } from "../../constants/colors";
 import { COMMAND_EVENT } from "../Command/CommandPalette";
 import { INSIGHTS_EVENT } from "../Insights/InsightsPanel";
 import { TRASH_EVENT } from "../Trash/TrashPanel";
+import { ARCHIVE_EVENT } from "../Archive/ArchivePanel";
 import { HISTORY_EVENT } from "../History/HistoryPanel";
 import { SETTINGS_EVENT } from "../Settings/SettingsPanel";
 import { INK_LEVELS_EVENT } from "./InkLevelsPanel";
@@ -112,6 +113,7 @@ const Header = ({
   persistNotes,
   togglePersistNotes,
   trashCount,
+  archivedCount,
   pileView,
   togglePileView,
   reduceMotion,
@@ -131,6 +133,7 @@ const Header = ({
   const commandJelly = useJellyTap();
   const focusJelly = useJellyTap();
   const trashJelly = useJellyTap();
+  const archiveJelly = useJellyTap();
   const settingsJelly = useJellyTap();
   const pileJelly = useJellyTap();
 
@@ -737,11 +740,38 @@ const Header = ({
         </AnimatePresence>
       </WandButton>
       <WandButton
+        ariaLabel={ archivedCount > 0 ? `Open the archive — ${ archivedCount } ${ archivedCount === 1 ? "note" : "notes" }` : "Open the archive" }
+        title="Archive"
+        rotate={ 10 }
+        jelly={ archiveJelly }
+        magnetRef={ toolbarMagnetic.registerItem(5) }
+        onClick={ () => window.dispatchEvent(new CustomEvent(ARCHIVE_EVENT)) }
+        className="archive-trigger"
+        icon={ FaBoxArchive }
+      >
+        <AnimatePresence>
+          {
+            archivedCount > 0 && (
+              <motion.span
+                key="badge"
+                className="trash-badge"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0, opacity: 0 }}
+                transition={ POP }
+              >
+                { archivedCount }
+              </motion.span>
+            )
+          }
+        </AnimatePresence>
+      </WandButton>
+      <WandButton
         ariaLabel="Open the command palette"
         title="Command ink (Ctrl K)"
         rotate={ -10 }
         jelly={ commandJelly }
-        magnetRef={ toolbarMagnetic.registerItem(5) }
+        magnetRef={ toolbarMagnetic.registerItem(6) }
         onClick={ () => window.dispatchEvent(new CustomEvent(COMMAND_EVENT)) }
         className="command-trigger"
         icon={ FaWandMagicSparkles }
@@ -751,7 +781,7 @@ const Header = ({
         title="Focus mode (F)"
         rotate={ -14 }
         jelly={ focusJelly }
-        magnetRef={ toolbarMagnetic.registerItem(6) }
+        magnetRef={ toolbarMagnetic.registerItem(7) }
         onClick={ toggleFocusMode }
         className="focus-trigger"
         icon={ FaExpand }
@@ -766,7 +796,7 @@ const Header = ({
             title={ pileView ? "Restore the grid" : "Toss notes into a pile" }
             rotate={ -10 }
             jelly={ pileJelly }
-            magnetRef={ toolbarMagnetic.registerItem(7) }
+            magnetRef={ toolbarMagnetic.registerItem(8) }
             onClick={ togglePileView }
             className={ `pile-toggle ${ pileView ? "active" : "" }` }
             icon={ FaLayerGroup }
@@ -796,7 +826,7 @@ const Header = ({
       >
         {/* The old icon spins out, the new one springs in — a tiny
             celestial changeover. */}
-        <span ref={ toolbarMagnetic.registerItem(8) } style={{ display: "inline-flex" }}>
+        <span ref={ toolbarMagnetic.registerItem(9) } style={{ display: "inline-flex" }}>
           <AnimatePresence mode="wait" initial={ false }>
             <motion.span
               key={ theme }
@@ -827,7 +857,7 @@ const Header = ({
       >
         {/* The same spring-in/spin-out changeover as the theme toggle beside
             it — the lock clicks shut or springs back open. */}
-        <span ref={ toolbarMagnetic.registerItem(9) } style={{ display: "inline-flex" }}>
+        <span ref={ toolbarMagnetic.registerItem(10) } style={{ display: "inline-flex" }}>
           <AnimatePresence mode="wait" initial={ false }>
             <motion.span
               key={ persistNotes ? "locked" : "unlocked" }
@@ -850,7 +880,7 @@ const Header = ({
         title="Settings"
         rotate={ 14 }
         jelly={ settingsJelly }
-        magnetRef={ toolbarMagnetic.registerItem(10) }
+        magnetRef={ toolbarMagnetic.registerItem(11) }
         onClick={ () => window.dispatchEvent(new CustomEvent(SETTINGS_EVENT)) }
         className="settings-trigger"
         icon={ FaGear }

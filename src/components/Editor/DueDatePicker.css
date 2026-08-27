@@ -1,0 +1,170 @@
+/* A small torn-off page from the note's own pad — the same paper color the
+   editor itself wears, rather than the app's neutral page-surface panels
+   (Trash/Archive/Settings) — so a reminder reads as part of THIS note, not
+   a system dialog borrowed from somewhere else. Portaled to document.body
+   (see DueDatePicker.jsx) and positioned in fixed/viewport coordinates, so
+   it sits correctly regardless of whatever transform the editor's own
+   entrance/jelly wrappers currently carry. */
+/* Background color comes from the shared ${color}-bg utility classes
+   (src/base/commons.css) via the className DueDatePicker.jsx already
+   applies — never set here, so the popover always matches whichever paper
+   color the note actually is. */
+.due-picker {
+  position: fixed;
+  z-index: 980;
+  width: 248px;
+  padding: 14px;
+  border-radius: 18px;
+  box-shadow: 0 20px 46px -14px rgba(25, 25, 25, 0.45);
+  color: var(--black-color);
+}
+
+.due-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.due-picker-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-size: 11px;
+}
+
+.due-picker-month-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.due-picker-month {
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.due-picker-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 4px;
+}
+
+.due-picker-weekdays span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: .5;
+}
+
+.due-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  row-gap: 2px;
+}
+
+.due-picker-day {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  border-radius: 50%;
+  font-family: inherit;
+}
+
+.due-picker-day-num {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--black-color);
+}
+
+.due-picker-day.outside .due-picker-day-num {
+  opacity: .3;
+}
+
+/* Today wears a plain ring so it's still findable at a glance even once a
+   different day is filled in as the actual selection. Skipped for an
+   "outside" cell (today spilling into a padding row would be confusing
+   to mark, and never happens in the same glance as its own real month). */
+.due-picker-day.today:not(.outside)::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--black-more-transclucent-color);
+  pointer-events: none;
+}
+
+/* One shared ink fill sliding — and stretching, gooily, via the jelly
+   pulse — from day to day, the same layoutId-ring recipe the header's own
+   color-filter and the sort-mode/tag-filter thumbs already use, rather
+   than an independent pop-in on every different cell. */
+.due-picker-day-ring {
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.due-picker-day-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--black-color);
+}
+
+/* The ring sits behind the number (see the JSX order) — once it's there,
+   the number reads white against the now-filled dark circle. */
+.due-picker-day-ring + .due-picker-day-num {
+  color: var(--white-color);
+}
+
+.due-picker-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--black-even-more-transclucent-color);
+}
+
+.due-picker-quick-pill {
+  padding: 5px 10px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.due-picker-quick-pill.clear {
+  margin-left: auto;
+  opacity: .6;
+}

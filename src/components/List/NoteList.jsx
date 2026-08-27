@@ -151,6 +151,7 @@ const NoteList = ({
   setSortMode,
   shuffleNotes,
   deleteNote,
+  archiveNote,
   updateTitle,
   updateText,
   updateFavourite,
@@ -715,6 +716,7 @@ const NoteList = ({
                       selected={ selectedIds?.has(item.id) }
                       onToggleSelect={ toggleSelectNote }
                       deleteNote={ deleteNote }
+                      archiveNote={ archiveNote }
                       updateTitle={ updateTitle }
                       updateText={ updateText }
                       updateFavorite={ updateFavourite }

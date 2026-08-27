@@ -218,6 +218,50 @@
   color: var(--black-transclucent-color);
 }
 
+/* Same slot the plain textarea it replaces already occupies (see Note.jsx's
+   isChecklist branch) — the wrapper alone carries the position/sizing so
+   ChecklistBody.css's own .checklist-body can stay a plain 100%-height flex
+   column, reused as-is by the editor's own differently-sized wrapper. */
+.note .note-checklist-wrap {
+  position: relative;
+  z-index: 1;
+  margin-top: 16px;
+  padding-right: 10px;
+  width: 98%;
+  height: 46%;
+}
+
+.note .footer .date {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Urgency reads in ink, not a traffic-light palette foreign to this app's
+   paper/color language — overdue leans on the note palette's own red,
+   everything else stays a quiet, translucent version of the note's own
+   ink so a card with no reminder set never looks like it's missing one. */
+.note-due-badge {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-transclucent-color);
+}
+
+.note-due-badge.today,
+.note-due-badge.soon {
+  background: var(--black-more-transclucent-color);
+  color: var(--black-color);
+}
+
+.note-due-badge.overdue {
+  background: var(--red-color);
+  color: var(--black-color);
+}
+
 .note .footer {
   left: 0;
   bottom: 0;

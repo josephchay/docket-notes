@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import gsap from "gsap";
-import { FaStar, FaPalette, FaFileArrowDown, FaTrash, FaXmark } from "react-icons/fa6";
+import { FaStar, FaPalette, FaFileArrowDown, FaBoxArchive, FaTrash, FaXmark } from "react-icons/fa6";
 
 import useJellyTap from "../../hooks/useJellyTap";
 import useBlobClipMorph from "../../hooks/useBlobClipMorph";
@@ -81,10 +81,11 @@ const useHoldToConfirm = (onConfirm, reduceMotion) => {
 // useOdometer's own elastic tween rather than popping in fresh each time,
 // so a multi-note selection/deselection drag rolls through the numbers in
 // between instead of snapping.
-const BulkActionBar = ({ count, onStar, onRecolor, onExport, onDelete, onDone, reduceMotion }) => {
+const BulkActionBar = ({ count, onStar, onRecolor, onExport, onArchive, onDelete, onDone, reduceMotion }) => {
   const starJelly = useJellyTap();
   const recolorJelly = useJellyTap();
   const exportJelly = useJellyTap();
+  const archiveJelly = useJellyTap();
   const deleteJelly = useJellyTap();
   const doneJelly = useJellyTap();
 
@@ -225,6 +226,21 @@ const BulkActionBar = ({ count, onStar, onRecolor, onExport, onDelete, onDone, r
                 >
                   <motion.span animate={ exportJelly.jelly } style={{ display: "inline-flex" }}>
                     <FaFileArrowDown />
+                  </motion.span>
+                </motion.button>
+                <motion.button
+                  type="button"
+                  aria-label="Archive every selected note"
+                  title="Archive selection"
+                  variants={ actionItemVariants }
+                  whileHover={{ scale: 1.1, rotate: -8 }}
+                  whileTap={{ scale: .9 }}
+                  transition={ springy }
+                  onTapStart={ archiveJelly.squash }
+                  onClick={ onArchive }
+                >
+                  <motion.span animate={ archiveJelly.jelly } style={{ display: "inline-flex" }}>
+                    <FaBoxArchive />
                   </motion.span>
                 </motion.button>
                 <motion.button

@@ -6,7 +6,8 @@ import gsap from "gsap";
 import Lenis from "lenis";
 import {
   FaXmark, FaClockRotateLeft, FaPlus, FaTrash, FaArrowRotateLeft, FaTrashCan,
-  FaBoxArchive, FaFileArrowUp, FaCopy, FaPalette, FaUpDownLeftRight, FaStar,
+  FaBoxArchive, FaBoxesStacked, FaBoxOpen, FaCalendarDay, FaListCheck,
+  FaFileArrowUp, FaCopy, FaPalette, FaUpDownLeftRight, FaStar,
   FaLock, FaTag, FaShuffle, FaPlay, FaPause, FaChevronLeft, FaChevronRight,
   FaBackwardStep, FaGaugeHigh, FaMagnifyingGlass, FaFileArrowDown,
   FaUpRightAndDownLeftFromCenter, FaDownLeftAndUpRightToCenter, FaThumbtack,
@@ -89,6 +90,10 @@ const ACTION_STYLES = [
   { key: "locked", chipLabel: "Locks", test: (l) => l.startsWith("locked"), icon: FaLock, color: "var(--gray-color)" },
   { key: "tagged", chipLabel: "Tags", test: (l) => l.startsWith("edited a tag"), icon: FaTag, color: "var(--purple-color)" },
   { key: "shuffled", chipLabel: "Shuffles", test: (l) => l.startsWith("shuffled"), icon: FaShuffle, color: "var(--gray-color)" },
+  { key: "archived", chipLabel: "Archives", test: (l) => l.startsWith("archived"), icon: FaBoxesStacked, color: "var(--gray-color)" },
+  { key: "unarchived", chipLabel: "Unarchives", test: (l) => l.startsWith("unarchived"), icon: FaBoxOpen, color: "var(--blue-color)" },
+  { key: "reminded", chipLabel: "Reminders", test: (l) => l.startsWith("edited a reminder"), icon: FaCalendarDay, color: "var(--orange-color)" },
+  { key: "checklisted", chipLabel: "Checklists", test: (l) => l.startsWith("edited a checklist"), icon: FaListCheck, color: "var(--green-color)" },
 ];
 export const DEFAULT_STYLE = { icon: FaClockRotateLeft, color: "var(--page-ink-color)" };
 

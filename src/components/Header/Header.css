@@ -306,7 +306,8 @@ header.header {
   margin-left: auto;
 }
 
-.header .wand.trash-trigger {
+.header .wand.trash-trigger,
+.header .wand.archive-trigger {
   position: relative;
 }
 

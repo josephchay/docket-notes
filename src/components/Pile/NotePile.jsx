@@ -4,6 +4,7 @@ import Matter from "matter-js";
 import { FaArrowRotateLeft } from "react-icons/fa6";
 
 import { playImpact } from "../../utils/sound";
+import { checklistAwareText } from "../../utils/checklist";
 
 import "./NotePile.css";
 
@@ -360,7 +361,7 @@ const NotePile = ({ notes, onOpenNote, onExit }) => {
               onClick={ handlePieceClick(note.id) }
             >
               <span className="pile-piece-title">{ note.title?.trim() || "Untitled" }</span>
-              <span className="pile-piece-text">{ note.text }</span>
+              <span className="pile-piece-text">{ checklistAwareText(note.text) }</span>
             </button>
           ))
         }

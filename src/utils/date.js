@@ -47,3 +47,26 @@ export function timeAgo(timestamp) {
   const days = Math.round(hours / 24);
   return `${ days }d ago`;
 }
+
+// A due date is stored as a plain "YYYY-MM-DD" (a native <input type="date">
+// value) — no time-of-day, matching note.time's own day-only grain. Compared
+// against today's own calendar date (not a raw millisecond diff, which would
+// misjudge "today" depending on what hour it happens to be read) so the four
+// buckets below line up with how a visitor actually thinks about a due date.
+export function dueLabel(dueAt) {
+  if (typeof dueAt !== "string" || !dueAt) return null;
+
+  const due = new Date(`${ dueAt }T00:00:00`);
+  if (Number.isNaN(due.getTime())) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const days = Math.round((due.getTime() - today.getTime()) / 86400000);
+
+  if (days < 0) return { text: days === -1 ? "Due yesterday" : `${ -days }d overdue`, urgency: "overdue" };
+  if (days === 0) return { text: "Due today", urgency: "today" };
+  if (days === 1) return { text: "Due tomorrow", urgency: "soon" };
+  if (days <= 6) return { text: `Due in ${ days }d`, urgency: "soon" };
+  return { text: `Due ${ due.toLocaleDateString("en-US", { month: "short", day: "numeric" }) }`, urgency: "later" };
+}

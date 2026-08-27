@@ -24,7 +24,10 @@ const INTRO_KEY = "docket-intro-seen";
 //   color: string,
 //   favorite: boolean,
 //   lock: boolean,
-//   tags: string[]
+//   tags: string[],
+//   archived: boolean,
+//   archivedAt: number | null,
+//   dueAt: string | null
 // }
 
 // StoredSettings shape:
@@ -93,6 +96,9 @@ export const loadNotes = () => {
         favorite: !!note.favorite,
         lock: !!note.lock,
         tags: Array.isArray(note.tags) ? note.tags.filter((tag) => typeof tag === "string") : [],
+        archived: !!note.archived,
+        archivedAt: typeof note.archivedAt === "number" ? note.archivedAt : null,
+        dueAt: typeof note.dueAt === "string" && note.dueAt ? note.dueAt : null,
       }));
   } catch {
     return [];

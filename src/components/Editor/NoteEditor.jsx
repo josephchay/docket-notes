@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
-import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle, FaTag } from "react-icons/fa6";
+import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle, FaTag, FaCalendarDay, FaListCheck } from "react-icons/fa6";
 import { FaEye } from "react-icons/fa";
 
 import { NOTE_COLORS } from "../../constants/colors";
@@ -10,6 +10,10 @@ import useInkPulse from "../../hooks/useInkPulse";
 import useFocusTrap from "../../hooks/useFocusTrap";
 import HistoryAmbient from "../History/HistoryAmbient";
 import { EXIT_SPRING, coinFlip } from "../Motion";
+import { dueLabel } from "../../utils/date";
+import { isChecklistText, toChecklistText, fromChecklistText } from "../../utils/checklist";
+import ChecklistBody from "../Note/ChecklistBody";
+import DueDatePicker from "./DueDatePicker";
 
 import "./NoteEditor.css";
 
@@ -88,11 +92,19 @@ const NoteEditor = ({
   setNoteColor,
   updateQuote,
   updateTags,
+  setNoteDueDate,
+  toggleChecklist,
 }) => {
   const [draftTitle, setDraftTitle] = useState(note.title);
   const [draftText, setDraftText] = useState(note.text);
   const [size, setSize] = useState("roomy");
   const [copied, setCopied] = useState(false);
+
+  // The body renders as an interactive checklist the moment its own text
+  // reads as one — see Note.jsx's identical read for why this is derived
+  // rather than a stored mode.
+  const isChecklist = isChecklistText(draftText);
+  const due = dueLabel(note.dueAt);
 
   // Tags pop in bouncy, shrink away when removed. Notes from before this
   // feature existed simply have none yet.
@@ -132,6 +144,8 @@ const NoteEditor = ({
   // pen/eye on the span inside it.
   const starTap = useJellyTap();
   const lockTap = useJellyTap();
+  const remindTap = useJellyTap();
+  const checklistTap = useJellyTap();
   const copyTap = useJellyTap();
   const resizeTap = useJellyTap();
 
@@ -229,7 +243,10 @@ const NoteEditor = ({
   // Drop the caret at the end of the body so writing continues immediately
   // — or, for a locked note (nothing to type into), land on the editor
   // shell itself instead, so a keyboard user still has *something*
-  // focused to Tab from rather than nothing at all.
+  // focused to Tab from rather than nothing at all. A note that opens
+  // straight into checklist mode has no textRef to focus here at all (see
+  // the isChecklist branch below) — ChecklistBody handles that case itself
+  // via its own `autoFocus` prop, landing on its first row instead.
   useEffect(() => {
     if (note.lock) {
       editorRef.current?.focus({ preventScroll: true });
@@ -253,6 +270,18 @@ const NoteEditor = ({
     setDraftText(value);
     clearTimeout(textTimerRef.current);
     textTimerRef.current = setTimeout(() => updateText(value, note.id), debounceTimer);
+  };
+
+  // Disarms a pending debounced text commit without discarding it — used
+  // right before the checklist toggle below, which is handed draftText
+  // directly (see toggleChecklist(note.id, draftText)) rather than reading
+  // note.text back out of Home's own state, so it always converts exactly
+  // what's on screen even mid-keystroke. Left armed, that old timer would
+  // still fire ~debounceTimer later and commit the stale PRE-toggle plain
+  // text over top of the just-toggled checklist, silently undoing it.
+  const cancelPendingText = () => {
+    clearTimeout(textTimerRef.current);
+    textTimerRef.current = null;
   };
 
   // Copy the whole note as plain text, with a small sparkle of confirmation
@@ -287,6 +316,12 @@ const NoteEditor = ({
   };
 
   const words = draftText.trim() ? draftText.trim().split(/\s+/).length : 0;
+
+  // The reminder button opens DueDatePicker.jsx's own hand-built calendar
+  // popover instead of the browser's native date widget — anchored off
+  // this button's own rect, which the popover measures itself via this ref.
+  const remindBtnRef = useRef(null);
+  const [dueCalendarOpen, setDueCalendarOpen] = useState(false);
 
   return (
     <div className="note-editor-layer">
@@ -422,6 +457,57 @@ const NoteEditor = ({
                   </motion.span>
                 </motion.button>
                 <motion.button
+                  ref={ remindBtnRef }
+                  type="button"
+                  aria-label={ note.dueAt ? "Change this note's reminder" : "Set a reminder for this note" }
+                  aria-pressed={ dueCalendarOpen }
+                  className="note-editor-action dark"
+                  whileHover={{ scale: 1.15, rotate: -8 }}
+                  whileTap={{ scale: .9 }}
+                  transition={ actionSpring }
+                  onTapStart={ remindTap.squash }
+                  onClick={ () => setDueCalendarOpen((prev) => !prev) }
+                >
+                  <motion.span animate={ remindTap.jelly } style={{ display: "inline-flex" }}>
+                    <FaCalendarDay className="note-editor-action-icon light" />
+                  </motion.span>
+                </motion.button>
+                <motion.button
+                  type="button"
+                  aria-label={ isChecklist ? "Turn this back into plain text" : "Turn this into a checklist" }
+                  aria-pressed={ isChecklist }
+                  disabled={ note.lock }
+                  className="note-editor-action"
+                  style={{
+                    backgroundColor: isChecklist ? "var(--black-color)" : "var(--black-even-more-transclucent-color)",
+                    opacity: note.lock ? .4 : 1,
+                  }}
+                  whileHover={ note.lock ? undefined : { scale: 1.15, rotate: 8 } }
+                  whileTap={ note.lock ? undefined : { scale: .9 } }
+                  transition={ actionSpring }
+                  onTapStart={ checklistTap.squash }
+                  onClick={ () => {
+                    if (note.lock) return;
+                    cancelPendingText();
+                    // draftText is updated here directly rather than left
+                    // to round-trip back down through the note.text prop
+                    // (see the sync effect above) — that effect only syncs
+                    // while the field it guards against isn't itself
+                    // focused, and this toggle can fire with the textarea
+                    // still mid-focus (typed something, clicked straight
+                    // over to this button without an intervening blur) —
+                    // updating locally keeps the toggle instant and
+                    // correct regardless of that timing.
+                    const nextText = isChecklist ? fromChecklistText(draftText) : toChecklistText(draftText);
+                    setDraftText(nextText);
+                    toggleChecklist(note.id, draftText);
+                  } }
+                >
+                  <motion.span animate={ checklistTap.jelly } style={{ display: "inline-flex" }}>
+                    <FaListCheck className={ `note-editor-action-icon ${ isChecklist ? "light" : "" }` } />
+                  </motion.span>
+                </motion.button>
+                <motion.button
                   ref={ copyBtnRef }
                   type="button"
                   aria-label="Copy the note to the clipboard"
@@ -538,14 +624,27 @@ const NoteEditor = ({
                 </div>
               )
             }
-            <textarea
-              ref={ textRef }
-              readOnly={ note.lock }
-              placeholder={ note.placeholder }
-              value={ draftText }
-              onChange={ (e) => handleText(e.target.value) }
-              className={ `note-editor-text custom-scroll ${ note.color }-highlight` }
-            ></textarea>
+            {
+              isChecklist ? (
+                <ChecklistBody
+                  text={ draftText }
+                  onChange={ handleText }
+                  locked={ note.lock }
+                  colorName={ note.color }
+                  className="editor-checklist"
+                  autoFocus={ !note.lock }
+                />
+              ) : (
+                <textarea
+                  ref={ textRef }
+                  readOnly={ note.lock }
+                  placeholder={ note.placeholder }
+                  value={ draftText }
+                  onChange={ (e) => handleText(e.target.value) }
+                  className={ `note-editor-text custom-scroll ${ note.color }-highlight` }
+                ></textarea>
+              )
+            }
             <div className="note-editor-footer">
               <div className="note-editor-footer-left">
                 <span className="note-editor-date">{ note.time }</span>
@@ -571,23 +670,59 @@ const NoteEditor = ({
                     )
                   }
                 </AnimatePresence>
+                <AnimatePresence>
+                  {
+                    due && (
+                      <motion.span
+                        key="dueChip"
+                        className={ `note-editor-due-chip ${ due.urgency }` }
+                        initial={{ opacity: 0, scale: .7 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: .7 }}
+                        transition={{ type: "spring", stiffness: 420, damping: 18 }}
+                      >
+                        { due.text }
+                        <button
+                          type="button"
+                          aria-label="Clear this reminder"
+                          className="note-editor-due-clear"
+                          onClick={ () => setNoteDueDate(null, note.id) }
+                        >
+                          <FaXmark />
+                        </button>
+                      </motion.span>
+                    )
+                  }
+                </AnimatePresence>
               </div>
-              <div className="note-editor-meta">
-                <motion.span
-                  key={ words }
-                  className="note-editor-count"
-                  initial={{ scale: .75, y: 2 }}
-                  animate={{ scale: 1, y: 0 }}
-                  transition={{ type: "spring", stiffness: 500, damping: 18 }}
-                >
-                  { words } { words === 1 ? "word" : "words" }
-                </motion.span>
-                <span className="note-editor-count muted">{ draftText.length } chars</span>
-              </div>
+              {
+                !isChecklist && (
+                  <div className="note-editor-meta">
+                    <motion.span
+                      key={ words }
+                      className="note-editor-count"
+                      initial={{ scale: .75, y: 2 }}
+                      animate={{ scale: 1, y: 0 }}
+                      transition={{ type: "spring", stiffness: 500, damping: 18 }}
+                    >
+                      { words } { words === 1 ? "word" : "words" }
+                    </motion.span>
+                    <span className="note-editor-count muted">{ draftText.length } chars</span>
+                  </div>
+                )
+              }
             </div>
           </motion.div>
         </motion.div>
       </motion.div>
+      <DueDatePicker
+        open={ dueCalendarOpen }
+        value={ note.dueAt }
+        colorName={ note.color }
+        anchorRef={ remindBtnRef }
+        onChange={ (date) => { setNoteDueDate(date, note.id); setDueCalendarOpen(false); } }
+        onClose={ () => setDueCalendarOpen(false) }
+      />
       {
         createPortal(
           <AnimatePresence>

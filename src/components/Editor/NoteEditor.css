@@ -326,6 +326,60 @@
   font-size: 10px;
 }
 
+/* Same pill shape as .note-editor-tag above, urgency-tinted the same way
+   the card's own .note-due-badge is (see Note.css) — overdue leans on the
+   note palette's own red, everything else stays a quiet ink-on-ink tone. */
+.note-editor-due-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--black-color);
+  background: var(--black-even-more-transclucent-color);
+}
+
+.note-editor-due-chip.overdue {
+  background: var(--red-color);
+}
+
+.note-editor-due-chip .note-editor-due-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  color: inherit;
+  opacity: .55;
+  font-size: 9px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.note-editor-due-chip .note-editor-due-clear:hover {
+  opacity: 1;
+}
+
+/* Same slot .note-editor-text already occupies (see NoteEditor.jsx's
+   isChecklist branch) — flex:1 alone is enough here since ChecklistBody's
+   own .checklist-body doesn't need a percentage height the way the note
+   card's fixed-height wrapper does (see Note.css's .note-checklist-wrap). */
+/* Dimming while locked is already handled by ChecklistBody's own
+   .checklist-body.locked rule (see ChecklistBody.css) — this only ever
+   needs to place it in .note-editor-text's old slot. */
+.editor-checklist {
+  flex: 1;
+  min-height: 0;
+  margin-top: 18px;
+  padding-right: 10px;
+  width: 100%;
+}
+
 /* The copy confirmation, floating just under the action buttons. */
 .note-editor-copied {
   position: absolute;
