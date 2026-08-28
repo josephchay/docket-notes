@@ -502,6 +502,24 @@
   transition: background-color 0.4s ease-in-out;
 }
 
+/* The book's own real, traditional KJV heading — always visible above the
+   collapsible toggle below, the one piece of this card that's actual
+   public-domain scripture text rather than this app's own written
+   synopsis, so it plays the same permanent, un-skippable role here that it
+   does at the top of the book's own first page in print. */
+.scripture-index-book-traditional-title {
+  display: block;
+  padding: 12px 12px 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  color: var(--page-ink-color);
+  opacity: .85;
+}
+
 .scripture-index-book-details-toggle {
   display: flex;
   align-items: center;
@@ -766,6 +784,72 @@
 
 .scripture-index-browse-verse-inline.selected .scripture-index-browse-verse-num {
   opacity: .8;
+}
+
+/* The lettered marker riding right after a verse's own number when it has
+   cross-references — see the footnote strip below for what each letter
+   actually points to. Slightly smaller/lighter than the verse number
+   itself so the number (the thing you'd actually navigate by) stays the
+   visually dominant element of the two. */
+.scripture-index-verse-xref-marks {
+  margin-left: 1px;
+  font-size: .82em;
+  opacity: .6;
+}
+
+/* The footnote strip a printed Bible's own cross-reference letters point
+   down to, run at the bottom of the chapter rather than the very bottom of
+   a physical page (there's only ever one "page" here — the whole chapter),
+   same "smaller, quieter, below a divider" language a real page's own
+   footnotes use. Each reference is a real button (see the onClick in
+   ScriptureIndexPanel.jsx), not inert footnote text — this app has no
+   physical constraint keeping a cross-reference from being one tap away. */
+.scripture-index-footnotes {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--page-line-color);
+}
+
+.scripture-index-footnote-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin: 0 0 4px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.scripture-index-footnote-verse {
+  flex-shrink: 0;
+  font-weight: 800;
+  color: var(--page-ink-color);
+  opacity: .55;
+}
+
+.scripture-index-footnote-entry {
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+  opacity: .8;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: opacity 0.15s ease-in-out, text-decoration-color 0.15s ease-in-out;
+}
+
+.scripture-index-footnote-entry:hover {
+  opacity: 1;
+  text-decoration-color: currentColor;
+}
+
+.scripture-index-footnote-entry sup {
+  font-weight: 800;
+  margin-right: 1px;
 }
 
 .scripture-index-browse-verse-manual {

@@ -6,6 +6,7 @@ import useFocusTrap from "../../hooks/useFocusTrap";
 import { parseBareCitation } from "../../utils/citations";
 import { BOOK_CHAPTER_COUNTS, BOOK_SECTIONS } from "../../utils/bibleBooks";
 import { BIBLE_BOOK_DETAILS } from "../../utils/bibleBookDetails";
+import { loadCrossReferences } from "../../utils/crossReferences";
 import { fetchVerseText } from "../../utils/bibleApi";
 import { SNAPPY, RAIL_SLIDE } from "../Motion";
 
@@ -36,6 +37,11 @@ const SEARCH_DEBOUNCE = 450;
 // sweep across a dozen chapter cells while scanning for the right one must
 // never fire a dozen requests against the same tightly-rate-limited API.
 const CHAPTER_PREVIEW_DEBOUNCE = 400;
+
+// Lettered cross-reference markers, printed-Bible style ("a," "b," "c," …).
+// utils/crossReferences.js caps every verse at 6 references, well under 26,
+// so plain a-z (never needing a second pass through the alphabet) is safe.
+const XREF_LETTERS = "abcdefghijklmnopqrstuvwxyz";
 
 // Every inline citation across the whole desk, one row each, in canonical
 // Bible order — the corpus-wide counterpart to a single note's own pill row
@@ -166,6 +172,23 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
       setChapterVerses(null);
     }
   }, [mode]);
+
+  // The full verse-to-verse cross-reference dataset (~3MB, see
+  // utils/crossReferences.js's own comment on why this is a lazy fetch of a
+  // public/ static file rather than a static import) is only worth
+  // spending that fetch on once someone actually opens Browse mode at all
+  // — loadCrossReferences() caches internally, so entering Browse a second
+  // time (or a second panel instance, if this ever weren't a single
+  // app-wide singleton) never re-fetches. Left `null` until it resolves;
+  // every read of it below already treats `null` as "no cross-references
+  // yet known for anything," which is honestly true for that brief window.
+  const [crossRefMap, setCrossRefMap] = useState(null);
+
+  useEffect(() => {
+    if (mode === "browse" && !crossRefMap) {
+      loadCrossReferences().then(setCrossRefMap);
+    }
+  }, [mode, crossRefMap]);
 
   // Debounced live preview while hovering a chapter cell in Browse mode —
   // never fired on a fast sweep across many cells, only once the pointer
@@ -753,6 +776,18 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                             // of introduction to reach the grid every time.
                             BIBLE_BOOK_DETAILS[browseBook] && (
                               <div className="scripture-index-book-details">
+                                {/* The traditional heading this book actually
+                                    carries in essentially every standard KJV
+                                    printing ("The First Book of Moses, Called
+                                    Genesis," etc.) — real, public-domain KJV
+                                    text, not editorial content, so unlike the
+                                    synopsis below it, it's always shown, never
+                                    behind the toggle: the same permanent,
+                                    un-skippable role it plays on an actual
+                                    printed page. */}
+                                <span className="scripture-index-book-traditional-title">
+                                  { BIBLE_BOOK_DETAILS[browseBook].title }
+                                </span>
                                 <motion.button
                                   type="button"
                                   aria-expanded={ bookDetailsOpen }
@@ -957,7 +992,22 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                                                 className={ `scripture-index-browse-verse-inline ${ browseVerse === v.number ? "selected" : "" }` }
                                                 onClick={ () => pickVerse(v.number) }
                                               >
-                                                <sup className="scripture-index-browse-verse-num">{ v.number }</sup>
+                                                <sup className="scripture-index-browse-verse-num">
+                                                  { v.number }
+                                                  {
+                                                    // The dataset has no word-level anchor (see
+                                                    // crossReferences.js's own comment) — these
+                                                    // letters mark "this verse has N cross-
+                                                    // references, spelled out below" rather than
+                                                    // pointing at a specific word the way a real
+                                                    // printed Bible's own letters do.
+                                                    crossRefMap?.[`${ browseBook } ${ browseChapter }:${ v.number }`]?.length > 0 && (
+                                                      <span className="scripture-index-verse-xref-marks">
+                                                        { crossRefMap[`${ browseBook } ${ browseChapter }:${ v.number }`].map((_, i) => XREF_LETTERS[i]).join("") }
+                                                      </span>
+                                                    )
+                                                  }
+                                                </sup>
                                                 { `${ text } ` }
                                               </button>
                                             </Fragment>
@@ -969,6 +1019,45 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                                     <p className="scripture-index-browse-verses-status">
                                       { chapterVerses?.message || "Couldn't load this chapter's verses." }
                                     </p>
+                                  )
+                                }
+                                {
+                                  // The footnote strip a printed Bible's own cross-
+                                  // reference letters point down to — see the sup
+                                  // marks above for why these are per-VERSE rather
+                                  // than per-word. Each entry re-uses the exact
+                                  // same "look something else up" path the search
+                                  // box's own onChange already provides
+                                  // (handleQueryChange), so clicking one behaves
+                                  // identically to typing that reference in by
+                                  // hand: abandons whatever was browsed here and
+                                  // feeds the shared lookup card above.
+                                  chapterVerses?.status === "ok" && crossRefMap && (
+                                    <div className="scripture-index-footnotes">
+                                      {
+                                        chapterVerses.verses.map((v) => {
+                                          const refs = crossRefMap[`${ browseBook } ${ browseChapter }:${ v.number }`];
+                                          if (!refs?.length) return null;
+                                          return (
+                                            <p key={ v.number } className="scripture-index-footnote-row">
+                                              <span className="scripture-index-footnote-verse">{ v.number }</span>
+                                              {
+                                                refs.map((ref, i) => (
+                                                  <button
+                                                    key={ ref }
+                                                    type="button"
+                                                    className="scripture-index-footnote-entry"
+                                                    onClick={ () => handleQueryChange(ref) }
+                                                  >
+                                                    <sup>{ XREF_LETTERS[i] }</sup> { ref }
+                                                  </button>
+                                                ))
+                                              }
+                                            </p>
+                                          );
+                                        })
+                                      }
+                                    </div>
                                   )
                                 }
                                 <div className="scripture-index-browse-verse-manual">
