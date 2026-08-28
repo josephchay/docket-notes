@@ -298,8 +298,8 @@
 .scripture-index-lookup-text {
   margin: 0;
   color: var(--page-ink-color);
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .scripture-index-lookup-muted {
@@ -488,6 +488,92 @@
   transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
 }
 
+/* A book's own front matter — meaning of its name, traditional author/
+   date, a real synopsis — shown once, right before its chapter grid, the
+   same place a printed Bible puts it. Same surface-card language as
+   .scripture-index-lookup above, just collapsible (see the toggle button
+   below) since it's read once per book, not something a reader wants
+   pushed in front of the chapter grid on every single visit. */
+.scripture-index-book-details {
+  margin-bottom: 10px;
+  border-radius: 14px;
+  background-color: var(--page-surface-color);
+  overflow: hidden;
+  transition: background-color 0.4s ease-in-out;
+}
+
+.scripture-index-book-details-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: .8;
+}
+
+.scripture-index-book-details-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  opacity: .7;
+}
+
+.scripture-index-book-details-body {
+  padding: 0 12px 12px;
+}
+
+.scripture-index-book-details-meaning {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--page-ink-color);
+  opacity: .65;
+  line-height: 1.5;
+}
+
+.scripture-index-book-details-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0 0 10px;
+}
+
+.scripture-index-book-details-facts div {
+  min-width: 0;
+}
+
+.scripture-index-book-details-facts dt {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--page-ink-color);
+  opacity: .5;
+}
+
+.scripture-index-book-details-facts dd {
+  margin: 1px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--page-ink-color);
+  line-height: 1.4;
+}
+
+.scripture-index-book-details-synopsis {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--page-ink-color);
+}
+
 .scripture-index-browse-chapter-grid {
   /* No max-height/overflow-y of its own (used to be capped at 260px) — see
      .scripture-index-body's own comment above. */
@@ -535,7 +621,7 @@
 
 .scripture-index-browse-preview-text {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
   color: var(--page-ink-color);
 }
@@ -556,11 +642,20 @@
   margin-bottom: 8px;
 }
 
-.scripture-index-browse-verses-label {
-  font-size: 11px;
-  font-weight: 800;
+/* Reads the way a printed Bible's own per-chapter head does — "CHAPTER 1,"
+   not the book name again, since the book is already named a step up in
+   the Back breadcrumb (.scripture-index-browse-crumb above). Centered
+   within the head row via flex:1, with the find-notes button staying put
+   in its own corner rather than being pushed off by the longer heading. */
+.scripture-index-chapter-heading {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
   color: var(--page-ink-color);
-  opacity: .6;
+  opacity: .7;
 }
 
 /* Mirrors the top lookup card's own find-notes magnifier — this row is
@@ -607,11 +702,37 @@
      .scripture-index-body's own comment above. Type bumped from 13px/1.8 to
      16px/1.75 now that this reads in a tall, full-height column rather than
      a 72vh card — a size actually comfortable to read for a while, not just
-     to skim. */
+     to skim. Justified edges (text-align-last: left keeps the final,
+     naturally-short line from ALSO stretching into an awkward gapped line)
+     is the other half of reading like an actual printed page — set in this
+     app's own Poppins (inherited, no font-family override here), matching
+     NoteEditor's own reading surface rather than a foreign serif. */
   margin: 0;
   color: var(--page-ink-color);
   font-size: 16px;
   line-height: 1.75;
+  text-align: justify;
+  text-align-last: left;
+}
+
+/* The large decorative initial on a chapter's own opening verse — floated
+   within .scripture-index-browse-verse-list (its nearest block ancestor),
+   so the rest of that first word and the verses after it wrap around it
+   the way a printed page's own drop cap does, for exactly as many lines as
+   its own height happens to span (no fixed line-count — line-height/
+   font-size below just approximate a roughly 3-line printed drop cap at
+   this panel's own reading width). Poppins (inherited), same as the rest
+   of this panel and NoteEditor's own text — not a serif face. aria-hidden
+   since the same letter is already read once, correctly, as the first
+   character of verse 1's own button text right next to it — this is a
+   purely decorative duplicate. */
+.scripture-index-drop-cap {
+  float: left;
+  font-size: 3.2em;
+  line-height: .78;
+  font-weight: 700;
+  padding: .04em .07em 0 0;
+  color: var(--page-ink-color);
 }
 
 .scripture-index-browse-verse-inline {

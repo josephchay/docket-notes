@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FaXmark, FaBookBible, FaBookOpen, FaMagnifyingGlass, FaChevronLeft, FaCopy, FaCheck } from "react-icons/fa6";
+import { FaXmark, FaBookBible, FaBookOpen, FaMagnifyingGlass, FaChevronLeft, FaChevronDown, FaCopy, FaCheck } from "react-icons/fa6";
 
 import useFocusTrap from "../../hooks/useFocusTrap";
 import { parseBareCitation } from "../../utils/citations";
 import { BOOK_CHAPTER_COUNTS, BOOK_SECTIONS } from "../../utils/bibleBooks";
+import { BIBLE_BOOK_DETAILS } from "../../utils/bibleBookDetails";
 import { fetchVerseText } from "../../utils/bibleApi";
 import { SNAPPY, RAIL_SLIDE } from "../Motion";
 
@@ -97,6 +98,12 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
   const [chapterVerses, setChapterVerses] = useState(null); // null | { status, verses, message }
   const chapterVersesRequestRef = useRef(0);
   const [manualVerse, setManualVerse] = useState("");
+  // Defaults open on every fresh book — a reader who's never seen this
+  // book's own intro before shouldn't have to go looking for a collapse
+  // toggle they don't know exists yet; one who already knows the book can
+  // just collapse it back down (see the toggle button below) without that
+  // choice being remembered across a DIFFERENT book next time.
+  const [bookDetailsOpen, setBookDetailsOpen] = useState(true);
 
   // Below the narrow breakpoint the dock covers the whole viewport rather
   // than sitting beside anything, which makes it functionally modal again
@@ -141,6 +148,7 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
     setHoverChapter(null);
     setChapterPreview(null);
     setChapterVerses(null);
+    setBookDetailsOpen(true);
   };
 
   // Leaving Browse mode (switching to Cited, or the panel closing via
@@ -231,6 +239,7 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
     setChapterPreview(null);
     setHoverChapter(null);
     setBrowseStep("chapters");
+    setBookDetailsOpen(true);
   };
 
   const backToBooks = () => {
@@ -727,6 +736,74 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                     {
                       browseStep === "chapters" && (
                         <>
+                          {
+                            // The way a printed Bible's own front matter
+                            // introduces a book before its first chapter
+                            // begins — a real synopsis, not fabricated
+                            // scholarship: this app has no live source for
+                            // book-level detail (bibleApi.js only ever
+                            // returns verse text), so BIBLE_BOOK_DETAILS is
+                            // static, pre-written, fact-checked local data,
+                            // the same "verify hand-authored reference data
+                            // before it becomes load-bearing" discipline
+                            // BOOK_CHAPTER_COUNTS/BOOK_SECTIONS in
+                            // bibleBooks.js already used. Collapsible since
+                            // a reader who just wants to jump to a chapter
+                            // shouldn't have to scroll past four sentences
+                            // of introduction to reach the grid every time.
+                            BIBLE_BOOK_DETAILS[browseBook] && (
+                              <div className="scripture-index-book-details">
+                                <motion.button
+                                  type="button"
+                                  aria-expanded={ bookDetailsOpen }
+                                  className="scripture-index-book-details-toggle"
+                                  whileHover={{ scale: 1.01 }}
+                                  whileTap={{ scale: .98 }}
+                                  transition={ SNAPPY }
+                                  onClick={ () => setBookDetailsOpen((o) => !o) }
+                                >
+                                  <span>About { browseBook }</span>
+                                  <motion.span
+                                    className="scripture-index-book-details-chevron"
+                                    animate={{ rotate: bookDetailsOpen ? 180 : 0 }}
+                                    transition={ SNAPPY }
+                                  >
+                                    <FaChevronDown />
+                                  </motion.span>
+                                </motion.button>
+                                <AnimatePresence initial={ false }>
+                                  {
+                                    bookDetailsOpen && (
+                                      <motion.div
+                                        className="scripture-index-book-details-body"
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: "auto" }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                                      >
+                                        <p className="scripture-index-book-details-meaning">
+                                          { BIBLE_BOOK_DETAILS[browseBook].meaning }
+                                        </p>
+                                        <dl className="scripture-index-book-details-facts">
+                                          <div>
+                                            <dt>Author</dt>
+                                            <dd>{ BIBLE_BOOK_DETAILS[browseBook].author }</dd>
+                                          </div>
+                                          <div>
+                                            <dt>Written</dt>
+                                            <dd>{ BIBLE_BOOK_DETAILS[browseBook].period }</dd>
+                                          </div>
+                                        </dl>
+                                        <p className="scripture-index-book-details-synopsis">
+                                          { BIBLE_BOOK_DETAILS[browseBook].synopsis }
+                                        </p>
+                                      </motion.div>
+                                    )
+                                  }
+                                </AnimatePresence>
+                              </div>
+                            )
+                          }
                           <div
                             className="scripture-index-browse-chapter-grid"
                             onMouseLeave={ () => setHoverChapter(null) }
@@ -784,7 +861,21 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                             browseChapter && (
                               <div className="scripture-index-browse-verses">
                                 <div className="scripture-index-browse-verses-head">
-                                  <span className="scripture-index-browse-verses-label">{ browseBook } { browseChapter }</span>
+                                  {/* Set the way a printed Bible's own chapter head
+                                      reads — "CHAPTER 1", not the book name again —
+                                      since the book is already named a step up, in
+                                      the Back breadcrumb above the chapter grid.
+                                      aria-label keeps the book in the accessible
+                                      name even though the visible text drops it, so
+                                      a screen-reader user landing straight on this
+                                      heading (rather than having just read the
+                                      breadcrumb) isn't left without it. */}
+                                  <span
+                                    className="scripture-index-chapter-heading"
+                                    aria-label={ `${ browseBook } chapter ${ browseChapter }` }
+                                  >
+                                    Chapter { browseChapter }
+                                  </span>
                                   {/* The top lookup card's own find-notes action is
                                       deliberately suppressed while this exact same
                                       whole-chapter text is already showing here
@@ -813,25 +904,65 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                                     // own first word, every verse running on in
                                     // one continuous block rather than each
                                     // getting its own row, the way a real page
-                                    // reads rather than a picker list. Still
-                                    // click-to-narrow (pickVerse, same as before);
-                                    // only the layout/typography changed, not the
-                                    // interaction.
+                                    // reads rather than a picker list, justified
+                                    // like a real page's own column, and set in a
+                                    // serif face (this app's own Poppins stays for
+                                    // every OTHER label/button in this panel — only
+                                    // actual scripture text, here and in the lookup
+                                    // card/hover preview, reads like a printed
+                                    // page). Still click-to-narrow (pickVerse, same
+                                    // as before); only the layout/typography
+                                    // changed, not the interaction.
                                     <p className="scripture-index-browse-verse-list">
                                       {
-                                        chapterVerses.verses.map((v) => (
-                                          <button
-                                            key={ v.number }
-                                            type="button"
-                                            aria-label={ `${ browseBook } ${ browseChapter }:${ v.number }` }
-                                            aria-pressed={ browseVerse === v.number }
-                                            className={ `scripture-index-browse-verse-inline ${ browseVerse === v.number ? "selected" : "" }` }
-                                            onClick={ () => pickVerse(v.number) }
-                                          >
-                                            <sup className="scripture-index-browse-verse-num">{ v.number }</sup>
-                                            { `${ v.text } ` }
-                                          </button>
-                                        ))
+                                        chapterVerses.verses.map((v) => {
+                                          // A real printed Bible opens its first
+                                          // verse with a large decorative initial,
+                                          // the rest of that first word and the
+                                          // verses after it wrapping around it —
+                                          // only verse 1 ever gets one. Pulled out
+                                          // as its own leading span (a sibling of
+                                          // the verse-1 button, not nested inside
+                                          // it) rather than floating something
+                                          // inside the button itself, since a
+                                          // float's own containing block is
+                                          // whichever ancestor actually establishes
+                                          // a block formatting context — here,
+                                          // this <p> — regardless of whether the
+                                          // element right next to it happens to be
+                                          // an inline button; nesting the float
+                                          // inside the button risked fighting that
+                                          // element's own layout for no benefit,
+                                          // since the button's hit-target doesn't
+                                          // need to include the drop cap's own
+                                          // glyph to stay a fully usable "pick
+                                          // verse 1" target — every other pixel
+                                          // of verse 1's own text still is one.
+                                          const isFirstVerse = v.number === 1;
+                                          const text = isFirstVerse ? v.text.slice(1) : v.text;
+
+                                          return (
+                                            <Fragment key={ v.number }>
+                                              {
+                                                isFirstVerse && (
+                                                  <span className="scripture-index-drop-cap" aria-hidden="true">
+                                                    { v.text.charAt(0) }
+                                                  </span>
+                                                )
+                                              }
+                                              <button
+                                                type="button"
+                                                aria-label={ `${ browseBook } ${ browseChapter }:${ v.number }` }
+                                                aria-pressed={ browseVerse === v.number }
+                                                className={ `scripture-index-browse-verse-inline ${ browseVerse === v.number ? "selected" : "" }` }
+                                                onClick={ () => pickVerse(v.number) }
+                                              >
+                                                <sup className="scripture-index-browse-verse-num">{ v.number }</sup>
+                                                { `${ text } ` }
+                                              </button>
+                                            </Fragment>
+                                          );
+                                        })
                                       }
                                     </p>
                                   ) : (
