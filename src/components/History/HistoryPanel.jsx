@@ -11,7 +11,7 @@ import {
   FaLock, FaTag, FaShuffle, FaPlay, FaPause, FaChevronLeft, FaChevronRight,
   FaBackwardStep, FaGaugeHigh, FaMagnifyingGlass, FaFileArrowDown,
   FaUpRightAndDownLeftFromCenter, FaDownLeftAndUpRightToCenter, FaThumbtack,
-  FaCodeBranch, FaCircleNodes, FaQuoteRight,
+  FaCodeBranch, FaCircleNodes, FaQuoteRight, FaLayerGroup, FaLink,
 } from "react-icons/fa6";
 
 import { timeAgo } from "../../utils/date";
@@ -95,7 +95,13 @@ const ACTION_STYLES = [
   { key: "reminded", chipLabel: "Reminders", test: (l) => l.startsWith("edited a reminder"), icon: FaCalendarDay, color: "var(--orange-color)" },
   { key: "checklisted", chipLabel: "Checklists", test: (l) => l.startsWith("edited a checklist"), icon: FaListCheck, color: "var(--green-color)" },
   { key: "studied", chipLabel: "Studies", test: (l) => l.startsWith("edited a study"), icon: FaBookOpen, color: "var(--blue-color)" },
+  // The Quadriga conversion earns its own rail identity distinct from the
+  // plain inductive study above — four layered senses, hence the layers
+  // icon — while sharing the studied sound (see HISTORY_ACTION_SOUNDS):
+  // same family of action, different shape of study.
+  { key: "quadriga", chipLabel: "Fourfold studies", test: (l) => l.startsWith("shaped a fourfold"), icon: FaLayerGroup, color: "var(--purple-color)" },
   { key: "cited", chipLabel: "Citations", test: (l) => l.startsWith("edited a citation"), icon: FaQuoteRight, color: "var(--pink-color)" },
+  { key: "wove", chipLabel: "Cross-references", test: (l) => l.startsWith("wove"), icon: FaLink, color: "var(--blue-color)" },
 ];
 export const DEFAULT_STYLE = { icon: FaClockRotateLeft, color: "var(--page-ink-color)" };
 

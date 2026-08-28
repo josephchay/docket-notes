@@ -414,6 +414,307 @@
   font-style: italic;
 }
 
+/* A study's pills grouped under the section whose prose cites them — the
+   chip is the section's own heading in the same small-caps voice
+   StudyBody's headings already speak. */
+.note-editor-citation-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.note-editor-citation-section-chip {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--black-color);
+  opacity: .5;
+}
+
+/* The same reference cited under two or more different senses — a doubled
+   rule under its label, the typographic claim that one text is being read
+   at two levels at once (the pill's own title spells the senses out). */
+.note-editor-citation.layered .note-editor-citation-label {
+  text-decoration: underline double 1px;
+  text-underline-offset: 3px;
+}
+
+/* A typology chain — each member's ordinary pill as a lobe, joined by
+   tappable arrows, the whole trail wrapped as one compound pill. Nested
+   pills drop their own backing so the chain's single wrapper reads as THE
+   pill; every action inside stays live and identical to a lone pill's. */
+.note-editor-typology-chain {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: var(--black-even-more-transclucent-color);
+  box-shadow: inset 0 0 0 1.5px var(--black-more-transclucent-color);
+}
+
+.note-editor-typology-chain .note-editor-citation {
+  background: transparent;
+  padding: 0;
+}
+
+.note-editor-typology-arrow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--black-color);
+  font-size: 10px;
+  opacity: .65;
+  cursor: pointer;
+}
+
+.note-editor-typology-arrow:hover {
+  opacity: 1;
+  background: var(--black-more-transclucent-color);
+}
+
+.note-editor-typology-arrow.active {
+  opacity: 1;
+  background: var(--black-color);
+  color: var(--white-color);
+}
+
+/* The Treasury's concurrence, set like a tiny letterpress mark riding the
+   arrow — only ever present, never absent-with-meaning (see the render's
+   own comment). */
+.note-editor-typology-tsk {
+  position: absolute;
+  top: -7px;
+  right: -6px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--black-color);
+  color: var(--white-color);
+  font-size: 6.5px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  line-height: 10px;
+}
+
+/* The head's back chip, for a card swapped away from the note's own
+   citation via an apparatus chip — same quiet register as the close
+   button beside it, but labeled, since "back to where this trail started"
+   deserves words. */
+.note-editor-citation-preview-back {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: .7;
+  cursor: pointer;
+}
+
+.note-editor-citation-preview-back:hover {
+  opacity: 1;
+  background: var(--black-more-transclucent-color);
+}
+
+.note-editor-citation-preview-arrow {
+  margin: 0 6px;
+  font-size: 10px;
+  vertical-align: middle;
+}
+
+/* The Treasury apparatus row under a previewed verse — local data (see
+   utils/crossReferences.js), so unlike the verse text above it these
+   never cost a request. */
+.note-editor-citation-xrefs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-top: 2px;
+}
+
+.note-editor-citation-xrefs-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--black-color);
+  opacity: .5;
+}
+
+.note-editor-citation-xref {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  border-radius: 999px;
+  background: var(--black-even-more-transclucent-color);
+}
+
+/* The rare cross-chapter span this app's citation grammar can't express —
+   readable, never tappable. */
+.note-editor-citation-xref.inert {
+  padding: 2px 8px;
+  color: var(--black-color);
+  font-size: 10px;
+  font-weight: 600;
+  opacity: .5;
+}
+
+.note-editor-citation-xref-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.note-editor-citation-xref-label:hover {
+  background: var(--black-more-transclucent-color);
+}
+
+/* How often the desk's own notes already cite this passage — the Treasury
+   pointing somewhere the writer already dwells is worth a glance. */
+.note-editor-citation-xref-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--black-color);
+  color: var(--white-color);
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.note-editor-citation-xref-weave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--black-color);
+  font-size: 8px;
+  opacity: .6;
+  cursor: pointer;
+}
+
+.note-editor-citation-xref-weave:hover:not(:disabled) {
+  opacity: 1;
+  background: var(--black-more-transclucent-color);
+}
+
+.note-editor-citation-xref-weave:disabled {
+  opacity: .25;
+  cursor: default;
+}
+
+/* The New Testament warrant line — prose first, chips after, kept in the
+   preview's own muted register: it states what the apparatus records,
+   never grades the reading. */
+.note-editor-citation-warrant {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-top: 2px;
+  border-top: 1px solid var(--black-even-more-transclucent-color);
+}
+
+.note-editor-citation-warrant-text {
+  color: var(--black-color);
+  font-size: 10.5px;
+  font-style: italic;
+  opacity: .6;
+}
+
+.note-editor-citation-warrant-chip {
+  padding: 2px 8px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.note-editor-citation-warrant-chip:hover {
+  background: var(--black-more-transclucent-color);
+}
+
+/* The typology arrow's own reading — type stacked over antitype, each
+   pane its own fetch and its own scroll, so a long psalm above never
+   drowns a short fulfillment below. */
+.note-editor-citation-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.note-editor-citation-compare-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.note-editor-citation-compare-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.note-editor-citation-compare-role {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--black-color);
+  opacity: .5;
+}
+
+.note-editor-citation-compare-ref {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--black-color);
+  opacity: .8;
+}
+
 .note-editor-tag {
   display: flex;
   align-items: center;

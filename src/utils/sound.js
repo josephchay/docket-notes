@@ -356,6 +356,15 @@ const HISTORY_ACTION_SOUNDS = {
     tone(context, { freq: 700, duration: .07, type: "sine", peak: .18, delay: .045 });
     tone(context, { freq: 900, duration: .03, type: "square", peak: .14, delay: .13 });
   }),
+  // Two rising sine glides, the second overlapping the first's tail — a
+  // thread being drawn through and pulled taut, for weaving one passage's
+  // cross-reference into another's citation group. Kept in a lower, softer
+  // register than cited's bracketing ticks so the two citation-flavored
+  // actions still read apart in the History rail's own preview.
+  wove: () => play((context) => {
+    tone(context, { freq: 380, glideTo: 520, duration: .12, type: "sine", peak: .16 });
+    tone(context, { freq: 520, glideTo: 700, duration: .14, type: "sine", peak: .14, delay: .09 });
+  }),
 };
 
 export const playHistoryAction = (key) => {

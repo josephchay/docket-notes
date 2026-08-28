@@ -37,6 +37,13 @@ export const BIBLE_BOOKS = [
 
 const BOOK_LOOKUP = new Map(BIBLE_BOOKS.map((name) => [name.toLowerCase(), name]));
 
+// BIBLE_BOOKS above is canon-ordered, so one index cleanly splits the
+// testaments: Malachi is index 38, Matthew 39 — everything from here on is
+// New Testament. Exported for the "does the NT itself warrant this
+// reading" checks (an OT citation's apparatus line, the typology pill's
+// attestation) rather than each consumer hand-writing its own book list.
+export const NT_START_INDEX = 39;
+
 // One citation piece: an optional book name, then a chapter:verse path of
 // two or three numbers, the last of which may itself be a range
 // ("9-10") — "Genesis 1:1:7", "1:3:9-10" (book inherited), and
@@ -77,22 +84,51 @@ function isValidPath(path) {
   return true;
 }
 
+// Pieces inside a group are separated by a comma, a semicolon, OR a
+// whitespace-flanked typology arrow — " -> " — which is a SEPARATOR with a
+// meaning of its own: "the piece before me is a type, the piece after me
+// its antitype" (Passover -> Cross, Isaac -> Christ — the directed
+// pattern-and-fulfillment claims sensus plenior interpretation actually
+// runs on). The surrounding whitespace is mandatory: a verse range's own
+// "-" ("1:16-18") can never be followed by ">" without whitespace between
+// pieces appearing first, and "1:5->John" with no spaces stays one
+// unparseable piece exactly as it always did, so no existing note changes
+// meaning. Captured (the parens) so split() keeps each separator in the
+// output — the cursor math needs every separator's own real length now
+// that they're no longer all one character wide.
+const SEPARATOR = /(,|;|\s->\s)/;
+
 // Finds every "(...)" group in note text and parses each piece inside it
-// (split on a comma or semicolon) as a citation. A piece that isn't
-// recognized (ordinary parenthetical prose, or a bare number path with no
-// book anywhere before it in the same group) is just skipped rather than
-// treated as an error — a parenthetical aside and a citation group share
-// identical syntax otherwise, so only the pieces that actually parse count
-// as citations. Returns each distinct reference once, in first-seen order,
-// along with `start`/`end` — the exact character range of THAT PIECE's own
-// text within the original string (book name excluded when it was
-// inherited rather than typed at that spot), so a caller can select/scroll
-// straight to where a citation actually lives in the note rather than only
-// searching for it elsewhere.
-export function parseCitations(text) {
+// (split on a comma, semicolon, or typology arrow) as a citation. A piece
+// that isn't recognized (ordinary parenthetical prose, or a bare number
+// path with no book anywhere before it in the same group) is just skipped
+// rather than treated as an error — a parenthetical aside and a citation
+// group share identical syntax otherwise, so only the pieces that actually
+// parse count as citations.
+//
+// Returns { citations, typologyLinks }:
+// - citations: each distinct reference once, in first-seen order, with
+//   `start`/`end` — the exact character range of THAT PIECE's own text
+//   within the original string (book name excluded when it was inherited
+//   rather than typed at that spot), so a caller can select/scroll straight
+//   to where a citation actually lives in the note — plus `occurrences`,
+//   EVERY place the same reference appears ({ start, end } each, first one
+//   identical to the top-level pair): a study citing one verse under two
+//   different senses is exactly the signal the per-section grouping needs,
+//   and dedupe alone would silently erase it.
+// - typologyLinks: [{ from, to }] full-reference pairs, one per arrow whose
+//   BOTH sides parsed successfully — kept as its own array alongside the
+//   deduped citations (never attached to a deduped entry, where a repeated
+//   reference would drop its second link on the floor). A failed side
+//   degrades per-side: the surviving half is still an ordinary citation,
+//   there's just no link — never all-or-nothing. Multi-hop trails
+//   ("A -> B -> C") fall out as consecutive pairs with no extra grammar.
+export function parseCitationsDetailed(text) {
   const body = text ?? "";
   const found = [];
-  const seen = new Set();
+  const foundByKey = new Map();
+  const typologyLinks = [];
+  const seenLinks = new Set();
   const groupPattern = /\(([^()]+)\)/g;
   let groupMatch;
 
@@ -102,11 +138,24 @@ export function parseCitations(text) {
     let currentBook = null;
     let cursor = 0; // offset into groupContent of the piece about to be read
 
-    // Splitting on a single-character separator either way keeps this
-    // cursor math exactly as valid for ";" as it already was for ",".
-    for (const rawPiece of groupContent.split(/[,;]/)) {
+    // With SEPARATOR captured, even indices are pieces and odd indices the
+    // separators between them — the arrow a link reads off is always the
+    // separator directly BEFORE the piece being parsed.
+    const parts = groupContent.split(SEPARATOR);
+
+    // The most recent piece in THIS group that actually parsed — the
+    // arrow's left-hand side. Nulled the moment any piece fails, so a link
+    // can never silently skip over unparseable prose sitting between its
+    // two sides ("(Exodus 12:3 -> and so on -> John 1:29)" claims nothing).
+    // Group-local by construction: an arrow only ever joins pieces inside
+    // one set of parens.
+    let previousFull = null;
+
+    for (let i = 0; i < parts.length; i += 2) {
+      const rawPiece = parts[i];
+      const separatorBefore = i >= 2 ? parts[i - 1] : null;
       const pieceOffset = cursor;
-      cursor += rawPiece.length + 1; // +1 to skip the separator this piece was split on
+      cursor += rawPiece.length + (parts[i + 1]?.length ?? 0);
 
       const leading = rawPiece.match(/^\s*/)[0].length;
       const trimmed = rawPiece.trim();
@@ -118,27 +167,56 @@ export function parseCitations(text) {
         path = m[2];
       } else {
         const bare = trimmed.match(BARE_CHAPTER);
-        if (!bare) continue;
+        if (!bare) { previousFull = null; continue; }
         rawBook = bare[1].trim();
         path = bare[2];
       }
-      if (!isValidPath(path)) continue;
+      if (!isValidPath(path)) { previousFull = null; continue; }
 
       const book = rawBook ? BOOK_LOOKUP.get(rawBook.toLowerCase()) : currentBook;
-      if (!book) continue;
+      if (!book) { previousFull = null; continue; }
 
       currentBook = book;
       const full = `${ book } ${ path }`;
       const key = full.toLowerCase();
-      if (seen.has(key)) continue;
-
-      seen.add(key);
       const start = groupStart + pieceOffset + leading;
-      found.push({ book, path, full, start, end: start + trimmed.length });
+      const end = start + trimmed.length;
+
+      // A link forms only between two ADJACENT successfully-parsed pieces
+      // joined by the arrow — recorded before dedupe below can skip this
+      // piece. A self-link ("A -> A") is a tautology, not a typology, and
+      // a repeated identical claim adds nothing over its first statement.
+      if (separatorBefore !== null && separatorBefore.includes("->") && previousFull && previousFull.toLowerCase() !== key) {
+        const linkKey = `${ previousFull.toLowerCase() }>${ key }`;
+        if (!seenLinks.has(linkKey)) {
+          seenLinks.add(linkKey);
+          typologyLinks.push({ from: previousFull, to: full });
+        }
+      }
+      previousFull = full;
+
+      const existing = foundByKey.get(key);
+      if (existing) {
+        existing.occurrences.push({ start, end });
+        continue;
+      }
+
+      const citation = { book, path, full, start, end, occurrences: [{ start, end }] };
+      foundByKey.set(key, citation);
+      found.push(citation);
     }
   }
 
-  return found;
+  return { citations: found, typologyLinks };
+}
+
+// The original list-shaped read most callers still want — a thin wrapper
+// so there is exactly ONE parsing implementation (the parseStudy/
+// isStudyText lesson: two functions that must agree on where things are in
+// text share one position-finder, never two searches that merely intend
+// to agree).
+export function parseCitations(text) {
+  return parseCitationsDetailed(text).citations;
 }
 
 // Tests whether a standalone span of text — no surrounding group to

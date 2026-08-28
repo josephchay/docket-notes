@@ -1160,14 +1160,35 @@ const Home = () => {
 
   // The Bible-study counterpart to toggleChecklist above — same shape,
   // same reasoning for taking currentText as an argument rather than
-  // reading it back out of `notes`.
-  const toggleStudy = (id, currentText) => {
-    pushUndo("edited a study");
+  // reading it back out of `notes`. `templateId` picks which study shape
+  // to convert INTO (see STUDY_TEMPLATES in utils/study.js — the editor's
+  // template picker passes it); converting back to plain text ignores it,
+  // since fromStudyText strips whichever template the text itself actually
+  // carries, never an assumed one. The Quadriga conversion gets its own
+  // pushUndo label (and HistoryPanel rail identity) while both directions
+  // share the studied sound — same family of action, different shape.
+  const toggleStudy = (id, currentText, templateId) => {
+    const alreadyStudy = isStudyText(currentText);
+    pushUndo(!alreadyStudy && templateId === "quadriga" ? "shaped a fourfold study" : "edited a study");
     playHistoryAction("studied");
-    const nextText = isStudyText(currentText)
+    const nextText = alreadyStudy
       ? fromStudyText(currentText)
-      : toStudyText(normalizeStructuredText(currentText));
+      : toStudyText(normalizeStructuredText(currentText), templateId);
     setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, text: nextText } : n)));
+  }
+
+  // Commits weaving a Treasury cross-reference into a citation's own group
+  // (see NoteEditor.jsx's preview-card apparatus) — the same hand-the-
+  // final-text shape as tagCitation above, since only the editor knows the
+  // exact insertion offsets, but its own named action: weaving assembles a
+  // catena from the apparatus rather than tagging the note's own prose,
+  // and the History rail should tell those two stories apart.
+  const weaveCitation = (id, nextText) => {
+    pushUndo("wove a cross-reference");
+    playHistoryAction("wove");
+    setNotes((prev) => prev.map((note) =>
+      note.id === id ? { ...note, text: nextText } : note
+    ));
   }
 
   // A quick ink stamp confirming an export or import actually happened —
@@ -1747,6 +1768,7 @@ const Home = () => {
               scriptureIndex={ scriptureIndex }
               onFindCitation={ searchByCitation }
               tagCitation={ tagCitation }
+              weaveCitation={ weaveCitation }
             />
           )
         }

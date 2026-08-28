@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+import { FaPlus, FaXmark } from "react-icons/fa6";
 
-import { STUDY_SECTIONS, parseStudy, stringifyStudy } from "../../utils/study";
+import { OPTIONAL_SECTIONS, parseStudy, stringifyStudy } from "../../utils/study";
 
 import "./StudyBody.css";
 
@@ -18,7 +19,17 @@ import "./StudyBody.css";
 // height in place — clipped invisibly by this field's own overflow:hidden
 // with no scrollbar to recover it — until the next keystroke in that
 // specific section happened to retrigger the effect.
-const StudySection = ({ heading, prompt, value, locked, autoFocus, resizeTick, onChange }) => {
+//
+// `count` is how many citation occurrences this section's own prose
+// carries (see NoteEditor.jsx's per-section grouping — computed there,
+// where the citations already live, and passed down purely for display).
+// `optional` marks an appended interpretive layer (Sensus Plenior) rather
+// than one of the template's own required sections; `onDismiss`, when
+// given, renders the ✕ that removes that layer — the caller only ever
+// passes it while the section is empty, so dismissing can never silently
+// discard written prose (deleting the words first is the deliberate step
+// that arms the ✕).
+const StudySection = ({ heading, prompt, value, locked, autoFocus, resizeTick, count, optional, onDismiss, onChange }) => {
   const ref = useRef(null);
 
   useLayoutEffect(() => {
@@ -35,8 +46,39 @@ const StudySection = ({ heading, prompt, value, locked, autoFocus, resizeTick, o
   }, []);
 
   return (
-    <div className="study-section">
-      <span className="study-section-heading">{ heading }</span>
+    <div className={ `study-section ${ optional ? "optional" : "" }` }>
+      <span className="study-section-heading-row">
+        <span className="study-section-heading">{ heading }</span>
+        {
+          count > 0 && (
+            <motion.span
+              key={ count }
+              className="study-section-count"
+              aria-label={ `${ count } ${ count === 1 ? "citation" : "citations" } in this section` }
+              initial={{ scale: .7 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", stiffness: 500, damping: 18 }}
+            >
+              { count }
+            </motion.span>
+          )
+        }
+        {
+          onDismiss && (
+            <motion.button
+              type="button"
+              aria-label={ `Remove the ${ heading } section` }
+              className="study-section-dismiss"
+              whileHover={{ scale: 1.15 }}
+              whileTap={{ scale: .85 }}
+              transition={{ type: "spring", stiffness: 420, damping: 18 }}
+              onClick={ onDismiss }
+            >
+              <FaXmark />
+            </motion.button>
+          )
+        }
+      </span>
       <textarea
         ref={ ref }
         readOnly={ locked }
@@ -50,18 +92,27 @@ const StudySection = ({ heading, prompt, value, locked, autoFocus, resizeTick, o
   );
 };
 
-// Renders note.text as the three-part inductive study it reads as the
-// moment its own headings are there (see isStudyText/utils/study.js) — the
-// editor-only counterpart to ChecklistBody: a study's three prose sections
-// need real room to write in, which the note card's own 350px paper was
-// never going to have, so unlike checklists this never renders on the card
-// at all — a study note just shows its plain "## Observation" headings
-// there like any other multi-line text, the same way it always could
-// before this feature existed. `onChange` still receives one freshly-
-// stringified note.text, so a study edits through the exact same debounced
-// path (handleText) every other field in the editor already does.
-const StudyBody = ({ text, onChange, locked, className, autoFocus }) => {
-  const sections = parseStudy(text);
+// Renders note.text as the multi-section study its own headings declare it
+// to be (see detectStudyTemplate/utils/study.js) — the editor-only
+// counterpart to ChecklistBody: a study's prose sections need real room to
+// write in, which the note card's own 350px paper was never going to have,
+// so unlike checklists this never renders on the card at all — a study
+// note just shows its plain "## Literal"/"## Observation" headings there
+// like any other multi-line text, the same way it always could before this
+// feature existed. `onChange` still receives one freshly-stringified
+// note.text, so a study edits through the exact same debounced path
+// (handleText) every other field in the editor already does.
+//
+// Which sections render is entirely the parsed template's own business —
+// this component never hardcodes a section list, so a new template in
+// STUDY_TEMPLATES shows up here with zero changes. Appended optional
+// layers (Sensus Plenior) render after the required sections, visually set
+// apart, with a ghost chip to add whichever aren't present yet — the add
+// and the dismiss both just re-stringify through the same onChange path a
+// keystroke takes, since presence is nothing more than the heading
+// existing in the text.
+const StudyBody = ({ text, onChange, locked, className, autoFocus, sectionCounts }) => {
+  const { template, sections } = parseStudy(text);
   const containerRef = useRef(null);
 
   // Bumped on every width change of this body's own container (the editor
@@ -80,14 +131,33 @@ const StudyBody = ({ text, onChange, locked, className, autoFocus }) => {
     return () => observer.disconnect();
   }, []);
 
+  // The only render this component ever gets while the text ISN'T a study
+  // is a transient one mid-toggle (NoteEditor's ternary re-evaluates on the
+  // same draftText this parses) — nothing meaningful to draw, and every
+  // access below assumes a real template.
+  if (!template) return null;
+
   const updateSection = (key, value) => {
-    onChange(stringifyStudy({ ...sections, [key]: value }));
+    onChange(stringifyStudy(template, { ...sections, [key]: value }));
   };
+
+  const addOptional = (key) => {
+    onChange(stringifyStudy(template, { ...sections, [key]: "" }));
+  };
+
+  const dismissOptional = (key) => {
+    const rest = { ...sections };
+    delete rest[key];
+    onChange(stringifyStudy(template, rest));
+  };
+
+  const presentOptional = OPTIONAL_SECTIONS.filter(({ key }) => key in sections);
+  const absentOptional = OPTIONAL_SECTIONS.filter(({ key }) => !(key in sections));
 
   return (
     <motion.div ref={ containerRef } className={ `study-body custom-scroll ${ className || "" }` }>
       {
-        STUDY_SECTIONS.map(({ key, heading, prompt }, index) => (
+        template.sections.map(({ key, heading, prompt }, index) => (
           <StudySection
             key={ key }
             heading={ heading }
@@ -96,9 +166,58 @@ const StudyBody = ({ text, onChange, locked, className, autoFocus }) => {
             locked={ locked }
             autoFocus={ autoFocus && index === 0 }
             resizeTick={ resizeTick }
+            count={ sectionCounts?.[key] ?? 0 }
             onChange={ (value) => updateSection(key, value) }
           />
         ))
+      }
+      <AnimatePresence initial={ false }>
+        {
+          presentOptional.map(({ key, heading, prompt }) => (
+            <motion.div
+              key={ key }
+              initial={{ opacity: 0, y: 8, scale: .97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: .96, transition: { duration: .15, ease: "easeIn" } }}
+              transition={{ type: "spring", stiffness: 380, damping: 24 }}
+            >
+              <StudySection
+                heading={ heading }
+                prompt={ prompt }
+                value={ sections[key] }
+                locked={ locked }
+                resizeTick={ resizeTick }
+                count={ sectionCounts?.[key] ?? 0 }
+                optional
+                onDismiss={ !locked && !(sections[key] ?? "").trim() ? () => dismissOptional(key) : null }
+                onChange={ (value) => updateSection(key, value) }
+              />
+            </motion.div>
+          ))
+        }
+      </AnimatePresence>
+      {
+        !locked && absentOptional.length > 0 && (
+          <div className="study-optional-row">
+            {
+              absentOptional.map(({ key, heading }) => (
+                <motion.button
+                  key={ key }
+                  type="button"
+                  aria-label={ `Add a ${ heading } section` }
+                  className="study-add-optional"
+                  whileHover={{ scale: 1.06 }}
+                  whileTap={{ scale: .92 }}
+                  transition={{ type: "spring", stiffness: 420, damping: 18 }}
+                  onClick={ () => addOptional(key) }
+                >
+                  <FaPlus className="study-add-optional-icon" />
+                  { heading }
+                </motion.button>
+              ))
+            }
+          </div>
+        )
       }
     </motion.div>
   );

@@ -406,27 +406,29 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
 
     const handleKey = (e) => {
       if (e.key !== "Escape") return;
-      // DueDatePicker/ReferencePicker/ColorPicker (all anchored INSIDE
-      // NoteEditor, all portaled straight to document.body, all z-index 980
-      // — above this dock's own 950) can be open on top of the editor at
-      // the same time this dock is. None of them know about this dock or
-      // each other, so there's no shared state to check directly — each
-      // instead toggles a body class in exact sync with its own `open` prop
-      // (see their own "*-picker-open" effects) that this reads. NOT a
-      // DOM-presence check (e.g. querySelector for their panel elements) —
-      // all three stay mounted for a beat into their OWN exit animation
-      // after `open` already went false, so presence alone would misread
-      // "still closing" as "still open" and wrongly defer on a fast second
-      // Escape pressed during that window. Bailing here (before
-      // stopPropagation) lets the event fall through to that popover's own
-      // already-working Escape handler instead of this dock reflexively
-      // closing itself first — a calendar, the "add reference" picker, or
-      // the note-color popover the user is actively looking at should close
-      // on Escape, not the dock they'd already glanced away from.
+      // DueDatePicker/ReferencePicker/ColorPicker/StudyTemplatePicker (all
+      // anchored INSIDE NoteEditor, all portaled straight to document.body,
+      // all z-index 980 — above this dock's own 950) can be open on top of
+      // the editor at the same time this dock is. None of them know about
+      // this dock or each other, so there's no shared state to check
+      // directly — each instead toggles a body class in exact sync with its
+      // own `open` prop (see their own "*-picker-open" effects) that this
+      // reads. NOT a DOM-presence check (e.g. querySelector for their panel
+      // elements) — every one of them stays mounted for a beat into its OWN
+      // exit animation after `open` already went false, so presence alone
+      // would misread "still closing" as "still open" and wrongly defer on
+      // a fast second Escape pressed during that window. Bailing here
+      // (before stopPropagation) lets the event fall through to that
+      // popover's own already-working Escape handler instead of this dock
+      // reflexively closing itself first — a calendar, the "add reference"
+      // picker, the note-color popover, or the study-shape picker the user
+      // is actively looking at should close on Escape, not the dock they'd
+      // already glanced away from.
       if (
         document.body.classList.contains("due-picker-open") ||
         document.body.classList.contains("reference-picker-open") ||
-        document.body.classList.contains("color-picker-open")
+        document.body.classList.contains("color-picker-open") ||
+        document.body.classList.contains("study-picker-open")
       ) return;
       e.stopPropagation();
       closePanel();
@@ -1100,24 +1102,81 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                                           // verses after it wrapping around it —
                                           // only verse 1 ever gets one. Pulled out
                                           // as its own leading span (a sibling of
-                                          // the verse-1 button, not nested inside
+                                          // the verse-1 element, not nested inside
                                           // it) rather than floating something
-                                          // inside the button itself, since a
+                                          // inside that element itself, since a
                                           // float's own containing block is
                                           // whichever ancestor actually establishes
                                           // a block formatting context — here,
-                                          // this <p> — regardless of whether the
-                                          // element right next to it happens to be
-                                          // an inline button; nesting the float
-                                          // inside the button risked fighting that
-                                          // element's own layout for no benefit,
-                                          // since the button's hit-target doesn't
-                                          // need to include the drop cap's own
-                                          // glyph to stay a fully usable "pick
-                                          // verse 1" target — every other pixel
-                                          // of verse 1's own text still is one.
+                                          // this <p>.
+                                          //
+                                          // That's the necessary condition, but it
+                                          // turned out NOT sufficient on its own —
+                                          // a genuine layout bug, caught live: a
+                                          // <button> can never actually compute to
+                                          // `display: inline`, even with that exact
+                                          // CSS declared on it. Per the CSS Display
+                                          // spec, form controls are "atomic
+                                          // inline-level" boxes — the UA silently
+                                          // upgrades a specified `inline` to
+                                          // `inline-block` as the USED value (button
+                                          // { display: inline-block } behavior, not
+                                          // a CSS bug to chase). An inline-block
+                                          // sibling of a float doesn't wrap PART of
+                                          // its own text beside the float the way
+                                          // true inline content does — it's an
+                                          // atomic box that either fits ENTIRELY
+                                          // beside the float or, if it doesn't
+                                          // (verse 1's own text, being long, never
+                                          // did), drops ENTIRELY below it — which is
+                                          // exactly what verse 1's drop cap looked
+                                          // like: the glyph alone on its own line,
+                                          // the rest of the chapter starting fresh
+                                          // underneath instead of wrapping beside
+                                          // it. Confirmed empirically (not just from
+                                          // the spec) by swapping in a plain <span>
+                                          // with the identical class and watching
+                                          // its own computed display read back as
+                                          // "inline", not "inline-block".
+                                          //
+                                          // Fixed by giving ONLY verse 1 a
+                                          // role="button" <span> instead of a real
+                                          // <button> (same click/keyboard-activation
+                                          // contract, hand-wired — the same
+                                          // non-native-button-as-button pattern this
+                                          // app's own Navigation/ColorSelector.jsx
+                                          // already uses elsewhere) — every other
+                                          // verse stays a plain <button>, since none
+                                          // of them ever sit next to a float and the
+                                          // native element is simpler wherever nothing
+                                          // forces the workaround.
                                           const isFirstVerse = v.number === 1;
                                           const text = isFirstVerse ? v.text.slice(1) : v.text;
+                                          const verseLabel = `${ browseBook } ${ browseChapter }:${ v.number }`;
+                                          const isSelected = browseVerse === v.number;
+                                          const verseXrefs = crossRefMap?.[verseLabel];
+                                          const verseClassName = `scripture-index-browse-verse-inline ${ isSelected ? "selected" : "" }`;
+                                          const verseContent = (
+                                            <>
+                                              <sup className="scripture-index-browse-verse-num">
+                                                { v.number }
+                                                {
+                                                  // The dataset has no word-level anchor (see
+                                                  // crossReferences.js's own comment) — these
+                                                  // letters mark "this verse has N cross-
+                                                  // references, spelled out below" rather than
+                                                  // pointing at a specific word the way a real
+                                                  // printed Bible's own letters do.
+                                                  verseXrefs?.length > 0 && (
+                                                    <span className="scripture-index-verse-xref-marks">
+                                                      { verseXrefs.map((_, i) => XREF_LETTERS[i]).join("") }
+                                                    </span>
+                                                  )
+                                                }
+                                              </sup>
+                                              { `${ text } ` }
+                                            </>
+                                          );
 
                                           return (
                                             <Fragment key={ v.number }>
@@ -1128,31 +1187,49 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                                                   </span>
                                                 )
                                               }
-                                              <button
-                                                type="button"
-                                                aria-label={ `${ browseBook } ${ browseChapter }:${ v.number }` }
-                                                aria-pressed={ browseVerse === v.number }
-                                                className={ `scripture-index-browse-verse-inline ${ browseVerse === v.number ? "selected" : "" }` }
-                                                onClick={ () => pickVerse(v.number) }
-                                              >
-                                                <sup className="scripture-index-browse-verse-num">
-                                                  { v.number }
-                                                  {
-                                                    // The dataset has no word-level anchor (see
-                                                    // crossReferences.js's own comment) — these
-                                                    // letters mark "this verse has N cross-
-                                                    // references, spelled out below" rather than
-                                                    // pointing at a specific word the way a real
-                                                    // printed Bible's own letters do.
-                                                    crossRefMap?.[`${ browseBook } ${ browseChapter }:${ v.number }`]?.length > 0 && (
-                                                      <span className="scripture-index-verse-xref-marks">
-                                                        { crossRefMap[`${ browseBook } ${ browseChapter }:${ v.number }`].map((_, i) => XREF_LETTERS[i]).join("") }
-                                                      </span>
-                                                    )
-                                                  }
-                                                </sup>
-                                                { `${ text } ` }
-                                              </button>
+                                              {
+                                                isFirstVerse ? (
+                                                  <span
+                                                    role="button"
+                                                    tabIndex={ 0 }
+                                                    aria-label={ verseLabel }
+                                                    aria-pressed={ isSelected }
+                                                    className={ verseClassName }
+                                                    onClick={ () => pickVerse(v.number) }
+                                                    onKeyDown={ (e) => {
+                                                      // A native <button> gets Enter/Space activation
+                                                      // for free from the browser's own default-action
+                                                      // handling, entirely independent of whatever a
+                                                      // keydown listener sees — this span has none of
+                                                      // that, so it's hand-wired here instead. Checked
+                                                      // against BOTH `key` (the correct, modern way real
+                                                      // keyboard input already populates) and the older
+                                                      // `keyCode` (13/32) as a fallback: confirmed live
+                                                      // that at least one real key-dispatch path in this
+                                                      // browser leaves `key` as an empty string while
+                                                      // still setting `keyCode` correctly, so relying on
+                                                      // `key` alone silently dropped the activation.
+                                                      const isEnter = e.key === "Enter" || e.keyCode === 13;
+                                                      const isSpace = e.key === " " || e.keyCode === 32;
+                                                      if (!isEnter && !isSpace) return;
+                                                      e.preventDefault();
+                                                      pickVerse(v.number);
+                                                    } }
+                                                  >
+                                                    { verseContent }
+                                                  </span>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    aria-label={ verseLabel }
+                                                    aria-pressed={ isSelected }
+                                                    className={ verseClassName }
+                                                    onClick={ () => pickVerse(v.number) }
+                                                  >
+                                                    { verseContent }
+                                                  </button>
+                                                )
+                                              }
                                             </Fragment>
                                           );
                                         })

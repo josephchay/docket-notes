@@ -1,0 +1,60 @@
+/* A small torn-off page from the note's own pad — same convention as
+   ColorPicker.css/DueDatePicker.css's own identical comment: portaled to
+   document.body and positioned in fixed/viewport coordinates, tinted via
+   the shared ${color}-bg utility classes (src/base/commons.css) rather
+   than a color set here, so it always reads as part of THIS note rather
+   than a system dialog. */
+.study-template-picker {
+  position: fixed;
+  z-index: 980;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 264px;
+  padding: 10px;
+  border-radius: 18px;
+  box-shadow: 0 20px 46px -14px rgba(25, 25, 25, 0.45);
+}
+
+.study-template-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: none;
+  outline: none;
+  border-radius: 12px;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.study-template-row:hover {
+  background: var(--black-more-transclucent-color);
+}
+
+.study-template-label {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* The template's own heading sequence, spelled out — the row IS its
+   sections, since that sequence is literally all a template writes into
+   the note. */
+.study-template-headings {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  opacity: .55;
+}
+
+.study-template-about {
+  font-size: 10.5px;
+  font-weight: 500;
+  font-style: italic;
+  opacity: .65;
+}

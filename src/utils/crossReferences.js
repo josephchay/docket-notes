@@ -44,3 +44,27 @@ function loadAll() {
 export function loadCrossReferences() {
   return loadAll();
 }
+
+// The one shared way a citation becomes a key into that map — every
+// consumer (the editor's preview-card apparatus, the typology pill's
+// attestation check) calls this rather than each assembling its own
+// "Book c:v" string, so they can never disagree about which verse a
+// citation looks up (the same single-implementation rule parseStudy/
+// isStudyText already follow for heading positions).
+//
+// Only a plain 2-segment chapter:verse path keys directly. A range
+// ("1:1-3") keys on its START verse — the same convention a printed
+// Bible's own footnote apparatus uses, anchoring a passage's references at
+// its first verse; honest as long as the caller treats the result as "the
+// apparatus AT this passage's opening," which is all any current caller
+// claims. A bare chapter has no single verse to key on, and a 3-segment
+// path is this app's own private chapter:verse:subverse shorthand with no
+// external meaning (see bibleApi.js's isFetchablePath for the same
+// distinction drawn for the same reason) — both return null rather than
+// guessing, so nothing ever shows an apparatus that might belong to a
+// different verse than the one the citation actually means.
+export function crossRefKeyFor(citation) {
+  const match = /^(\d+):(\d+)(?:-\d+)?$/.exec(citation?.path ?? "");
+  if (!match) return null;
+  return `${ citation.book } ${ match[1] }:${ match[2] }`;
+}

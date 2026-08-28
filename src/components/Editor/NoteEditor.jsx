@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
-import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle, FaTag, FaCalendarDay, FaListCheck, FaBookBible, FaBookOpen, FaMagnifyingGlass, FaLocationCrosshairs, FaPalette } from "react-icons/fa6";
+import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle, FaTag, FaCalendarDay, FaListCheck, FaBookBible, FaBookOpen, FaMagnifyingGlass, FaLocationCrosshairs, FaPalette, FaArrowRightLong, FaArrowLeftLong, FaPlus } from "react-icons/fa6";
 import { FaEye } from "react-icons/fa";
 
 import useJellyTap from "../../hooks/useJellyTap";
@@ -10,14 +10,16 @@ import HistoryAmbient from "../History/HistoryAmbient";
 import { EXIT_SPRING, coinFlip } from "../Motion";
 import { dueLabel } from "../../utils/date";
 import { isChecklistText, toChecklistText, fromChecklistText } from "../../utils/checklist";
-import { isStudyText, toStudyText, fromStudyText } from "../../utils/study";
-import { parseCitations, parseBareCitation, findPrecedingSpan } from "../../utils/citations";
-import { fetchVerseText, isFetchablePath } from "../../utils/bibleApi";
+import { isStudyText, toStudyText, fromStudyText, sectionRangesOf } from "../../utils/study";
+import { parseCitationsDetailed, parseBareCitation, findPrecedingSpan, BIBLE_BOOKS, NT_START_INDEX } from "../../utils/citations";
+import { fetchVerseText } from "../../utils/bibleApi";
+import { loadCrossReferences, crossRefKeyFor } from "../../utils/crossReferences";
 import ChecklistBody from "../Note/ChecklistBody";
 import StudyBody from "../Note/StudyBody";
 import DueDatePicker from "./DueDatePicker";
 import ColorPicker from "./ColorPicker";
 import ReferencePicker from "./ReferencePicker";
+import StudyTemplatePicker from "./StudyTemplatePicker";
 import HoverCitationOverlay from "./HoverCitationOverlay";
 import { SCRIPTURE_INDEX_EVENT } from "../Scripture/ScriptureIndexPanel";
 
@@ -70,6 +72,7 @@ const NoteEditor = ({
   scriptureIndex,
   onFindCitation,
   tagCitation,
+  weaveCitation,
 }) => {
   const [draftTitle, setDraftTitle] = useState(note.title);
   const [draftText, setDraftText] = useState(note.text);
@@ -91,7 +94,97 @@ const NoteEditor = ({
   // utils/citations.js), never a stored mode the way checklist/study are;
   // it just re-scans whenever the text itself changes, and works the same
   // regardless of whether the body is plain text, a checklist, or a study.
-  const citations = useMemo(() => parseCitations(draftText), [draftText]);
+  // typologyLinks are the directed " -> " pairs the same parse recognizes
+  // ("(Exodus 12:3 -> John 1:29)" — type pointing at antitype), carried
+  // alongside the deduped citation list rather than attached to it.
+  const { citations, typologyLinks } = useMemo(() => parseCitationsDetailed(draftText), [draftText]);
+
+  // Resolves a citation's full reference back to its parsed entry — links
+  // and apparatus chips both arrive as bare strings and need the entry
+  // (offsets, path) behind them; one shared map instead of a .find() per
+  // lookup scattered through render.
+  const citationByFull = useMemo(
+    () => new Map(citations.map((citation) => [citation.full.toLowerCase(), citation])),
+    [citations]
+  );
+
+  // Which section of a study each citation's prose actually sits in — the
+  // location of a proof-text is itself an interpretive claim (a verse
+  // cited under Literal asserts something different from the same verse
+  // under Anagogical), so the pills row groups by section and a reference
+  // appearing under TWO OR MORE senses gets a layered mark: one text
+  // operating at two levels of sense at once is exactly the sensus plenior
+  // signature. Both sides of this bucketing (sectionRangesOf's character
+  // ranges and each citation's occurrence offsets) are derived from the
+  // identical draftText string, so they can never disagree about where
+  // anything is. Null for a non-study — the pills row renders exactly as
+  // it always has there.
+  const sectionRanges = useMemo(() => sectionRangesOf(draftText), [draftText]);
+
+  const sectionCitations = useMemo(() => {
+    if (sectionRanges.length === 0) return null;
+
+    const sectionFor = (offset) => sectionRanges.find((r) => offset >= r.startChar && offset < r.endChar);
+    const counts = {};
+    const headingsByCitation = new Map();
+    const groups = sectionRanges.map((r) => ({ key: r.key, heading: r.heading, citations: [] }));
+    const ungrouped = [];
+
+    for (const citation of citations) {
+      // EVERY occurrence counts toward section totals and the layered
+      // mark, not just the deduped first one — dedupe is exactly what
+      // would otherwise erase "this verse is cited under two different
+      // senses," the one signal this feature exists to surface.
+      const headings = [];
+      for (const occurrence of citation.occurrences) {
+        const range = sectionFor(occurrence.start);
+        if (!range) continue;
+        counts[range.key] = (counts[range.key] || 0) + 1;
+        if (!headings.includes(range.heading)) headings.push(range.heading);
+      }
+      headingsByCitation.set(citation.full.toLowerCase(), headings);
+
+      // The pill itself renders once, under the section of its FIRST
+      // occurrence (the same first-seen discipline the dedupe already
+      // keeps) — the layered mark is what tells the fuller story.
+      const primary = sectionFor(citation.start);
+      if (primary) groups.find((g) => g.key === primary.key).citations.push(citation);
+      else ungrouped.push(citation);
+    }
+
+    return { groups: groups.filter((g) => g.citations.length > 0), ungrouped, counts, headingsByCitation };
+  }, [sectionRanges, citations]);
+
+  // Consecutive typology links sharing an endpoint fold into one chain
+  // ("A -> B" then "B -> C" reads as one trail A -> B -> C), so a
+  // multi-hop pattern renders as one compound pill instead of overlapping
+  // pairs.
+  const typologyChains = useMemo(() => {
+    const chains = [];
+    for (const link of typologyLinks) {
+      const last = chains[chains.length - 1];
+      if (last && last[last.length - 1].toLowerCase() === link.from.toLowerCase()) last.push(link.to);
+      else chains.push([link.from, link.to]);
+    }
+    return chains;
+  }, [typologyLinks]);
+
+  // Chain members get their pill AS a lobe of the compound typology pill —
+  // rendering them again in the ordinary rows would say the same thing
+  // twice.
+  const linkedFulls = useMemo(
+    () => new Set(typologyChains.flat().map((full) => full.toLowerCase())),
+    [typologyChains]
+  );
+
+  // How often each passage is cited across the whole desk (scriptureIndex
+  // is Home's own corpus-wide aggregation) — apparatus chips wear this as
+  // a small badge, so "the Treasury points here AND your own notes already
+  // dwell here" is visible at a glance.
+  const deskCitationCounts = useMemo(
+    () => new Map(scriptureIndex.map((entry) => [entry.full.toLowerCase(), entry.count])),
+    [scriptureIndex]
+  );
 
   // A highlighted piece of plain text offers a scripture reference — two
   // different flavors depending on what the selection already reads as.
@@ -243,6 +336,28 @@ const NoteEditor = ({
   // of whether `open` itself actually changed.
   const [annotationPickerKey, setAnnotationPickerKey] = useState(0);
 
+  // The study toolbar button's own popover — when the note ISN'T a study
+  // yet, that button opens StudyTemplatePicker rather than converting
+  // immediately, since "become a study" now carries a real choice (which
+  // shape — see STUDY_TEMPLATES); a note that already IS one still
+  // converts straight back to plain text on the same button, no picker
+  // involved, stripping whichever template the text itself carries.
+  const studyBtnRef = useRef(null);
+  const [studyPickerOpen, setStudyPickerOpen] = useState(false);
+
+  const applyStudyTemplate = (templateId) => {
+    if (note.lock) return;
+    setStudyPickerOpen(false);
+    cancelPendingText();
+    // Same instant-local-update reasoning as the checklist toggle button
+    // below — draftText updated directly rather than left to round-trip
+    // through the note.text prop, so the conversion lands regardless of
+    // which field currently holds focus.
+    const nextText = toStudyText(normalizeStructuredText(draftText), templateId);
+    setDraftText(nextText);
+    toggleStudy(note.id, draftText, templateId);
+  };
+
   const openAnnotationPicker = () => {
     if (note.lock || !pendingSelection || pendingSelection.kind !== "annotate") return;
     annotationTargetRef.current = { insertAt: pendingSelection.end, selectionStart: pendingSelection.start, originalText: pendingSelection.text };
@@ -357,40 +472,204 @@ const NoteEditor = ({
   // citation (or closed the preview) — without it, clicking pill A then
   // quickly pill B could show A's answer under B's label the moment A's
   // request finally resolves.
-  const [previewCitation, setPreviewCitation] = useState(null);
-  const [previewResult, setPreviewResult] = useState(null);
+  //
+  // The card now shows one of three shapes, tracked as one state object so
+  // they stay mutually exclusive for free:
+  //   { kind: "note", citation }            — a pill's own preview, closed
+  //                                           the moment its citation
+  //                                           leaves the note
+  //   { kind: "apparatus", citation,        — a Treasury chip tapped from
+  //     origin }                              another preview; `origin` is
+  //                                           the NOTE citation whose card
+  //                                           started this trail, so
+  //                                           staleness tracks the origin
+  //                                           (the previewed passage was
+  //                                           never in note.text at all)
+  //                                           and "back" knows where home
+  //                                           is
+  //   { kind: "compare", from, to }         — a typology arrow's two-pane
+  //                                           type/antitype reading
+  const [preview, setPreview] = useState(null);
+  const [previewResult, setPreviewResult] = useState(null);   // single-pane kinds
+  const [compareResults, setCompareResults] = useState(null); // { from, to } results
   const previewRequestRef = useRef(0);
 
-  const togglePreview = (citation) => {
-    if (previewCitation === citation.full) {
-      previewRequestRef.current += 1;
-      setPreviewCitation(null);
-      setPreviewResult(null);
-      return;
-    }
+  // The bundled Treasury of Scripture Knowledge cross-references (see
+  // utils/crossReferences.js — local, offline, no rate limit), loaded at
+  // most once per editor lifetime and only when something actually asks:
+  // a preview card opening (its apparatus row wants them) or a typology
+  // arrow existing in the note (its attestation tick does). Never on plain
+  // mount of an uncited note.
+  const [crossRefs, setCrossRefs] = useState(null);
+  const crossRefsRequestedRef = useRef(false);
 
+  const ensureCrossRefs = () => {
+    if (crossRefsRequestedRef.current) return;
+    crossRefsRequestedRef.current = true;
+    // Resolves to {} on any failure (crossReferences.js's own .catch), so
+    // a missing/blocked dataset just means no apparatus rows — never an
+    // error state to render.
+    loadCrossReferences().then((map) => setCrossRefs(map));
+  };
+
+  useEffect(() => {
+    if (typologyChains.length > 0) ensureCrossRefs();
+    // ensureCrossRefs is ref-guarded and only ever transitions once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typologyChains.length]);
+
+  const closePreview = () => {
+    previewRequestRef.current += 1;
+    setPreview(null);
+    setPreviewResult(null);
+    setCompareResults(null);
+  };
+
+  // Opens either single-pane shape — everything they share (bumping the
+  // request id, clearing the other pane state, kicking the apparatus
+  // load, the staleness-guarded fetch) lives here once.
+  const openSinglePreview = (entry) => {
     const requestId = ++previewRequestRef.current;
-    setPreviewCitation(citation.full);
+    setPreview(entry);
+    setCompareResults(null);
     setPreviewResult({ status: "loading" });
+    ensureCrossRefs();
 
-    fetchVerseText(citation).then((result) => {
+    fetchVerseText(entry.citation).then((result) => {
       if (previewRequestRef.current !== requestId) return;
       setPreviewResult(result);
     });
   };
 
-  // Proactively closes a stale preview the same way pendingSelection's own
-  // effect above does — if the citation being previewed no longer appears
-  // in the note at all (its text was edited or deleted), there's nothing
-  // left for the open card to actually be showing text FOR.
-  useEffect(() => {
-    if (previewCitation && !citations.some((c) => c.full === previewCitation)) {
-      previewRequestRef.current += 1;
-      setPreviewCitation(null);
-      setPreviewResult(null);
+  const togglePreview = (citation) => {
+    if (preview?.kind === "note" && preview.citation.full === citation.full) {
+      closePreview();
+      return;
     }
+    openSinglePreview({ kind: "note", citation: { book: citation.book, path: citation.path, full: citation.full } });
+  };
+
+  // A Treasury chip tapped from an open card — swaps the card to that
+  // passage. If the tapped reference is already one of this note's OWN
+  // citations, it opens as a plain note preview instead (its pill lights
+  // up, no back chip needed — it IS home); otherwise the apparatus shape
+  // carries the origin along so the trail stays anchored to the note.
+  const openApparatusPreview = (refString, origin) => {
+    const parsed = parseBareCitation(refString);
+    if (!parsed) return;
+
+    const own = citationByFull.get(parsed.full.toLowerCase());
+    if (own) openSinglePreview({ kind: "note", citation: { book: own.book, path: own.path, full: own.full } });
+    else openSinglePreview({ kind: "apparatus", citation: parsed, origin });
+  };
+
+  // A typology arrow tapped — both sides fetched under ONE request id,
+  // each pane rendering as its own result lands (per-pane "Looking it
+  // up…" until then). Tapping the same arrow again closes it, like a
+  // pill's own toggle.
+  const openCompare = (fromFull, toFull) => {
+    if (preview?.kind === "compare" && preview.from.full === fromFull && preview.to.full === toFull) {
+      closePreview();
+      return;
+    }
+
+    const from = parseBareCitation(fromFull);
+    const to = parseBareCitation(toFull);
+    if (!from || !to) return;
+
+    const requestId = ++previewRequestRef.current;
+    setPreview({ kind: "compare", from, to });
+    setPreviewResult(null);
+    setCompareResults({ from: { status: "loading" }, to: { status: "loading" } });
+    ensureCrossRefs();
+
+    fetchVerseText(from).then((result) => {
+      if (previewRequestRef.current !== requestId) return;
+      setCompareResults((prev) => (prev ? { ...prev, from: result } : prev));
+    });
+    fetchVerseText(to).then((result) => {
+      if (previewRequestRef.current !== requestId) return;
+      setCompareResults((prev) => (prev ? { ...prev, to: result } : prev));
+    });
+  };
+
+  // Proactively closes a stale preview the same way pendingSelection's own
+  // effect above does — each kind tracks the thing whose disappearance
+  // makes the card meaningless: a note preview its own citation, an
+  // apparatus preview its ORIGIN citation (the previewed passage was never
+  // in note.text to begin with — without this escape hatch the old
+  // is-it-in-citations check would close every chip-swap instantly), a
+  // compare the exact link its arrow represents.
+  useEffect(() => {
+    if (!preview) return;
+
+    const gone =
+      preview.kind === "note" ? !citations.some((c) => c.full === preview.citation.full)
+        : preview.kind === "apparatus" ? !citations.some((c) => c.full === preview.origin)
+          : !typologyLinks.some((l) => l.from === preview.from.full && l.to === preview.to.full);
+
+    if (gone) closePreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [citations]);
+  }, [citations, typologyLinks]);
+
+  // Weaves a Treasury reference into the origin citation's own group —
+  // "(Genesis 14:18)" becomes "(Genesis 14:18; Hebrews 6:20)", the exact
+  // semicolon grammar parseCitationsDetailed already reads, so the woven
+  // reference re-derives as a real pill on the very next render and the
+  // chain's next hop is one tap away with zero extra trail state. The
+  // origin's position is re-located in the CURRENT text at tap time (the
+  // `citations` memo is derived fresh from draftText) — never from offsets
+  // captured when the card opened, which typing could have shifted since.
+  // Inserting immediately before the group's own ")" can't splice inside
+  // another citation: the group regex forbids nested parens, so the first
+  // ")" past the origin piece IS its group's close.
+  const weaveApparatusRef = (refString) => {
+    if (note.lock || !preview || preview.kind === "compare") return;
+
+    const woven = parseBareCitation(refString);
+    if (!woven) return;
+    // Already cited anywhere in the note — nothing to add (the render
+    // disables the button for this too; belt and braces, same as every
+    // other mutating control here).
+    if (citationByFull.has(woven.full.toLowerCase())) return;
+
+    const originFull = preview.kind === "apparatus" ? preview.origin : preview.citation.full;
+    const origin = citationByFull.get(originFull.toLowerCase());
+    if (!origin) return;
+
+    const closeIndex = draftText.indexOf(")", origin.end);
+    if (closeIndex === -1) return; // an unterminated group — decline rather than guess
+
+    cancelPendingText();
+    const nextText = `${ draftText.slice(0, closeIndex) }; ${ woven.full }${ draftText.slice(closeIndex) }`;
+    setDraftText(nextText);
+    weaveCitation(note.id, nextText);
+  };
+
+  // Whether the Treasury's own links connect a typology arrow's two sides
+  // (either direction) — reading WITH the tradition and freshly proposing
+  // are both legitimate moves, but a theologian wants to know which one
+  // they're making. Only ever a positive signal: the bundle carries just
+  // the top-voted links per verse, so absence proves nothing and renders
+  // nothing.
+  const arrowAttested = (fromFull, toFull) => {
+    if (!crossRefs) return false;
+
+    const from = citationByFull.get(fromFull.toLowerCase());
+    const to = citationByFull.get(toFull.toLowerCase());
+    if (!from || !to) return false;
+
+    const fromKey = crossRefKeyFor(from);
+    const toKey = crossRefKeyFor(to);
+    if (!fromKey || !toKey) return false;
+
+    const listHas = (list, key) => (list ?? []).some((ref) => {
+      const parsed = parseBareCitation(ref);
+      return parsed && crossRefKeyFor(parsed) === key;
+    });
+
+    return listHas(crossRefs[fromKey], toKey) || listHas(crossRefs[toKey], fromKey);
+  };
 
   // Strips whichever structured form (if either) is currently active back
   // to plain text — the shared first step both toggle handlers below take
@@ -444,8 +723,18 @@ const NoteEditor = ({
   // entirely, should discard whatever pick was still in progress, not race
   // to sneak one last commit in right as the field it was even happening
   // over stops existing.
+  //
+  // The study-template picker shares the exact same exposure (also
+  // portaled, also closable only by pointerdown/Escape/its own pick) and
+  // the exact same set of moments it stops making sense — locking, the
+  // note becoming a checklist under it, or the note becoming a study some
+  // OTHER way (headings typed by hand while the picker sat open) — so it
+  // rides the same effect rather than duplicating it.
   useEffect(() => {
-    if (note.lock || isChecklist || isStudy) setAnnotationPickerOpen(false);
+    if (note.lock || isChecklist || isStudy) {
+      setAnnotationPickerOpen(false);
+      setStudyPickerOpen(false);
+    }
   }, [note.lock, isChecklist, isStudy]);
 
   // The gluey wobble: whenever the paper opens or changes size it squashes
@@ -549,19 +838,20 @@ const NoteEditor = ({
   useEffect(() => {
     const handleKey = (e) => {
       if (e.key !== "Escape") return;
-      // DueDatePicker/ReferencePicker/ColorPicker are all portaled straight
-      // to document.body and each close themselves on Escape independently
-      // (see their own identical handleKey effects) — but a plain, global
-      // `window` keydown listener has no notion of "the popover already
-      // handled this," so without checking here too, the SAME Escape press
-      // that closes one of those popovers was also closing this whole
-      // editor underneath it in one keystroke. Mirrors the exact body-class
-      // check ScriptureIndexPanel.jsx's own Escape handler already uses to
-      // defer to these same three popovers.
+      // DueDatePicker/ReferencePicker/ColorPicker/StudyTemplatePicker are
+      // all portaled straight to document.body and each close themselves on
+      // Escape independently (see their own identical handleKey effects) —
+      // but a plain, global `window` keydown listener has no notion of "the
+      // popover already handled this," so without checking here too, the
+      // SAME Escape press that closes one of those popovers was also
+      // closing this whole editor underneath it in one keystroke. Mirrors
+      // the exact body-class check ScriptureIndexPanel.jsx's own Escape
+      // handler already uses to defer to these same popovers.
       if (
         document.body.classList.contains("due-picker-open") ||
         document.body.classList.contains("reference-picker-open") ||
-        document.body.classList.contains("color-picker-open")
+        document.body.classList.contains("color-picker-open") ||
+        document.body.classList.contains("study-picker-open")
       ) return;
       onClose();
     };
@@ -702,6 +992,153 @@ const NoteEditor = ({
   // choices, anchored off this ref.
   const colorBtnRef = useRef(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
+
+  // One citation pill — the same three-action shape wherever it appears:
+  // alone in the flat row, under a section chip in a study, or as a lobe
+  // of a compound typology pill (the chain container restyles it via CSS;
+  // the markup never forks, so the actions can't drift apart between
+  // contexts). `layered` — the same reference cited under two or more
+  // different SENSES of a study (per-section occurrences, see
+  // sectionCitations) — wears a doubled underline and names its senses:
+  // one text read at two levels at once is the exact sensus plenior
+  // signature this row exists to make visible.
+  const renderCitationPill = (citation) => {
+    const headings = sectionCitations?.headingsByCitation.get(citation.full.toLowerCase());
+    const layered = (headings?.length ?? 0) >= 2;
+
+    return (
+      <span
+        key={ citation.full }
+        className={ `note-editor-citation ${ layered ? "layered" : "" }` }
+        title={ layered ? `Cited under ${ headings.join(" and ") }` : undefined }
+      >
+        {
+          !isChecklist && !isStudy && (
+            <motion.button
+              type="button"
+              aria-label={ `Jump to ${ citation.full } in this note` }
+              title="Jump to it in this note"
+              className="note-editor-citation-jump"
+              whileHover={{ scale: 1.15 }}
+              whileTap={{ scale: .88 }}
+              transition={{ type: "spring", stiffness: 420, damping: 18 }}
+              onClick={ () => selectCitationInText(citation) }
+            >
+              <FaLocationCrosshairs />
+            </motion.button>
+          )
+        }
+        <motion.button
+          type="button"
+          aria-label={ `${ preview?.kind === "note" && preview.citation.full === citation.full ? "Hide" : "Show" } what ${ citation.full } says` }
+          aria-pressed={ preview?.kind === "note" && preview.citation.full === citation.full }
+          title="Preview the verse text"
+          className={ `note-editor-citation-label ${ preview?.kind === "note" && preview.citation.full === citation.full ? "active" : "" }` }
+          whileTap={{ scale: .96 }}
+          transition={{ type: "spring", stiffness: 420, damping: 18 }}
+          onClick={ () => togglePreview(citation) }
+        >
+          { citation.full }
+        </motion.button>
+        <motion.button
+          type="button"
+          aria-label={ `Find every note mentioning ${ citation.full }` }
+          title="Find other notes on this passage"
+          className="note-editor-citation-search"
+          whileHover={{ scale: 1.15 }}
+          whileTap={{ scale: .88 }}
+          transition={{ type: "spring", stiffness: 420, damping: 18 }}
+          onClick={ () => onFindCitation?.(citation.full) }
+        >
+          <FaMagnifyingGlass />
+        </motion.button>
+      </span>
+    );
+  };
+
+  // The arrow between two lobes of a compound typology pill — tapping it
+  // reads both sides stacked in the preview card (see openCompare). The
+  // small TSK tick appears only when the bundled Treasury's own links
+  // connect the two passages — reading WITH the tradition and freshly
+  // proposing are both legitimate typological moves, but a theologian
+  // wants to know which one they're making; absence renders nothing at
+  // all, since only the top-voted links are bundled and silence proves
+  // nothing.
+  const renderTypologyArrow = (fromFull, toFull) => {
+    const active = preview?.kind === "compare" && preview.from.full === fromFull && preview.to.full === toFull;
+
+    return (
+      <motion.button
+        type="button"
+        aria-label={ `Read ${ fromFull } and ${ toFull } side by side` }
+        aria-pressed={ active }
+        title="Type and antitype, side by side"
+        className={ `note-editor-typology-arrow ${ active ? "active" : "" }` }
+        whileHover={{ scale: 1.15 }}
+        whileTap={{ scale: .85 }}
+        transition={{ type: "spring", stiffness: 420, damping: 18 }}
+        onClick={ () => openCompare(fromFull, toFull) }
+      >
+        <FaArrowRightLong />
+        {
+          arrowAttested(fromFull, toFull) && (
+            <span
+              className="note-editor-typology-tsk"
+              title="The Treasury of Scripture Knowledge's own links connect these two passages (bundled top links only — absence would prove nothing)"
+            >
+              TSK
+            </span>
+          )
+        }
+      </motion.button>
+    );
+  };
+
+  // Shared by every pane that shows a fetched verse — the single preview
+  // body and each compare pane render the identical four states, so the
+  // wording (including the honest three-number-shorthand explanation) can
+  // never drift between them.
+  const renderVerseStatus = (result) => (
+    result?.status === "loading" ? (
+      <span className="note-editor-citation-preview-muted">Looking it up…</span>
+    ) : result?.status === "unsupported" ? (
+      <span className="note-editor-citation-preview-muted">
+        The third number here is this app's own shorthand, not a standard verse — no text to look up.
+      </span>
+    ) : result?.status === "error" ? (
+      <span className="note-editor-citation-preview-muted">{ result.message || "Couldn't load this verse." }</span>
+    ) : (
+      <p>{ result?.text }</p>
+    )
+  );
+
+  // The open card's own Treasury apparatus, recomputed per render (cheap
+  // map lookups against already-loaded data — no state that could lag the
+  // preview it annotates). apparatusRefs is null while the dataset hasn't
+  // loaded or the previewed path has no single verse to key on (a bare
+  // chapter, the private 3-number shorthand — see crossRefKeyFor), and []
+  // when the dataset is loaded but simply records nothing for this verse —
+  // the row hides for both, but the NT-warrant line below distinguishes
+  // "nothing recorded" as a stated fact rather than silence.
+  const previewKey = preview && preview.kind !== "compare" ? crossRefKeyFor(preview.citation) : null;
+  const apparatusRefs = previewKey && crossRefs ? crossRefs[previewKey] ?? [] : null;
+
+  // For an OLD TESTAMENT verse only: which of its Treasury links land in
+  // the New Testament — the classic control question against runaway
+  // typology ("does the NT itself warrant reading Christ here?"), answered
+  // as a fact about the apparatus, never a verdict about the reading.
+  const warrantLinks = (() => {
+    if (!preview || preview.kind === "compare" || !apparatusRefs) return null;
+    if (BIBLE_BOOKS.indexOf(preview.citation.book) >= NT_START_INDEX) return null;
+    return apparatusRefs.filter((ref) => {
+      const parsed = parseBareCitation(ref);
+      return parsed && BIBLE_BOOKS.indexOf(parsed.book) >= NT_START_INDEX;
+    });
+  })();
+
+  // Where an apparatus trail is anchored in THIS note — the origin its
+  // chips weave into and its back chip returns to.
+  const previewOrigin = preview?.kind === "apparatus" ? preview.origin : preview?.citation?.full;
 
   return (
     <div className="note-editor-layer">
@@ -873,9 +1310,10 @@ const NoteEditor = ({
                   </motion.span>
                 </motion.button>
                 <motion.button
+                  ref={ studyBtnRef }
                   type="button"
-                  aria-label={ isStudy ? "Turn this back into plain text" : "Turn this into a Bible study" }
-                  aria-pressed={ isStudy }
+                  aria-label={ isStudy ? "Turn this back into plain text" : "Shape this into a Bible study" }
+                  aria-pressed={ isStudy || studyPickerOpen }
                   disabled={ note.lock }
                   className="note-editor-action"
                   style={{
@@ -888,12 +1326,21 @@ const NoteEditor = ({
                   onTapStart={ studyTap.squash }
                   onClick={ () => {
                     if (note.lock) return;
-                    cancelPendingText();
-                    // Same instant-local-update reasoning as the checklist
-                    // toggle just above.
-                    const nextText = isStudy ? fromStudyText(draftText) : toStudyText(normalizeStructuredText(draftText));
-                    setDraftText(nextText);
-                    toggleStudy(note.id, draftText);
+                    // A note that already IS a study converts straight
+                    // back (fromStudyText strips whichever template the
+                    // text itself carries — never an assumed one); a plain
+                    // note opens the template picker instead, since
+                    // "become a study" now carries a real choice of shape.
+                    if (isStudy) {
+                      cancelPendingText();
+                      // Same instant-local-update reasoning as the
+                      // checklist toggle just above.
+                      const nextText = fromStudyText(draftText);
+                      setDraftText(nextText);
+                      toggleStudy(note.id, draftText);
+                      return;
+                    }
+                    setStudyPickerOpen((prev) => !prev);
                   } }
                 >
                   <motion.span animate={ studyTap.jelly } style={{ display: "inline-flex" }}>
@@ -1056,6 +1503,7 @@ const NoteEditor = ({
                   locked={ note.lock }
                   className="editor-study"
                   autoFocus={ !note.lock }
+                  sectionCounts={ sectionCitations?.counts }
                 />
               ) : (
                 <div className="note-editor-text-wrap">
@@ -1163,12 +1611,22 @@ const NoteEditor = ({
             {/* Every citation this note's own prose mentions, auto-detected
                 — a table of contents for a densely cross-referenced note.
                 Purely a read of the text just written, so it appears and
-                updates on its own with no toggle to find.
-                Each pill carries two distinct actions rather than one:
-                the crosshair jumps straight to where THIS citation sits
-                in this note's own text (plain-text mode only — see
-                selectCitationInText), the magnifier finds every OTHER
-                note mentioning the same passage. */}
+                updates on its own with no toggle to find. Each pill
+                carries the crosshair jump (plain-text mode only — see
+                selectCitationInText), the label's own verse preview, and
+                the magnifier's cross-note search (see renderCitationPill).
+
+                Three layers of structure, all derived, none stored:
+                typology chains ("A -> B" arrows in the text) render first
+                as compound pills — each member's own pill as a lobe, the
+                arrow between them tappable for a side-by-side reading —
+                and their members skip the ordinary rows rather than
+                appearing twice. In a study, the remaining pills group
+                under small chips naming the SECTION whose prose cites
+                them — where a proof-text sits is itself an interpretive
+                claim, so the row reads as an apparatus organized by the
+                study's own senses. A plain note renders the flat row it
+                always has. */}
             {
               citations.length > 0 && (
                 <motion.div
@@ -1178,50 +1636,46 @@ const NoteEditor = ({
                   transition={{ duration: .2 }}
                 >
                   {
-                    citations.map((citation) => (
-                      <span key={ citation.full } className="note-editor-citation">
+                    typologyChains.map((chain) => (
+                      <span key={ chain.join(" > ") } className="note-editor-typology-chain">
                         {
-                          !isChecklist && !isStudy && (
-                            <motion.button
-                              type="button"
-                              aria-label={ `Jump to ${ citation.full } in this note` }
-                              title="Jump to it in this note"
-                              className="note-editor-citation-jump"
-                              whileHover={{ scale: 1.15 }}
-                              whileTap={{ scale: .88 }}
-                              transition={{ type: "spring", stiffness: 420, damping: 18 }}
-                              onClick={ () => selectCitationInText(citation) }
-                            >
-                              <FaLocationCrosshairs />
-                            </motion.button>
-                          )
+                          chain.map((full, i) => {
+                            const citation = citationByFull.get(full.toLowerCase());
+                            if (!citation) return null;
+                            return (
+                              // Keyed by position too, not full alone — a
+                              // circular trail ("A -> B -> A") legitimately
+                              // repeats its first member as its last lobe.
+                              <Fragment key={ `${ full }-${ i }` }>
+                                { i > 0 && renderTypologyArrow(chain[i - 1], full) }
+                                { renderCitationPill(citation) }
+                              </Fragment>
+                            );
+                          })
                         }
-                        <motion.button
-                          type="button"
-                          aria-label={ `${ previewCitation === citation.full ? "Hide" : "Show" } what ${ citation.full } says` }
-                          aria-pressed={ previewCitation === citation.full }
-                          title="Preview the verse text"
-                          className={ `note-editor-citation-label ${ previewCitation === citation.full ? "active" : "" }` }
-                          whileTap={{ scale: .96 }}
-                          transition={{ type: "spring", stiffness: 420, damping: 18 }}
-                          onClick={ () => togglePreview(citation) }
-                        >
-                          { citation.full }
-                        </motion.button>
-                        <motion.button
-                          type="button"
-                          aria-label={ `Find every note mentioning ${ citation.full }` }
-                          title="Find other notes on this passage"
-                          className="note-editor-citation-search"
-                          whileHover={{ scale: 1.15 }}
-                          whileTap={{ scale: .88 }}
-                          transition={{ type: "spring", stiffness: 420, damping: 18 }}
-                          onClick={ () => onFindCitation?.(citation.full) }
-                        >
-                          <FaMagnifyingGlass />
-                        </motion.button>
                       </span>
                     ))
+                  }
+                  {
+                    sectionCitations ? (
+                      <>
+                        {
+                          sectionCitations.groups.map((group) => {
+                            const pills = group.citations.filter((c) => !linkedFulls.has(c.full.toLowerCase()));
+                            if (pills.length === 0) return null;
+                            return (
+                              <span key={ group.key } className="note-editor-citation-group">
+                                <span className="note-editor-citation-section-chip">{ group.heading }</span>
+                                { pills.map(renderCitationPill) }
+                              </span>
+                            );
+                          })
+                        }
+                        { sectionCitations.ungrouped.filter((c) => !linkedFulls.has(c.full.toLowerCase())).map(renderCitationPill) }
+                      </>
+                    ) : (
+                      citations.filter((c) => !linkedFulls.has(c.full.toLowerCase())).map(renderCitationPill)
+                    )
                   }
                 </motion.div>
               )
@@ -1234,10 +1688,25 @@ const NoteEditor = ({
                 three-number citation (this app's own chapter:verse:
                 subverse shorthand, see isFetchablePath) has no real
                 reference to look up at all, so it says so rather than
-                guessing at a verse that might not be the one meant. */}
+                guessing at a verse that might not be the one meant.
+
+                Below the verse, the bundled Treasury of Scripture
+                Knowledge's own cross-references for it (local data, zero
+                network cost — see utils/crossReferences.js): each chip
+                reads that passage in place, or weaves it into the origin
+                citation's own group as "; Ref" — assembling a catena in
+                the exact semicolon grammar the parser already reads, so
+                the woven reference is a real pill (and the chain's next
+                hop) the moment it lands. For an Old Testament verse, the
+                warrant line beneath states which of those links land in
+                the New Testament — the classic control question against
+                runaway typology, answered as a fact about the apparatus,
+                never a verdict. A typology arrow opens the card in its
+                compare shape instead: type over antitype, each pane
+                fetching and scrolling on its own. */}
             <AnimatePresence>
               {
-                previewCitation && (
+                preview && (
                   <motion.div
                     className="note-editor-citation-preview"
                     initial={{ opacity: 0, scale: .96, height: 0 }}
@@ -1247,31 +1716,177 @@ const NoteEditor = ({
                   >
                     <div className="note-editor-citation-preview-head">
                       <FaBookOpen className="note-editor-citation-preview-icon" />
-                      <span>{ previewCitation }</span>
+                      {
+                        preview.kind === "compare" ? (
+                          <span>
+                            { preview.from.full }
+                            <FaArrowRightLong className="note-editor-citation-preview-arrow" />
+                            { preview.to.full }
+                          </span>
+                        ) : (
+                          <span>{ preview.citation.full }</span>
+                        )
+                      }
+                      {
+                        preview.kind === "apparatus" && (
+                          <button
+                            type="button"
+                            aria-label={ `Back to ${ preview.origin }` }
+                            title={ `Back to ${ preview.origin }` }
+                            className="note-editor-citation-preview-back"
+                            onClick={ () => {
+                              // The origin's own text is already cached
+                              // from the card that started this trail, so
+                              // returning is free — unless it left the
+                              // note while we were away, in which case
+                              // there's nothing to return TO.
+                              const origin = citationByFull.get(preview.origin.toLowerCase());
+                              if (origin) openSinglePreview({ kind: "note", citation: { book: origin.book, path: origin.path, full: origin.full } });
+                              else closePreview();
+                            } }
+                          >
+                            <FaArrowLeftLong />
+                            { preview.origin }
+                          </button>
+                        )
+                      }
                       <button
                         type="button"
                         aria-label="Close preview"
                         className="note-editor-citation-preview-close"
-                        onClick={ () => togglePreview({ full: previewCitation }) }
+                        onClick={ closePreview }
                       >
                         <FaXmark />
                       </button>
                     </div>
-                    <div className="note-editor-citation-preview-body custom-scroll">
-                      {
-                        previewResult?.status === "loading" ? (
-                          <span className="note-editor-citation-preview-muted">Looking it up…</span>
-                        ) : previewResult?.status === "unsupported" ? (
-                          <span className="note-editor-citation-preview-muted">
-                            The third number here is this app's own shorthand, not a standard verse — no text to look up.
-                          </span>
-                        ) : previewResult?.status === "error" ? (
-                          <span className="note-editor-citation-preview-muted">{ previewResult.message || "Couldn't load this verse." }</span>
-                        ) : (
-                          <p>{ previewResult?.text }</p>
-                        )
-                      }
-                    </div>
+                    {
+                      preview.kind === "compare" ? (
+                        <div className="note-editor-citation-compare">
+                          {
+                            [
+                              { role: "Type", citation: preview.from, result: compareResults?.from },
+                              { role: "Antitype", citation: preview.to, result: compareResults?.to },
+                            ].map(({ role, citation, result }) => (
+                              <div key={ role } className="note-editor-citation-compare-pane">
+                                <div className="note-editor-citation-compare-head">
+                                  <span className="note-editor-citation-compare-role">{ role }</span>
+                                  <span className="note-editor-citation-compare-ref">{ citation.full }</span>
+                                </div>
+                                <div className="note-editor-citation-preview-body custom-scroll">
+                                  { renderVerseStatus(result) }
+                                </div>
+                              </div>
+                            ))
+                          }
+                        </div>
+                      ) : (
+                        <>
+                          <div className="note-editor-citation-preview-body custom-scroll">
+                            { renderVerseStatus(previewResult) }
+                          </div>
+                          {
+                            apparatusRefs?.length > 0 && (
+                              <div className="note-editor-citation-xrefs">
+                                <span className="note-editor-citation-xrefs-label">See also</span>
+                                {
+                                  apparatusRefs.map((ref) => {
+                                    const parsed = parseBareCitation(ref);
+                                    if (!parsed) {
+                                      // A fraction of a percent of the dataset are
+                                      // cross-chapter spans ("Hebrews 6:20 - Hebrews
+                                      // 7:3") this app's own citation grammar can't
+                                      // express — shown honestly as inert text rather
+                                      // than a chip whose actions would half-work.
+                                      return (
+                                        <span
+                                          key={ ref }
+                                          className="note-editor-citation-xref inert"
+                                          title="Spans chapters — beyond this app's own citation shorthand, shown for reference"
+                                        >
+                                          { ref }
+                                        </span>
+                                      );
+                                    }
+
+                                    const deskCount = deskCitationCounts.get(parsed.full.toLowerCase()) ?? 0;
+                                    const alreadyCited = citationByFull.has(parsed.full.toLowerCase());
+                                    return (
+                                      <span key={ ref } className="note-editor-citation-xref">
+                                        <button
+                                          type="button"
+                                          aria-label={ `Read ${ parsed.full } here` }
+                                          title="Read this passage here"
+                                          className="note-editor-citation-xref-label"
+                                          onClick={ () => openApparatusPreview(ref, previewOrigin) }
+                                        >
+                                          { ref }
+                                          {
+                                            deskCount > 0 && (
+                                              <span
+                                                className="note-editor-citation-xref-count"
+                                                title={ `Already cited ${ deskCount } ${ deskCount === 1 ? "time" : "times" } across your notes` }
+                                              >
+                                                { deskCount }
+                                              </span>
+                                            )
+                                          }
+                                        </button>
+                                        {
+                                          !note.lock && (
+                                            <button
+                                              type="button"
+                                              aria-label={ `Weave ${ parsed.full } into this citation's group` }
+                                              title={ alreadyCited ? "Already cited in this note" : "Weave into this citation's group" }
+                                              className="note-editor-citation-xref-weave"
+                                              disabled={ alreadyCited }
+                                              onClick={ () => weaveApparatusRef(ref) }
+                                            >
+                                              <FaPlus />
+                                            </button>
+                                          )
+                                        }
+                                      </span>
+                                    );
+                                  })
+                                }
+                              </div>
+                            )
+                          }
+                          {
+                            warrantLinks && (
+                              <div className="note-editor-citation-warrant">
+                                {
+                                  warrantLinks.length > 0 ? (
+                                    <>
+                                      <span className="note-editor-citation-warrant-text">
+                                        The Treasury links this to { warrantLinks.length } New Testament { warrantLinks.length === 1 ? "passage" : "passages" }:
+                                      </span>
+                                      {
+                                        warrantLinks.map((ref) => (
+                                          <button
+                                            key={ ref }
+                                            type="button"
+                                            aria-label={ `Read ${ ref } here` }
+                                            className="note-editor-citation-warrant-chip"
+                                            onClick={ () => openApparatusPreview(ref, previewOrigin) }
+                                          >
+                                            { ref }
+                                          </button>
+                                        ))
+                                      }
+                                    </>
+                                  ) : (
+                                    <span className="note-editor-citation-warrant-text">
+                                      The bundled Treasury records no New Testament link for this verse.
+                                    </span>
+                                  )
+                                }
+                              </div>
+                            )
+                          }
+                        </>
+                      )
+                    }
                   </motion.div>
                 )
               }
@@ -1360,6 +1975,13 @@ const NoteEditor = ({
         anchorRef={ colorBtnRef }
         onChange={ (name) => { setNoteColor(name, note.id); setColorPickerOpen(false); } }
         onClose={ () => setColorPickerOpen(false) }
+      />
+      <StudyTemplatePicker
+        open={ studyPickerOpen }
+        colorName={ note.color }
+        anchorRef={ studyBtnRef }
+        onChange={ applyStudyTemplate }
+        onClose={ () => setStudyPickerOpen(false) }
       />
       {
         createPortal(

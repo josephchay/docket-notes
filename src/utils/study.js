@@ -1,43 +1,123 @@
 // A Bible study note carries no schema of its own either — the same
 // derived-from-plain-text approach utils/checklist.js already takes,
-// applied to a three-part inductive study (Observation: what does the
-// text say; Interpretation: what does it mean; Application: what do I do
-// about it) rather than a line-by-line list. Three plain "## Heading"
-// markers split note.text into sections; a note "is" a study purely
-// because those three headings are actually present, in order — so it
-// stays exportable/copyable/downloadable through every existing path with
-// zero special-casing, exactly like a checklist does.
-export const STUDY_SECTIONS = [
-  { key: "observation", heading: "Observation", prompt: "What does the passage actually say?" },
-  { key: "interpretation", heading: "Interpretation", prompt: "What did it mean, in its own context?" },
-  { key: "application", heading: "Application", prompt: "What does it call for now?" },
+// applied to a set of "## Heading" sections rather than a line-by-line
+// list. A note "is" a study purely because one template's full heading
+// sequence is actually present, in order — so it stays exportable/
+// copyable/downloadable through every existing path with zero
+// special-casing, exactly like a checklist does.
+//
+// What used to be one hardcoded three-section shape (Observation/
+// Interpretation/Application) is now a registry of templates: the same
+// heading-marker grammar, several section sets. The first template is the
+// default; a note declares which template it is purely by which heading
+// sequence its own text carries (see detectStudyTemplate below), never by
+// a stored mode.
+export const STUDY_TEMPLATES = [
+  {
+    id: "inductive",
+    label: "Inductive",
+    about: "What it says, what it means, what it asks of you",
+    sections: [
+      { key: "observation", heading: "Observation", prompt: "What does the passage actually say?" },
+      { key: "interpretation", heading: "Interpretation", prompt: "What did it mean, in its own context?" },
+      { key: "application", heading: "Application", prompt: "What does it call for now?" },
+    ],
+  },
+  {
+    id: "quadriga",
+    label: "Fourfold (Quadriga)",
+    about: "The classical four senses — the letter first, the spirit built on it",
+    sections: [
+      // The prompts double as method controls, not just placeholders — each
+      // spiritual sense's own wording demands its warrant (the church's own
+      // discipline for the Quadriga: the literal sense is established
+      // first, and every spiritual reading argues FROM it, never around
+      // it), so the template itself resists the eisegesis it makes room
+      // for.
+      { key: "literal", heading: "Literal", prompt: "What did the human author assert, to his own audience, in its own context?" },
+      { key: "allegorical", heading: "Allegorical", prompt: "What does the NT itself warrant reading here of Christ? Cite the warrant." },
+      { key: "tropological", heading: "Tropological", prompt: "What conduct follows — argued from the literal sense, not around it?" },
+      { key: "anagogical", heading: "Anagogical", prompt: "What hope does it direct toward — what is promised, not merely evoked?" },
+    ],
+  },
+];
+
+// Sections any study can carry APPENDED after its template's own required
+// sections, without changing which template the note reads as — the
+// sensus plenior (the fuller, divinely intended sense beyond the human
+// author's own horizon) is categorically distinct from the literal sense,
+// and giving it a marked, structurally separate home makes the note's own
+// plain-text shape declare when the writer has left the grammatical-
+// historical register. Detection (isStudyText/detectStudyTemplate) ignores
+// these entirely: presence or absence of an optional section never changes
+// what template a study is, only what it additionally carries.
+export const OPTIONAL_SECTIONS = [
+  { key: "sensusPlenior", heading: "Sensus Plenior", prompt: "What fuller, divinely intended sense does the whole canon reveal here — beyond the human author's own horizon?" },
 ];
 
 const HEADING_LINE = (heading) => `## ${ heading }`;
 
-// The one place heading positions are actually located — by LINE index
-// (not raw character offset), each search starting right after the
-// previous heading's own line, and requiring the WHOLE line to match
-// (trailing whitespace only tolerated) rather than a bare substring
-// anywhere in the text. Both isStudyText and parseStudy below call this
-// exact same function, which is what makes it structurally impossible for
-// them to disagree about where the sections actually are — they used to
-// each run their own independent search (isStudyText sequential, parseStudy
-// a plain unanchored indexOf per heading) and could reach different
-// answers the instant a heading's own name showed up earlier in the text
-// as ordinary prose (a user discussing "the Observation section" before
-// actually reaching their own "## Observation" heading, say), silently
-// dropping or scrambling real content parseStudy had mis-sliced around the
-// wrong occurrence. Anchoring to whole lines also means a sentence that
-// merely happens to mention "## Observation" mid-paragraph can never be
-// mistaken for a real heading at all — a real heading is a line with
+// Detection tries templates with MORE sections first — with distinct
+// heading names this ordering is belt-and-braces, but it's what makes the
+// subsequence assertion below sufficient: as long as no template's ordered
+// heading sequence nests inside another's, the first (largest) match is
+// always the only possible one.
+const TEMPLATES_MOST_SECTIONS_FIRST = [...STUDY_TEMPLATES].sort(
+  (a, b) => b.sections.length - a.sections.length
+);
+
+// The registry's own structural invariants, checked once at module load in
+// development — each would silently corrupt detection if a future template
+// violated it, and neither is enforceable by the type of the data alone:
+// (1) no template's ordered heading sequence may be a subsequence of
+// another's (otherwise a note carrying the larger set would ALSO match the
+// smaller, and most-sections-first ordering would be doing real,
+// easy-to-break disambiguation work instead of none); (2) no optional
+// heading may collide with any template's required heading (an optional
+// scan finding "## Application" would misfile a required section as an
+// appended layer).
+if (process.env.NODE_ENV !== "production") {
+  const isSubsequence = (small, big) => {
+    let cursor = 0;
+    for (const item of small) {
+      cursor = big.indexOf(item, cursor);
+      if (cursor === -1) return false;
+      cursor += 1;
+    }
+    return true;
+  };
+
+  for (const a of STUDY_TEMPLATES) {
+    for (const b of STUDY_TEMPLATES) {
+      if (a === b) continue;
+      const headingsA = a.sections.map((s) => s.heading);
+      const headingsB = b.sections.map((s) => s.heading);
+      if (isSubsequence(headingsA, headingsB)) {
+        throw new Error(`Study template "${ a.id }"'s headings nest inside "${ b.id }"'s — detection can't tell them apart.`);
+      }
+    }
+  }
+
+  const requiredHeadings = new Set(STUDY_TEMPLATES.flatMap((t) => t.sections.map((s) => s.heading)));
+  for (const optional of OPTIONAL_SECTIONS) {
+    if (requiredHeadings.has(optional.heading)) {
+      throw new Error(`Optional section "${ optional.heading }" collides with a template's own required heading.`);
+    }
+  }
+}
+
+// Finds one ordered heading sequence by LINE index — each search starting
+// right after the previous heading's own line, and requiring the WHOLE
+// line to match (trailing whitespace only tolerated) rather than a bare
+// substring anywhere in the text. Anchoring to whole lines means a
+// sentence that merely happens to mention "## Observation" mid-paragraph
+// can never be mistaken for a real heading — a real heading is a line with
 // nothing else on it, exactly what toStudyText itself always produces.
-// Returns the three line indices in order, or null if any is missing.
-function findHeadingLines(lines) {
+function findHeadingSequence(lines, sections) {
   const positions = [];
   let cursor = 0;
 
-  for (const { heading } of STUDY_SECTIONS) {
+  for (const { heading } of sections) {
     const target = HEADING_LINE(heading);
     let found = -1;
     for (let i = cursor; i < lines.length; i++) {
@@ -52,51 +132,178 @@ function findHeadingLines(lines) {
   return positions;
 }
 
-// True once every section heading appears, in order — a note that's only
-// been partly converted (or had a heading typed/deleted by hand) just
-// reads as plain text until all three are back in place.
-export function isStudyText(text) {
-  return findHeadingLines((text ?? "").split("\n")) !== null;
-}
+// The one place study structure is ever actually located — template
+// detection, required heading positions, and optional-section positions,
+// all in a single pass every reader below (isStudyText, parseStudy,
+// fromStudyText, sectionRangesOf) shares. They used to risk each running
+// their own independent search and disagreeing the instant a heading's own
+// name showed up earlier in the text as ordinary prose — one shared
+// implementation is what makes disagreement structurally impossible (the
+// same lesson checklist.js's single MARKER regex already embodies).
+//
+// Optional headings are scanned only in lines AFTER the last required
+// heading — an appended layer lives at the end by construction
+// (stringifyStudy only ever writes it there), and scanning earlier lines
+// would let a mid-study prose line that happens to read "## Sensus
+// Plenior" split a required section in two.
+//
+// Returns { template, required: number[], optional: [{ section, line }] }
+// or null when no template's full sequence is present.
+function findStudyLines(lines) {
+  for (const template of TEMPLATES_MOST_SECTIONS_FIRST) {
+    const required = findHeadingSequence(lines, template.sections);
+    if (!required) continue;
 
-// Splits note.text into its three sections by heading position. A note
-// whose headings aren't there yet (still converting, or never was a
-// study) gets three empty sections rather than a thrown error — callers
-// check isStudyText first when that distinction actually matters.
-export function parseStudy(text) {
-  const lines = (text ?? "").split("\n");
-  const positions = findHeadingLines(lines);
+    const optional = [];
+    const foundKeys = new Set();
+    for (let i = required[required.length - 1] + 1; i < lines.length; i++) {
+      const line = lines[i].trimEnd();
+      for (const section of OPTIONAL_SECTIONS) {
+        if (foundKeys.has(section.key) || line !== HEADING_LINE(section.heading)) continue;
+        foundKeys.add(section.key);
+        optional.push({ section, line: i });
+      }
+    }
 
-  if (!positions) {
-    return STUDY_SECTIONS.reduce((sections, { key }) => ({ ...sections, [key]: "" }), {});
+    return { template, required, optional };
   }
 
-  return STUDY_SECTIONS.reduce((sections, { key }, i) => {
-    const start = positions[i] + 1; // the line right after the heading itself
-    const end = i + 1 < positions.length ? positions[i + 1] : lines.length;
-    const content = lines.slice(start, end).join("\n").trim();
-    return { ...sections, [key]: content };
-  }, {});
+  return null;
 }
 
-export function stringifyStudy(sections) {
-  return STUDY_SECTIONS
-    .map(({ key, heading }) => `${ HEADING_LINE(heading) }\n${ (sections[key] ?? "").trim() }`)
-    .join("\n\n");
+// The template whose full ordered heading sequence this text carries, or
+// null when it carries none — a note that's only been partly converted (or
+// had a heading typed/deleted by hand) just reads as plain text until the
+// whole sequence is back in place.
+export function detectStudyTemplate(text) {
+  return findStudyLines((text ?? "").split("\n"))?.template ?? null;
 }
 
-// Seeds a fresh three-section skeleton — any existing plain text a visitor
-// had already started lands in the first section (Observation) rather
-// than being discarded, the same "don't throw away what's already there"
-// courtesy toChecklistText already extends.
-export function toStudyText(text) {
+export function isStudyText(text) {
+  return detectStudyTemplate(text) !== null;
+}
+
+// Splits note.text into its sections by heading position. Returns
+// { template, sections } — sections holds every one of the template's own
+// required keys (empty string when nothing's written under a heading yet),
+// plus each OPTIONAL_SECTIONS key ONLY when its heading is actually
+// present in the text: key-presence IS the "does this study carry that
+// layer" signal, deliberately independent of whether any content sits
+// under it, since stringifyStudy round-trips on every keystroke and a
+// drop-when-empty rule would delete the layer the instant its text was
+// cleared. A note that isn't a study gets { template: null, sections: {} }
+// rather than a thrown error — callers check isStudyText/template first
+// when that distinction matters.
+export function parseStudy(text) {
+  const lines = (text ?? "").split("\n");
+  const study = findStudyLines(lines);
+
+  if (!study) return { template: null, sections: {} };
+
+  const { template, required, optional } = study;
+
+  // Every heading in document order — each section's content runs from
+  // just past its own heading line to the next heading (or the end).
+  const entries = [
+    ...template.sections.map((section, i) => ({ key: section.key, line: required[i] })),
+    ...optional.map(({ section, line }) => ({ key: section.key, line })),
+  ];
+
+  const sections = {};
+  entries.forEach(({ key, line }, i) => {
+    const start = line + 1; // the line right after the heading itself
+    const end = i + 1 < entries.length ? entries[i + 1].line : lines.length;
+    sections[key] = lines.slice(start, end).join("\n").trim();
+  });
+
+  return { template, sections };
+}
+
+// Serializes required sections in template order, then whichever optional
+// sections are present (by key) in OPTIONAL_SECTIONS order — the exact
+// end-of-text placement findStudyLines's own optional scan expects.
+export function stringifyStudy(template, sections) {
+  const parts = template.sections.map(
+    ({ key, heading }) => `${ HEADING_LINE(heading) }\n${ (sections[key] ?? "").trim() }`
+  );
+
+  for (const { key, heading } of OPTIONAL_SECTIONS) {
+    if (key in sections) {
+      parts.push(`${ HEADING_LINE(heading) }\n${ (sections[key] ?? "").trim() }`);
+    }
+  }
+
+  return parts.join("\n\n");
+}
+
+// Seeds a fresh skeleton in the chosen template — any existing plain text
+// a visitor had already started lands in the FIRST section (whatever that
+// template calls it) rather than being discarded, the same "don't throw
+// away what's already there" courtesy toChecklistText already extends.
+export function toStudyText(text, templateId) {
+  const template = STUDY_TEMPLATES.find((t) => t.id === templateId) ?? STUDY_TEMPLATES[0];
   const existing = (text ?? "").trim();
-  return stringifyStudy({ observation: existing, interpretation: "", application: "" });
+
+  const sections = {};
+  template.sections.forEach(({ key }, i) => {
+    sections[key] = i === 0 ? existing : "";
+  });
+
+  return stringifyStudy(template, sections);
 }
 
-// Strips the headings back off, leaving each section's own writing as
-// plain paragraphs separated the same way a visitor would themselves.
+// Strips the headings back off — whichever template's, plus any appended
+// optional layers — leaving each section's own writing as plain paragraphs
+// separated the same way a visitor would themselves. Text that never was a
+// study passes through unchanged.
 export function fromStudyText(text) {
-  const sections = parseStudy(text);
-  return STUDY_SECTIONS.map(({ key }) => sections[key]).filter(Boolean).join("\n\n");
+  const { template, sections } = parseStudy(text);
+  if (!template) return text;
+
+  return [
+    ...template.sections.map(({ key }) => sections[key]),
+    ...OPTIONAL_SECTIONS.filter(({ key }) => key in sections).map(({ key }) => sections[key]),
+  ].filter(Boolean).join("\n\n");
+}
+
+// Each section's own CHARACTER range within the text — the bridge between
+// this file's line-oriented heading grammar and citations.js's
+// character-offset world, so a citation's `start` can be bucketed into the
+// section whose prose actually carries it. Calls the same findStudyLines
+// as everything above (never its own independent search), then converts
+// line indices to offsets by walking the exact "\n"-split this whole file
+// splits on. Ranges are raw (untrimmed) spans from just past each heading
+// line to the next heading line — a citation anywhere in a section's
+// whitespace still belongs to that section. Returns [] for a non-study.
+export function sectionRangesOf(text) {
+  const body = text ?? "";
+  const lines = body.split("\n");
+  const study = findStudyLines(lines);
+  if (!study) return [];
+
+  // lineStarts[i] = character offset where line i begins.
+  const lineStarts = [];
+  let offset = 0;
+  for (const line of lines) {
+    lineStarts.push(offset);
+    offset += line.length + 1; // +1 for the "\n" split consumed
+  }
+
+  const { template, required, optional } = study;
+  const entries = [
+    ...template.sections.map((section, i) => ({ section, line: required[i], optional: false })),
+    ...optional.map(({ section, line }) => ({ section, line, optional: true })),
+  ];
+
+  return entries.map(({ section, line, optional: isOptional }, i) => {
+    const contentLine = line + 1;
+    const nextLine = i + 1 < entries.length ? entries[i + 1].line : lines.length;
+    return {
+      key: section.key,
+      heading: section.heading,
+      optional: isOptional,
+      startChar: contentLine < lines.length ? lineStarts[contentLine] : body.length,
+      endChar: nextLine < lines.length ? lineStarts[nextLine] : body.length,
+    };
+  });
 }

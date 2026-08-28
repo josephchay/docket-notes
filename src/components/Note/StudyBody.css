@@ -13,12 +13,66 @@
   gap: 2px;
 }
 
+.study-section-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .study-section-heading {
   font-size: 11px;
   font-weight: 800;
   letter-spacing: .06em;
   text-transform: uppercase;
   color: var(--black-transclucent-color);
+}
+
+/* An appended interpretive layer (Sensus Plenior), not one of the
+   template's own required sections — the doubled rule under its heading is
+   the visual claim the section itself makes: a second sense laid over the
+   letter, distinct from it, never replacing it. */
+.study-section.optional .study-section-heading {
+  border-bottom: 3px double var(--black-transclucent-color);
+  padding-bottom: 1px;
+}
+
+/* How many citations this section's own prose carries — same tiny-pill
+   language as the editor's other counts, sized to sit quietly beside the
+   uppercase heading rather than compete with it. */
+.study-section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--black-even-more-transclucent-color);
+  color: var(--black-color);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.study-section-dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--black-color);
+  font-size: 8px;
+  opacity: .5;
+  cursor: pointer;
+}
+
+.study-section-dismiss:hover {
+  opacity: 1;
+  background: var(--black-more-transclucent-color);
 }
 
 .study-section-text {
@@ -39,4 +93,39 @@
 .study-section-text::placeholder {
   color: var(--black-transclucent-color);
   font-weight: 500;
+}
+
+.study-optional-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The ghost chip offering a layer not yet present — dashed rather than
+   filled, since it's an invitation rather than content the note already
+   carries. */
+.study-add-optional {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1.5px dashed var(--black-transclucent-color);
+  outline: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--black-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: .6;
+  cursor: pointer;
+}
+
+.study-add-optional:hover {
+  opacity: 1;
+  background: var(--black-even-more-transclucent-color);
+}
+
+.study-add-optional-icon {
+  font-size: 8px;
 }
