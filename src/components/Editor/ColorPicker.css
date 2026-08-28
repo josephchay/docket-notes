@@ -1,0 +1,44 @@
+/* A small torn-off page from the note's own pad — same convention as
+   DueDatePicker.css's own identical comment: portaled to document.body and
+   positioned in fixed/viewport coordinates, tinted via the shared ${color}-bg
+   utility classes (src/base/commons.css) rather than a color set here, so it
+   always reads as part of THIS note rather than a system dialog. */
+.color-picker {
+  position: fixed;
+  z-index: 980;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  box-shadow: 0 20px 46px -14px rgba(25, 25, 25, 0.45);
+}
+
+.color-picker-dot {
+  position: relative;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--white-transclucent-color);
+  transition: box-shadow 0.25s ease-in-out;
+}
+
+/* One shared ink ring sliding — via layoutId, in ColorPicker.jsx — from
+   color to color rather than popping in fresh on every different dot. */
+.color-picker-dot-ring-wrap {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.color-picker-dot-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 3px solid var(--black-color);
+}

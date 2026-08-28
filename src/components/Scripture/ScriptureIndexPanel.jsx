@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FaXmark, FaBookBible, FaBookOpen, FaMagnifyingGlass, FaChevronLeft, FaChevronDown, FaCopy, FaCheck } from "react-icons/fa6";
+import { FaXmark, FaBookBible, FaBookOpen, FaMagnifyingGlass, FaChevronLeft, FaChevronRight, FaChevronDown, FaCopy, FaCheck } from "react-icons/fa6";
 
 import useFocusTrap from "../../hooks/useFocusTrap";
 import { parseBareCitation } from "../../utils/citations";
@@ -94,7 +94,7 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
 
   const [mode, setMode] = useState("cited"); // "cited" | "browse"
   const [testament, setTestament] = useState("Old");
-  const [browseStep, setBrowseStep] = useState("books"); // "books" | "chapters"
+  const [browseStep, setBrowseStep] = useState("books"); // "books" | "chapters" | "verses"
   const [browseBook, setBrowseBook] = useState(null);
   const [browseChapter, setBrowseChapter] = useState(null);
   const [browseVerse, setBrowseVerse] = useState(null);
@@ -154,6 +154,7 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
     setHoverChapter(null);
     setChapterPreview(null);
     setChapterVerses(null);
+    setManualVerse("");
     setBookDetailsOpen(true);
   };
 
@@ -162,14 +163,25 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
   // chapter-verses fetch was still in flight, the same reason
   // ReferencePicker's own identical effect does — a slow fetch that only
   // finishes AFTER the tab was left would otherwise silently populate
-  // state for a chapter nothing is showing anymore.
+  // state for a chapter nothing is showing anymore. Bumping each request
+  // ref is enough to achieve that on its own — it does NOT also null out
+  // chapterVerses (chapterPreview/hoverChapter still do get cleared, since
+  // those are pure hover-transient state with no "remember where you were"
+  // expectation the way a deliberately-picked chapter has). The
+  // chapterVerses fetch effect below is keyed only on [browseBook,
+  // browseChapter], which backToBooks deliberately leaves untouched on
+  // mode-leave too — so an already-completed, still-valid fetch for the
+  // still-selected chapter has to survive this effect, or flipping back to
+  // Browse would show a false "Couldn't load this chapter's verses" for a
+  // chapter that loaded perfectly fine moments earlier, with no path left
+  // to ever refetch it (this effect's own deps mean it can't retrigger on
+  // its own once mode returns to "browse").
   useEffect(() => {
     if (mode !== "browse") {
       chapterPreviewRequestRef.current += 1;
       setHoverChapter(null);
       setChapterPreview(null);
       chapterVersesRequestRef.current += 1;
-      setChapterVerses(null);
     }
   }, [mode]);
 
@@ -195,9 +207,17 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
   // actually pauses. Guarded by an incrementing request id (mirroring
   // ReferencePicker's own identical pattern) so a slower, now-abandoned
   // hover can never land its result under a DIFFERENT chapter the pointer
-  // has since moved to.
+  // has since moved to. Also skipped entirely when the hovered cell IS the
+  // already-picked chapter (hoverChapter === browseChapter): that chapter's
+  // own full text already renders right below the grid, so a preview
+  // snippet of the identical passage would just be a second, redundant
+  // copy stacked on top of it — pickChapter's own comment already
+  // describes avoiding this at the instant of the click, but a later
+  // sweep back across the grid (or a deliberate re-hover of the selected
+  // cell) fires a fresh onMouseEnter same as any other cell, so the guard
+  // has to live here too, not just at the click.
   useEffect(() => {
-    if (hoverChapter == null || !browseBook) {
+    if (hoverChapter == null || !browseBook || hoverChapter === browseChapter) {
       chapterPreviewRequestRef.current += 1;
       setChapterPreview(null);
       return;
@@ -214,7 +234,7 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
     }, CHAPTER_PREVIEW_DEBOUNCE);
 
     return () => clearTimeout(timer);
-  }, [hoverChapter, browseBook]);
+  }, [hoverChapter, browseBook, browseChapter]);
 
   // The full verse-by-verse breakdown for whichever chapter is currently
   // picked — fetched once per chapter (picking a different verse from the
@@ -272,20 +292,40 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
     setBrowseStep("books");
   };
 
+  // One level back from the verse-number grid — restores `query` to the
+  // bare chapter reference (the exact value pickChapter itself would have
+  // set), so the full KJV chapter text reappears below the chapter grid
+  // exactly as it was before "Narrow to a verse" was clicked, and the top
+  // search box goes back to reading "Genesis 1" rather than sitting empty.
+  // Unlike backToBooks (which deliberately leaves browseChapter/browseVerse
+  // alone), this DOES clear browseVerse — the view this returns to reads as
+  // "chapter picked, no verse narrowed yet," and a stale selected verse
+  // would both mismatch that and leave the lookup card above still showing
+  // the old single-verse text on top of it.
+  const backToChapters = () => {
+    setBrowseVerse(null);
+    setManualVerse("");
+    setQuery(`${ browseBook } ${ browseChapter }`);
+    setBrowseStep("chapters");
+  };
+
   // Sets the chapter as the current query immediately — the chapter alone
   // is already a complete, valid reference, so there's no reason to force
-  // a further step before it feeds the lookup card above. Doesn't close
-  // or reset anything else, so the chapter grid stays right where it was
-  // in case the next click is "actually, a different chapter." Clears
-  // browseVerse since whichever verse was picked (if any) belonged to
-  // whatever chapter was previously selected, not this one — the fresh
-  // chapterVerses fetch effect above (keyed on browseChapter) takes care
-  // of loading THIS chapter's own verse list. Also clears hoverChapter/
-  // chapterPreview: clicking a cell doesn't itself fire a mouseleave, so
-  // without this, the transient hover-preview box stays showing this same
-  // chapter's plain text directly above the verse-by-verse list that's
-  // about to render right below it — the exact same passage in two boxes
-  // at once until the pointer happens to move off the grid.
+  // a further step before it feeds the lookup card above (though that card
+  // stays suppressed here, see showLookupCard below, since the full chapter
+  // text rendered right below the chapter grid already shows the identical
+  // passage). Doesn't close or reset anything else, so the chapter grid
+  // stays right where it was in case the next click is "actually, a
+  // different chapter." Clears browseVerse since whichever verse was
+  // picked (if any) belonged to whatever chapter was previously selected,
+  // not this one — the fresh chapterVerses fetch effect above (keyed on
+  // browseChapter) takes care of loading THIS chapter's own verse list.
+  // Also clears hoverChapter/chapterPreview: clicking a cell doesn't itself
+  // fire a mouseleave, so without this, the transient hover-preview box
+  // stays showing this same chapter's plain text directly above the
+  // verse-by-verse list that's about to render right below it — the exact
+  // same passage in two boxes at once until the pointer happens to move
+  // off the grid.
   const pickChapter = (n) => {
     chapterPreviewRequestRef.current += 1;
     setHoverChapter(null);
@@ -294,6 +334,30 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
     setBrowseVerse(null);
     setManualVerse("");
     setQuery(`${ browseBook } ${ n }`);
+  };
+
+  // Reached only via the full chapter text's own "Narrow to a verse" button
+  // (below, in the chapter head row next to the find-notes magnifier) — the
+  // chapter itself must already be picked (browseChapter set) by the time
+  // this can be called. Doesn't re-fetch anything: the chapterVerses effect
+  // above already fired the instant the chapter was picked, keyed on
+  // browseBook/browseChapter alone, so by the time someone reads this far
+  // and clicks through, the real verse count is usually already in hand —
+  // no separate "how many verses does this chapter have" request, unlike
+  // ReferencePicker's own guess-and-page approach, which has no such live
+  // count to draw on. Resets `query` back to the bare chapter reference
+  // (not left alone) because the full text this step is leaving behind may
+  // have already narrowed `query` down to one specific verse (an inline
+  // click before clicking this very button) — without resetting it here
+  // too, the top search box would keep reading that abandoned verse while
+  // the grid below shows no selection at all, and showLookupCard's own
+  // suppression (keyed on browseChapter && !browseVerse, not on `query`)
+  // would still correctly hide the card, but for the wrong-looking reason.
+  const openVerseStep = () => {
+    setBrowseVerse(null);
+    setManualVerse("");
+    setQuery(`${ browseBook } ${ browseChapter }`);
+    setBrowseStep("verses");
   };
 
   const pickVerse = (v) => {
@@ -342,24 +406,28 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
 
     const handleKey = (e) => {
       if (e.key !== "Escape") return;
-      // DueDatePicker/ReferencePicker (both anchored INSIDE NoteEditor, both
-      // portaled straight to document.body, both z-index 980 — above this
-      // dock's own 950) can be open on top of the editor at the same time
-      // this dock is. Neither knows about this dock or vice versa, so
-      // there's no shared state to check directly — each instead toggles a
-      // body class in exact sync with its own `open` prop (see their own
-      // "*-picker-open" effects) that this reads. NOT a DOM-presence check
-      // (e.g. querySelector for their panel elements) — both stay mounted
-      // for a beat into their OWN exit animation after `open` already went
-      // false, so presence alone would misread "still closing" as "still
-      // open" and wrongly defer on a fast second Escape pressed during that
-      // window. Bailing here (before stopPropagation) lets the event fall
-      // through to that popover's own already-working Escape handler
-      // instead of this dock reflexively closing itself first — a calendar
-      // or the "add reference" picker the user is actively looking at
-      // should close on Escape, not the dock they'd already glanced away
-      // from.
-      if (document.body.classList.contains("due-picker-open") || document.body.classList.contains("reference-picker-open")) return;
+      // DueDatePicker/ReferencePicker/ColorPicker (all anchored INSIDE
+      // NoteEditor, all portaled straight to document.body, all z-index 980
+      // — above this dock's own 950) can be open on top of the editor at
+      // the same time this dock is. None of them know about this dock or
+      // each other, so there's no shared state to check directly — each
+      // instead toggles a body class in exact sync with its own `open` prop
+      // (see their own "*-picker-open" effects) that this reads. NOT a
+      // DOM-presence check (e.g. querySelector for their panel elements) —
+      // all three stay mounted for a beat into their OWN exit animation
+      // after `open` already went false, so presence alone would misread
+      // "still closing" as "still open" and wrongly defer on a fast second
+      // Escape pressed during that window. Bailing here (before
+      // stopPropagation) lets the event fall through to that popover's own
+      // already-working Escape handler instead of this dock reflexively
+      // closing itself first — a calendar, the "add reference" picker, or
+      // the note-color popover the user is actively looking at should close
+      // on Escape, not the dock they'd already glanced away from.
+      if (
+        document.body.classList.contains("due-picker-open") ||
+        document.body.classList.contains("reference-picker-open") ||
+        document.body.classList.contains("color-picker-open")
+      ) return;
       e.stopPropagation();
       closePanel();
     };
@@ -456,15 +524,34 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
     copiedLookupTimerRef.current = setTimeout(() => setCopiedLookup(false), 1400);
   };
 
-  // Typing directly into the search box is a deliberate "look up something
-  // else" signal — if Browse still has a chapter/verse pick live (the
-  // chapter grid's own "selected" highlight, the verse list below it), it
-  // has to be abandoned right here, at the one place `query` can change
-  // outside of Browse's own click handlers, or the verse list would keep
-  // being read against a chapter the user has already typed past.
+  // Typing directly into the search box (or clicking a cross-reference's
+  // own "See also" button on the lookup card — the other path that lands
+  // here with a value Browse itself didn't pick) is a deliberate "look up
+  // something else" signal — if Browse still has a chapter/verse pick live,
+  // it has to be abandoned right here, at the one place `query` can change
+  // outside of Browse's own click handlers. Only steps back out of the
+  // verses grid specifically (browseStep === "verses", demoting one level
+  // to "chapters" — the exact same target backToChapters itself steps
+  // back to), NOT unconditionally to "chapters" regardless of the current
+  // step: left at "verses" with browseChapter now null, that grid would
+  // render against a chapter that no longer exists, showing a misleading
+  // "couldn't load" message — but forcing the SAME jump from "books" would
+  // be its own bug in the other direction, silently discarding the book
+  // grid/testament tabs the user is actually looking at (browseChapter can
+  // easily still be set while sitting on "books" — see backToBooks's own
+  // comment on why it's deliberately left alone) and replacing them with
+  // that leftover book's chapter view for no reason the user asked for.
+  // "chapters" itself needs no correction at all: it already renders fine
+  // with browseChapter null (just the book-details card and chapter grid,
+  // no chapter selected — exactly what abandoning the pick should look
+  // like there).
   const handleQueryChange = (value) => {
     setQuery(value);
-    if (browseChapter) { setBrowseChapter(null); setBrowseVerse(null); }
+    if (browseChapter) {
+      setBrowseChapter(null);
+      setBrowseVerse(null);
+      if (browseStep === "verses") setBrowseStep("chapters");
+    }
   };
 
   const trimmedQuery = query.trim().toLowerCase();
@@ -472,25 +559,30 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
     ? entries.filter((entry) => entry.full.toLowerCase().includes(trimmedQuery))
     : entries;
 
-  // Suppressed in exactly one case: Browse mode is actually AT the
-  // chapters step with a chapter picked but no verse narrowed down yet,
-  // i.e. `lookup` itself is showing that same whole chapter's plain,
-  // unlabeled text — the verses section rendered below the chapter grid
-  // already shows the identical text, verse-by-verse and properly scoped,
-  // so this card would just be a second, redundant (and for a long
-  // chapter like Psalm 119, potentially very tall) copy of what's already
-  // on screen. The instant a specific verse is picked (browseVerse set),
-  // this card becomes genuinely useful again — it's the one place showing
-  // "the current selection" with its own find-notes action, independent
-  // of the full verse list's own scroll. browseStep === "chapters" is
-  // required alongside browseChapter/browseVerse, not just the latter two
-  // — backToBooks deliberately leaves browseChapter/browseVerse alone
-  // when returning to the book grid (so re-entering the same book still
-  // remembers where you were), but the verses section that justifies
-  // suppressing this card only renders while browseStep is actually
-  // "chapters"; without this, clicking Back left BOTH the card and the
-  // verses section invisible until a new pick was made.
-  const showLookupCard = lookup && !(mode === "browse" && browseStep === "chapters" && browseChapter && !browseVerse);
+  // Suppressed in exactly one case: Browse mode has a chapter picked but no
+  // verse narrowed down yet, i.e. `lookup` itself is showing that same
+  // whole chapter's plain, unlabeled text (pickChapter/openVerseStep both
+  // set `query` to the bare chapter reference — see above) — the full
+  // chapter text rendered below the chapter grid already shows the
+  // identical text, verse-by-verse and properly scoped, so this card would
+  // just be a second, redundant (and for a long chapter like Psalm 119,
+  // potentially very tall) copy of what's already on screen. Deliberately
+  // NOT keyed to browseStep at all — every one of the three browse steps
+  // needs this suppression whenever browseChapter/browseVerse land in this
+  // shape: "chapters" and "verses" for the reasons above, but "books" too,
+  // and for the exact same original reason backToBooks deliberately leaves
+  // browseChapter/browseVerse alone rather than clearing them (so
+  // re-entering the same book still remembers where you were) — without
+  // suppressing here as well, clicking Back from the chapter grid all the
+  // way out to the book grid would leave that same whole-chapter text
+  // sitting in the top card above a book grid that has nothing to do with
+  // it anymore, exactly the bug a live click-through caught. The instant a
+  // specific verse is picked (browseVerse set, from either the inline text
+  // or the number grid), this card becomes genuinely useful again — it's
+  // the one place showing "the current selection," with its own find-notes
+  // action and "See also" cross-reference row, independent of the full
+  // verse list's own scroll or the number grid's own view.
+  const showLookupCard = lookup && !(mode === "browse" && browseChapter && !browseVerse);
 
   return (
     <AnimatePresence>
@@ -625,6 +717,39 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                         <p className="scripture-index-lookup-text">{ lookup.text }</p>
                       )
                     }
+                    {
+                      // The cross-reference dataset's own home used to be a
+                      // full verse-by-verse list (lettered marks plus a
+                      // footnote strip below it) that no longer exists now
+                      // that picking a chapter shows a number grid instead
+                      // of its text — rather than let that data go
+                      // orphaned, this single-verse card is where it lives
+                      // now: whichever verse is actually being looked at,
+                      // narrowed or typed, gets its own "See also" row.
+                      // crossRefMap is only ever loaded once Browse mode
+                      // has been opened at least once this session (see the
+                      // lazy-load effect above) — a lookup reached purely
+                      // through Cited mode/a manual search, without Browse
+                      // ever having been opened, simply shows no row here,
+                      // same as any other verse the dataset doesn't cover.
+                      lookup.status === "ok" && crossRefMap?.[lookup.full]?.length > 0 && (
+                        <div className="scripture-index-lookup-seealso">
+                          <span className="scripture-index-lookup-seealso-label">See also</span>
+                          {
+                            crossRefMap[lookup.full].map((ref, i) => (
+                              <button
+                                key={ ref }
+                                type="button"
+                                className="scripture-index-footnote-entry"
+                                onClick={ () => handleQueryChange(ref) }
+                              >
+                                <sup>{ XREF_LETTERS[i] }</sup> { ref }
+                              </button>
+                            ))
+                          }
+                        </div>
+                      )
+                    }
                   </motion.div>
                 )
               }
@@ -697,7 +822,7 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                             whileHover={{ scale: 1.1 }}
                             whileTap={{ scale: .88 }}
                             transition={ SNAPPY }
-                            onClick={ backToBooks }
+                            onClick={ browseStep === "verses" ? backToChapters : backToBooks }
                           >
                             <FaChevronLeft />
                           </motion.button>
@@ -891,8 +1016,17 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
 
                           {
                             // The instant a chapter is picked, its full verse-by-
-                            // verse text shows right here — no separate "narrow to
-                            // a verse" step to click through first.
+                            // verse text shows right here — the way an actual
+                            // printed KJV Bible page reads a chapter, not a bare
+                            // "Set to X Y" confirm line. "Narrow to a verse" (in
+                            // the head row below, next to the find-notes
+                            // magnifier) is the fast alternate path straight to
+                            // a plain verse-number grid (see the
+                            // browseStep === "verses" block further down) for
+                            // jumping without reading/scrolling — this and that
+                            // grid coexist rather than one replacing the other,
+                            // since each suits a different way of finding a
+                            // verse.
                             browseChapter && (
                               <div className="scripture-index-browse-verses">
                                 <div className="scripture-index-browse-verses-head">
@@ -928,6 +1062,13 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                                   >
                                     <FaMagnifyingGlass />
                                   </motion.button>
+                                  <button
+                                    type="button"
+                                    className="scripture-index-browse-narrow"
+                                    onClick={ openVerseStep }
+                                  >
+                                    Narrow to a verse <FaChevronRight />
+                                  </button>
                                 </div>
                                 {
                                   chapterVerses?.status === "loading" ? (
@@ -940,14 +1081,16 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                                     // one continuous block rather than each
                                     // getting its own row, the way a real page
                                     // reads rather than a picker list, justified
-                                    // like a real page's own column, and set in a
-                                    // serif face (this app's own Poppins stays for
-                                    // every OTHER label/button in this panel — only
-                                    // actual scripture text, here and in the lookup
-                                    // card/hover preview, reads like a printed
-                                    // page). Still click-to-narrow (pickVerse, same
-                                    // as before); only the layout/typography
-                                    // changed, not the interaction.
+                                    // like a real page's own column, and set in
+                                    // this app's own Poppins (this panel's every
+                                    // OTHER label/button already reads in Poppins
+                                    // too — only the scripture text itself, here
+                                    // and in the lookup card/hover preview, reads
+                                    // like a printed page, never a foreign serif).
+                                    // Still click-to-narrow (pickVerse, same as
+                                    // the number grid uses); only the layout/
+                                    // typography differs from that grid, not the
+                                    // interaction.
                                     <p className="scripture-index-browse-verse-list">
                                       {
                                         chapterVerses.verses.map((v) => {
@@ -1031,8 +1174,20 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                                   // (handleQueryChange), so clicking one behaves
                                   // identically to typing that reference in by
                                   // hand: abandons whatever was browsed here and
-                                  // feeds the shared lookup card above.
-                                  chapterVerses?.status === "ok" && crossRefMap && (
+                                  // feeds the shared lookup card above. Checked for
+                                  // an actual covered verse (.some(...)), not just
+                                  // crossRefMap's own truthiness — crossRefMap
+                                  // resolves to a truthy {} on a failed/blocked
+                                  // fetch (see crossReferences.js's own .catch), and
+                                  // every row inside the map below already bails to
+                                  // null when a verse has nothing, so a bare
+                                  // truthy check would still commit to rendering
+                                  // this whole bordered block for a chapter with
+                                  // zero actual footnotes to show, same as the
+                                  // "See also" row on the lookup card above already
+                                  // guards against.
+                                  chapterVerses?.status === "ok" && crossRefMap &&
+                                  chapterVerses.verses.some((v) => crossRefMap[`${ browseBook } ${ browseChapter }:${ v.number }`]?.length > 0) && (
                                     <div className="scripture-index-footnotes">
                                       {
                                         chapterVerses.verses.map((v) => {
@@ -1076,6 +1231,62 @@ const ScriptureIndexPanel = ({ entries, onSearch, reduceMotion }) => {
                               </div>
                             )
                           }
+                        </>
+                      )
+                    }
+
+                    {
+                      // A plain number grid, not the verse-by-verse text that
+                      // used to fill this same step — the real per-chapter
+                      // verse count already comes from chapterVerses (fetched
+                      // the instant the chapter was picked, see that effect
+                      // above), so unlike ReferencePicker's own version of
+                      // this same step (which has no live count to draw on
+                      // and has to guess-and-page in fixed chunks instead),
+                      // every number here is real from the start — no "+30
+                      // more" button needed.
+                      browseStep === "verses" && (
+                        <>
+                          <div className="scripture-index-browse-verse-grid">
+                            {
+                              chapterVerses?.status === "loading" ? (
+                                <p className="scripture-index-browse-verses-status">Loading this chapter's verses…</p>
+                              ) : chapterVerses?.status === "ok" && chapterVerses.verses?.length > 0 ? (
+                                chapterVerses.verses.map((v) => (
+                                  <motion.button
+                                    key={ v.number }
+                                    type="button"
+                                    aria-label={ `${ browseBook } ${ browseChapter }:${ v.number }` }
+                                    aria-pressed={ browseVerse === v.number }
+                                    className={ `scripture-index-browse-verse-num-btn ${ browseVerse === v.number ? "selected" : "" }` }
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: .88 }}
+                                    transition={ SNAPPY }
+                                    onClick={ () => pickVerse(v.number) }
+                                  >
+                                    { v.number }
+                                  </motion.button>
+                                ))
+                              ) : (
+                                <p className="scripture-index-browse-verses-status">
+                                  { chapterVerses?.message || "Couldn't load this chapter's verses." }
+                                </p>
+                              )
+                            }
+                          </div>
+                          <div className="scripture-index-browse-verse-manual">
+                            <input
+                              type="number"
+                              min="1"
+                              inputMode="numeric"
+                              aria-label="Verse number"
+                              placeholder="Or type a verse number…"
+                              value={ manualVerse }
+                              onChange={ (e) => setManualVerse(e.target.value) }
+                              onKeyDown={ (e) => { if (e.key === "Enter") { e.preventDefault(); commitManualVerse(); } } }
+                            />
+                            <button type="button" aria-label="Go to that verse" onClick={ commitManualVerse }>Go</button>
+                          </div>
                         </>
                       )
                     }

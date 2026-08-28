@@ -95,31 +95,18 @@
   row-gap: 8px;
 }
 
+/* Now just a single-child wrapper around the color trigger button (see
+   NoteEditor.jsx) — kept as its own element so .note-editor-header's own
+   justify-content: space-between still has exactly two flex children
+   (this and .note-editor-actions), the same role it played back when it
+   held the full always-visible 7-dot row. The trigger itself is a plain
+   .note-editor-action.dark, styled identically to the reminder button
+   right next to it (not tinted to the note's own color the way the old
+   dots each were) — the actual color CHOICES now live in ColorPicker.jsx's
+   own popover and CSS. */
 .note-editor-palette {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-.note-editor-dot {
-  position: relative;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  outline: none;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 2px var(--white-transclucent-color);
-  transition: box-shadow 0.25s ease-in-out;
-}
-
-/* A single shared ink ring around the painted color — framer's layoutId
-   slides it stickily from dot to dot as the palette changes. */
-.note-editor-dot .note-editor-dot-ring {
-  position: absolute;
-  inset: -3px;
-  border: 3px solid var(--black-color);
-  pointer-events: none;
 }
 
 /* The one-tap resize: a little square inside the circle that grows cozy →
@@ -675,22 +662,6 @@ textarea.note-editor-text {
   z-index: 900;
 }
 
-/* The focus-draw ring (see the FocusRing component in NoteEditor.jsx) —
-   positioned in the same offsetLeft/Top coordinate space as the title/text
-   fields themselves, both direct children of .note-editor (position:
-   relative, the nearest positioned ancestor either field has). */
-.note-editor-focus-ring {
-  position: absolute;
-  pointer-events: none;
-  overflow: visible;
-  z-index: 1;
-}
-
-.note-editor-focus-ring rect {
-  fill: none;
-  stroke: var(--black-color);
-  stroke-width: 2;
-}
 
 .note-editor-meta {
   display: flex;
@@ -738,16 +709,16 @@ textarea.note-editor-text {
   font-size: 22px;
 }
 
-/* Cozy shrinks the header's toys so everything still fits on the small paper. */
+/* Cozy shrinks the header's toys so everything still fits on the small paper.
+   The color trigger is a `.note-editor-action` itself (see NoteEditor.jsx),
+   so it already shrinks along with the star/reminder/checklist/study
+   buttons via the rule below — no separate dot-sizing rule needed here
+   anymore now that the always-visible 7-dot palette lives in ColorPicker.jsx's
+   own portaled popover instead, sized independently of the note's own size
+   class. */
 .note-editor.cozy .note-editor-header,
-.note-editor.cozy .note-editor-palette,
 .note-editor.cozy .note-editor-actions {
   gap: 8px;
-}
-
-.note-editor.cozy .note-editor-dot {
-  width: 16px;
-  height: 16px;
 }
 
 .note-editor.cozy .note-editor-action {

@@ -311,6 +311,31 @@
   line-height: 1.5;
 }
 
+/* Where the cross-reference dataset lives now that the full verse-list's
+   own footnote strip it used to sit in is gone (see
+   .scripture-index-footnote-entry's own comment below) — the same buttons,
+   just introduced by a small label instead of run under each verse's own
+   number, since only one verse is ever showing on this card at a time. */
+.scripture-index-lookup-seealso {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--page-line-color);
+}
+
+.scripture-index-lookup-seealso-label {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--page-ink-color);
+  opacity: .5;
+}
+
 .scripture-index-empty {
   display: flex;
   flex-direction: column;
@@ -645,7 +670,9 @@
 }
 
 /* The instant a chapter is picked, its full verse-by-verse text shows
-   right here — no separate "narrow to a verse" step. */
+   right here, the way an actual printed KJV Bible page reads a chapter —
+   see .scripture-index-browse-verse-list below for the reading-column
+   typography itself. */
 .scripture-index-browse-verses {
   margin-top: 10px;
   padding-top: 10px;
@@ -663,8 +690,9 @@
 /* Reads the way a printed Bible's own per-chapter head does — "CHAPTER 1,"
    not the book name again, since the book is already named a step up in
    the Back breadcrumb (.scripture-index-browse-crumb above). Centered
-   within the head row via flex:1, with the find-notes button staying put
-   in its own corner rather than being pushed off by the longer heading. */
+   within the head row via flex:1, with the find-notes button and the
+   "Narrow to a verse" button both staying put in their own corner rather
+   than being pushed off by the longer heading. */
 .scripture-index-chapter-heading {
   flex: 1;
   text-align: center;
@@ -698,6 +726,67 @@
 
 .scripture-index-browse-verses-search:hover {
   background-color: var(--page-surface-color);
+}
+
+/* The fast alternate path to a bare verse-number grid
+   (.scripture-index-browse-verse-grid below), sitting right in the chapter
+   head row next to the find-notes magnifier — for jumping straight to a
+   verse by number without reading or scrolling through the full text this
+   button sits beside. */
+.scripture-index-browse-narrow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: none;
+  outline: none;
+  border-radius: 999px;
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.scripture-index-browse-narrow svg {
+  font-size: 9px;
+}
+
+/* The verse-number-only grid this used to show as full verse-by-verse text
+   instead — same button shape/selected language as
+   .scripture-index-browse-chapter-grid above, just more columns since a
+   single chapter can run to 176 verses (Psalm 119) rather than a book's
+   own handful of chapters. The real count always comes from chapterVerses
+   (already fetched — see ScriptureIndexPanel.jsx), never an artificial
+   page size. */
+.scripture-index-browse-verse-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.scripture-index-browse-verse-num-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 8px;
+  background-color: var(--page-surface-color);
+  color: var(--page-ink-color);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  transition: background-color 0.4s ease-in-out, color 0.4s ease-in-out;
+}
+
+.scripture-index-browse-verse-num-btn.selected {
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
 }
 
 .scripture-index-browse-verses-status {
@@ -827,6 +916,14 @@
   opacity: .55;
 }
 
+/* The footnote-style button each cross-reference renders as — used both by
+   the chapter-wide footnote strip above (one row per verse that has
+   cross-references) and by the single-verse lookup card's own "See also"
+   row (.scripture-index-lookup-seealso below, which stays relevant for a
+   verse reached via the number grid, where no footnote strip is ever
+   shown at all). Each reference is a real button (see the onClick in
+   ScriptureIndexPanel.jsx), not inert footnote text — this app has no
+   physical constraint keeping a cross-reference from being one tap away. */
 .scripture-index-footnote-entry {
   padding: 0;
   border: none;

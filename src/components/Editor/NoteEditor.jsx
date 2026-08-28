@@ -1,12 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
-import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle, FaTag, FaCalendarDay, FaListCheck, FaBookBible, FaBookOpen, FaMagnifyingGlass, FaLocationCrosshairs } from "react-icons/fa6";
+import { FaStar, FaPen, FaXmark, FaCopy, FaShuffle, FaTag, FaCalendarDay, FaListCheck, FaBookBible, FaBookOpen, FaMagnifyingGlass, FaLocationCrosshairs, FaPalette } from "react-icons/fa6";
 import { FaEye } from "react-icons/fa";
 
-import { NOTE_COLORS } from "../../constants/colors";
 import useJellyTap from "../../hooks/useJellyTap";
-import useInkPulse from "../../hooks/useInkPulse";
 import useFocusTrap from "../../hooks/useFocusTrap";
 import HistoryAmbient from "../History/HistoryAmbient";
 import { EXIT_SPRING, coinFlip } from "../Motion";
@@ -18,6 +16,7 @@ import { fetchVerseText, isFetchablePath } from "../../utils/bibleApi";
 import ChecklistBody from "../Note/ChecklistBody";
 import StudyBody from "../Note/StudyBody";
 import DueDatePicker from "./DueDatePicker";
+import ColorPicker from "./ColorPicker";
 import ReferencePicker from "./ReferencePicker";
 import HoverCitationOverlay from "./HoverCitationOverlay";
 import { SCRIPTURE_INDEX_EVENT } from "../Scripture/ScriptureIndexPanel";
@@ -48,40 +47,6 @@ const sizeFor = (name) => {
     case "epic": return { width: Math.min(1440, vw * 0.96), height: Math.min(1080, vh * 0.94) };
     default: return { width: Math.min(720, vw * .94), height: Math.min(600, vh * .86) };
   }
-};
-
-// A thin ink stroke drawing itself on around the title field while it's
-// actually focused, rather than an instant CSS border/outline swap — the
-// same pathLength draw-on technique TrashPanel's own hold-to-confirm ring
-// already uses, just triggered by focus instead of a held press. `rect` is
-// measured in the caller (offsetLeft/Top/Width/Height against .note-editor,
-// the nearest positioned ancestor) rather than this component reading a
-// ref itself.
-const FocusRing = ({ rect, radius = 8 }) => {
-  if (!rect) return null;
-
-  const w = rect.width + 8;
-  const h = rect.height + 8;
-
-  return (
-    <motion.svg
-      className="note-editor-focus-ring"
-      style={{ left: rect.left - 4, top: rect.top - 4 }}
-      width={ w }
-      height={ h }
-      aria-hidden="true"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0, transition: { duration: .18 } }}
-    >
-      <motion.rect
-        x="2" y="2" width={ rect.width + 4 } height={ rect.height + 4 } rx={ radius }
-        initial={{ pathLength: 0 }}
-        animate={{ pathLength: 1 }}
-        transition={{ duration: .5, ease: "easeOut" }}
-      />
-    </motion.svg>
-  );
 };
 
 // The focus editor. Pulling a note's "open" string stretches the card into
@@ -495,16 +460,12 @@ const NoteEditor = ({
   const starTap = useJellyTap();
   const lockTap = useJellyTap();
   const remindTap = useJellyTap();
+  const colorTap = useJellyTap();
   const checklistTap = useJellyTap();
   const studyTap = useJellyTap();
   const scriptureTap = useJellyTap();
   const copyTap = useJellyTap();
   const resizeTap = useJellyTap();
-
-  // The palette's ring borrows the free cursor's own press pulse and idle
-  // pool (see useInkPulse) so it carries the same elastic personality as
-  // it slides between colors.
-  const paletteRingPulse = useInkPulse(note.color);
   const closeTap = useJellyTap();
 
   const wobble = useCallback(() => {
@@ -541,26 +502,6 @@ const NoteEditor = ({
   // .current is always current regardless of which render's closure asks.
   const latestTitleRef = useRef(draftTitle);
   const latestTextRef = useRef(draftText);
-
-  // The focus-draw ring (see FocusRing below) — measured via offsetLeft/
-  // offsetTop/offsetWidth/offsetHeight rather than wrapping the title
-  // field in a new positioning container, since it already sits directly
-  // inside .note-editor (itself position: relative), so its own offsets
-  // already land in exactly the coordinate space an absolutely-positioned
-  // sibling overlay needs. Re-measured whenever the paper's own size
-  // changes while the field is focused, so a resize mid-focus doesn't leave
-  // the ring sized for stale dimensions.
-  const [titleFocused, setTitleFocused] = useState(false);
-  const [titleRect, setTitleRect] = useState(null);
-
-  const measureFocusRect = (el, setter) => {
-    if (!el) return;
-    setter({ left: el.offsetLeft, top: el.offsetTop, width: el.offsetWidth, height: el.offsetHeight });
-  };
-
-  useEffect(() => {
-    if (titleFocused) measureFocusRect(titleRef.current, setTitleRect);
-  }, [size, titleFocused]);
 
   // The copy action's own ghost scrap (see handleCopy below) — page-space
   // coordinates, portaled straight to document.body the same way every
@@ -607,7 +548,22 @@ const NoteEditor = ({
 
   useEffect(() => {
     const handleKey = (e) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // DueDatePicker/ReferencePicker/ColorPicker are all portaled straight
+      // to document.body and each close themselves on Escape independently
+      // (see their own identical handleKey effects) — but a plain, global
+      // `window` keydown listener has no notion of "the popover already
+      // handled this," so without checking here too, the SAME Escape press
+      // that closes one of those popovers was also closing this whole
+      // editor underneath it in one keystroke. Mirrors the exact body-class
+      // check ScriptureIndexPanel.jsx's own Escape handler already uses to
+      // defer to these same three popovers.
+      if (
+        document.body.classList.contains("due-picker-open") ||
+        document.body.classList.contains("reference-picker-open") ||
+        document.body.classList.contains("color-picker-open")
+      ) return;
+      onClose();
     };
 
     window.addEventListener("keydown", handleKey);
@@ -739,6 +695,14 @@ const NoteEditor = ({
   const remindBtnRef = useRef(null);
   const [dueCalendarOpen, setDueCalendarOpen] = useState(false);
 
+  // Same shape as the reminder button above — the always-visible 7-dot
+  // palette this header used to show was replaced with one trigger button,
+  // styled identically to it (plain dark, not tinted to the note's own
+  // color) that opens ColorPicker.jsx's own popover of the actual color
+  // choices, anchored off this ref.
+  const colorBtnRef = useRef(null);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+
   return (
     <div className="note-editor-layer">
       <motion.div
@@ -795,37 +759,22 @@ const NoteEditor = ({
             <HistoryAmbient color="var(--page-ink-color)" />
             <div className="note-editor-header">
               <div className="note-editor-palette">
-                {
-                  Object.keys(NOTE_COLORS).map((name) => (
-                    <motion.button
-                      key={ name }
-                      type="button"
-                      aria-label={ `Paint the note ${ name }` }
-                      className={ `note-editor-dot ${ name }-bg ${ name === note.color ? "active" : "" }` }
-                      whileHover={{ scale: 1.25 }}
-                      whileTap={{ scale: .85 }}
-                      transition={ actionSpring }
-                      onTapStart={ paletteRingPulse.squash }
-                      onClick={ () => setNoteColor(name, note.id) }
-                    >
-                      {
-                        name === note.color && (
-                          <motion.span
-                            layoutId="editorPaletteRing"
-                            style={{ position: "absolute", inset: -3, borderRadius: "50%" }}
-                            transition={{ type: "spring", stiffness: 450, damping: 17 }}
-                          >
-                            <motion.span
-                              className="note-editor-dot-ring"
-                              animate={ paletteRingPulse.jelly }
-                              style={{ position: "absolute", inset: 0, borderRadius: "inherit" }}
-                            />
-                          </motion.span>
-                        )
-                      }
-                    </motion.button>
-                  ))
-                }
+                <motion.button
+                  ref={ colorBtnRef }
+                  type="button"
+                  aria-label="Change this note's color"
+                  aria-pressed={ colorPickerOpen }
+                  className="note-editor-action dark"
+                  whileHover={{ scale: 1.15, rotate: -8 }}
+                  whileTap={{ scale: .9 }}
+                  transition={ actionSpring }
+                  onTapStart={ colorTap.squash }
+                  onClick={ () => setColorPickerOpen((prev) => !prev) }
+                >
+                  <motion.span animate={ colorTap.jelly } style={{ display: "inline-flex" }}>
+                    <FaPalette className="note-editor-action-icon light" />
+                  </motion.span>
+                </motion.button>
               </div>
               <div className="note-editor-actions">
                 <motion.button
@@ -1044,13 +993,8 @@ const NoteEditor = ({
               placeholder="Title"
               value={ draftTitle }
               onChange={ (e) => handleTitle(e.target.value) }
-              onFocus={ () => { setTitleFocused(true); measureFocusRect(titleRef.current, setTitleRect); } }
-              onBlur={ () => setTitleFocused(false) }
               className={ `note-editor-title ${ note.color }-highlight` }
             />
-            <AnimatePresence>
-              { titleFocused && <FocusRing key="title-ring" rect={ titleRect } radius={ 4 } /> }
-            </AnimatePresence>
             {/* A little rack of tags — each pops in with an overshoot when
                 pinned on, shrinks away when pulled off. Enter or a comma
                 pins the current word; Backspace on an empty field pulls the
@@ -1409,6 +1353,13 @@ const NoteEditor = ({
         anchorRef={ remindBtnRef }
         onChange={ (date) => { setNoteDueDate(date, note.id); setDueCalendarOpen(false); } }
         onClose={ () => setDueCalendarOpen(false) }
+      />
+      <ColorPicker
+        open={ colorPickerOpen }
+        value={ note.color }
+        anchorRef={ colorBtnRef }
+        onChange={ (name) => { setNoteColor(name, note.id); setColorPickerOpen(false); } }
+        onClose={ () => setColorPickerOpen(false) }
       />
       {
         createPortal(
