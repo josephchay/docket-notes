@@ -51,7 +51,7 @@ import { formattedDateNow } from "../utils/date";
 import { randomQuote } from "../utils/data";
 import { isChecklistText, toChecklistText, fromChecklistText } from "../utils/checklist";
 import { isStudyText, toStudyText, fromStudyText } from "../utils/study";
-import { parseCitations, BIBLE_BOOKS } from "../utils/citations";
+import { parseCitations, parseBareCitation, BIBLE_BOOKS } from "../utils/citations";
 import { loadNotes, saveNotes, loadSettings, saveSettings, getPersistPref, setPersistPref } from "../utils/storage";
 import {
   setSoundEnabled as setSoundEngineEnabled,
@@ -151,6 +151,17 @@ const Home = () => {
   const [notesSortByFavorite, setNotesSortByFavorite] = useState(false);
   const [notesSortColor, setNotesSortColor] = useState(null);
   const [notesSortTag, setNotesSortTag] = useState(null);
+  // An EXACT match against a note's own parsed citations — distinct from
+  // notesSortText's plain substring search, and set only by searchByCitation
+  // below (never by typing). A bare/short reference like "Genesis 1" is a
+  // literal substring of unrelated ones ("Genesis 11:5", "Genesis 1:10"),
+  // so a citation-driven "find notes on this passage" click needs a filter
+  // that actually parses each note's own citations and compares the
+  // resolved `full` string, not raw text containment — the exact bug (and
+  // exact fix shape) the now-removed note.reference field's own
+  // notesSortReference state was built to solve; this is that same idea,
+  // rebuilt for inline citations instead of the single field.
+  const [notesSortCitation, setNotesSortCitation] = useState(null);
 
   // Fresh paper or the Ink theme — kept alongside the notes, in whichever
   // store the persist preference below currently points at.
@@ -549,6 +560,7 @@ const Home = () => {
   // the star, and the color filter.
   const clearFilters = useCallback(() => {
     setNotesSortText("");
+    setNotesSortCitation(null);
     setNotesSortByFavorite(false);
     setNotesSortColor(null);
     setNotesSortTag(null);
@@ -602,12 +614,39 @@ const Home = () => {
   }
 
   // Every lens over the list — search text, starred, color — stacks here.
-  // Newest notes first, same as the desk renders them.
+  // Newest notes first, same as the desk renders them. notesSortCitation
+  // (set only by searchByCitation, never by typing) takes over entirely in
+  // place of the plain substring test below when it's set — matched
+  // against each note's own parsed citations, not a text-containment
+  // check, so "Genesis 1:1" can never accidentally pull in a note that
+  // only cites "Genesis 11:5" or "Genesis 1:10". A BARE chapter search
+  // (no verse segment — "Genesis 1", the shape both a Cited-list row for
+  // a chapter-only citation and the Browse verses section's own "find
+  // notes" button produce) is deliberately NOT held to the same exact-
+  // string standard: real notes almost always cite a specific verse, not
+  // the bare chapter, so requiring full === "Genesis 1" would silently
+  // return nothing for the overwhelming common case. Instead it matches
+  // any citation in the SAME book whose own chapter segment (path split on
+  // its first ":") agrees — "find every note on Genesis 1" correctly
+  // finds a note citing "Genesis 1:5" or even "Genesis 1:1:7" (this app's
+  // own chapter:verse:subverse shorthand), while "Genesis 1:1" specifically
+  // still only matches that exact verse, not "Genesis 1:10".
   const filteredNotes = useMemo(() => {
     const query = notesSortText.trim().toLowerCase();
     let filtered = [...desklikeNotes].reverse();
 
-    if (query) {
+    if (notesSortCitation) {
+      const searchedCitation = parseBareCitation(notesSortCitation);
+      const isChapterOnly = !!searchedCitation && !searchedCitation.path.includes(":");
+      filtered = filtered.filter((note) =>
+        parseCitations(note.text).some((citation) => {
+          if (citation.full === notesSortCitation) return true;
+          return isChapterOnly
+            && citation.book === searchedCitation.book
+            && citation.path.split(":")[0] === searchedCitation.path;
+        })
+      );
+    } else if (query) {
       filtered = filtered.filter((note) =>
         `${ note.title ?? "" } ${ note.text }`.toLowerCase().includes(query)
       );
@@ -633,7 +672,7 @@ const Home = () => {
     }
 
     return filtered;
-  }, [desklikeNotes, notesSortText, notesSortByFavorite, notesSortColor, notesSortTag, sortMode]);
+  }, [desklikeNotes, notesSortText, notesSortCitation, notesSortByFavorite, notesSortColor, notesSortTag, sortMode]);
 
   // Starred notes' rough position within the currently-filtered list, fed
   // to ScrollProgress as quick-jump tick marks — index/total is an honest
@@ -1358,18 +1397,40 @@ const Home = () => {
   // Jumps the desk to every note mentioning this passage — the desk's
   // lightweight cross-reference finder for inline citations (see utils/
   // citations.js), reused by both the citation-pill row's own magnifier
-  // and the Scripture Index panel. A fuzzy substring search over
-  // title+text rather than an exact match: a citation is a mention woven
-  // through a note's own prose, not a single defining field, so this
-  // should find every note that MENTIONS this passage, not only one
-  // narrowly-matching form of it.
+  // and the Scripture Index panel. Filters via notesSortCitation (an EXACT
+  // match against each note's own parsed citations, set in filteredNotes'
+  // own memo above) rather than a plain substring test — a short/bare
+  // reference like "Genesis 1" is a literal substring of unrelated ones
+  // ("Genesis 11:5", "Genesis 1:10"), which a raw .includes() search would
+  // wrongly surface; and an inherited-book citation piece, e.g. the second
+  // half of "(Genesis 1:1, 1:3)", resolves to full = "Genesis 1:3" even
+  // though "Genesis" never sits directly next to "1:3" in the note's own
+  // raw text, which a raw .includes() search would wrongly MISS. Parsing
+  // each note's own citations and comparing the resolved `full` string
+  // sidesteps both failure modes at once. setNotesSortText alongside it is
+  // purely cosmetic — it's what actually paints the reference into the
+  // visible search box — but notesSortCitation is what filteredNotes
+  // itself matches on.
   const searchByCitation = (citationText) => {
     if (!citationText) return;
     clearFilters();
+    setNotesSortCitation(citationText);
     setNotesSortText(citationText);
     setEditingNoteId(null);
     setTimeout(() => scrollHomeToTop(), 0);
   }
+
+  // The one place notesSortText can change OUTSIDE of clearFilters/
+  // searchByCitation above — typing directly into the search box is a
+  // deliberate "search for something else" signal, so it has to drop
+  // notesSortCitation's own exact-match lock the instant that happens, or
+  // the box would keep showing citation-search results (or, worse, look
+  // like they updated to match new typed text while actually still
+  // filtering on the OLD exact reference) for whatever was last clicked.
+  const handleSearchTextChange = (value) => {
+    setNotesSortText(value);
+    setNotesSortCitation(null);
+  };
 
   // Every distinct inline citation across the whole desk, with how many
   // notes mention each — the corpus-wide counterpart to a single note's own
@@ -1600,7 +1661,7 @@ const Home = () => {
         <AmbientField reduceMotion={ reduceMotion } dimmed={ !!editingNote || focusMode } />
         <Header
           searchText={ notesSortText }
-          setNotesSortText={ setNotesSortText }
+          setNotesSortText={ handleSearchTextChange }
           notesSortByFavorite={ notesSortByFavorite }
           setNotesSortByFavorite={ toggleSortByFavorite }
           sortColor={ notesSortColor }

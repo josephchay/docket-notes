@@ -531,6 +531,14 @@ const NoteEditor = ({
   const textTimerRef = useRef(null);
   const copiedTimerRef = useRef(null);
   const hoverOverlayRef = useRef(null);
+  // The latest typed value handleTitle/handleText below have queued a
+  // debounced commit for — read back by the unmount cleanup a little
+  // further down, since that cleanup's own closure only ever sees
+  // whatever draftTitle/draftText were AT MOUNT (its effect has no
+  // dependency that would re-create it on every keystroke), while a ref's
+  // .current is always current regardless of which render's closure asks.
+  const latestTitleRef = useRef(draftTitle);
+  const latestTextRef = useRef(draftText);
 
   // The focus-draw ring (see FocusRing below) — measured via offsetLeft/
   // offsetTop/offsetWidth/offsetHeight rather than wrapping the title
@@ -576,12 +584,23 @@ const NoteEditor = ({
 
   // Adopt outside changes to the note unless that field is being typed in
   // right now — a self-made edit round-trips as the same value anyway.
+  // Also re-syncs latestTitleRef/latestTextRef (see the unmount cleanup
+  // further down) — an outside change (e.g. an undo landing on this same
+  // still-mounted note while focus is elsewhere) has to update what the
+  // cleanup would flush too, or a later close would silently re-commit
+  // the pre-undo value straight back over it.
   useEffect(() => {
-    if (document.activeElement !== titleRef.current) setDraftTitle(note.title);
+    if (document.activeElement !== titleRef.current) {
+      setDraftTitle(note.title);
+      latestTitleRef.current = note.title;
+    }
   }, [note.title]);
 
   useEffect(() => {
-    if (document.activeElement !== textRef.current) setDraftText(note.text);
+    if (document.activeElement !== textRef.current) {
+      setDraftText(note.text);
+      latestTextRef.current = note.text;
+    }
   }, [note.text]);
 
   useEffect(() => {
@@ -591,10 +610,31 @@ const NoteEditor = ({
 
     window.addEventListener("keydown", handleKey);
 
-    const timers = [titleTimerRef, textTimerRef, copiedTimerRef];
     return () => {
       window.removeEventListener("keydown", handleKey);
-      timers.forEach((timer) => clearTimeout(timer.current));
+      // A commit still pending when this unmounts (closing the editor, or
+      // switching to a different note — both fully unmount this
+      // component, since Home.jsx keys it by note.id) has to actually be
+      // applied here, not just discarded — clearTimeout alone silently
+      // dropped whatever was typed in the last debounceTimer-ms window
+      // before closing, including a just-typed scripture citation. Reads
+      // the LATEST typed value off latestTitleRef/latestTextRef, not
+      // draftTitle/draftText directly — this cleanup closure only ever
+      // sees whatever those were AT MOUNT, since this effect has no
+      // dependency that would re-create it on every keystroke, while a
+      // ref's own .current is always current. Only flushes if a timer is
+      // actually still pending (non-null), so a note closed well after
+      // its last edit already committed doesn't get a redundant, no-op
+      // second commit.
+      if (titleTimerRef.current) {
+        clearTimeout(titleTimerRef.current);
+        updateTitle(latestTitleRef.current, note.id);
+      }
+      if (textTimerRef.current) {
+        clearTimeout(textTimerRef.current);
+        updateText(latestTextRef.current, note.id);
+      }
+      clearTimeout(copiedTimerRef.current);
     };
   }, [onClose]);
 
@@ -618,16 +658,32 @@ const NoteEditor = ({
     field.setSelectionRange(field.value.length, field.value.length);
   }, [note.lock]);
 
+  // Both timer refs are nulled out the instant their own setTimeout
+  // actually fires — without this, a fired-and-forgotten timer id (still
+  // truthy) is indistinguishable from a genuinely pending one, so the
+  // unmount cleanup's own "only flush if a commit is still pending" guard
+  // stayed true forever after the FIRST edit, re-applying latestTitleRef/
+  // latestTextRef on every later close even when nothing was pending
+  // (a redundant, silent extra commit) — or, worse, re-applying a value
+  // an outside change (e.g. undo) had already superseded.
   const handleTitle = (value) => {
     setDraftTitle(value);
+    latestTitleRef.current = value;
     clearTimeout(titleTimerRef.current);
-    titleTimerRef.current = setTimeout(() => updateTitle(value, note.id), debounceTimer);
+    titleTimerRef.current = setTimeout(() => {
+      titleTimerRef.current = null;
+      updateTitle(value, note.id);
+    }, debounceTimer);
   };
 
   const handleText = (value) => {
     setDraftText(value);
+    latestTextRef.current = value;
     clearTimeout(textTimerRef.current);
-    textTimerRef.current = setTimeout(() => updateText(value, note.id), debounceTimer);
+    textTimerRef.current = setTimeout(() => {
+      textTimerRef.current = null;
+      updateText(value, note.id);
+    }, debounceTimer);
   };
 
   // Disarms a pending debounced text commit without discarding it — used

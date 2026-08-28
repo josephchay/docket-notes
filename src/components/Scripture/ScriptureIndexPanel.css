@@ -35,6 +35,18 @@
   outline: none;
 }
 
+/* Every interactive element in this panel sets its own resting
+   outline: none (the pill/circle backgrounds already carry their own
+   hover/active affordance) with nothing compensating it for a keyboard
+   user — one shared rule instead of repeating it per class, so a new
+   button added later gets this for free. Same outline language TourGuide
+   already established (TourGuide.css) rather than inventing a new one. */
+.scripture-index-panel button:focus-visible,
+.scripture-index-panel input:focus-visible {
+  outline: 2px solid var(--page-ink-color);
+  outline-offset: 2px;
+}
+
 .scripture-index-header {
   display: flex;
   align-items: center;
@@ -203,6 +215,29 @@
 }
 
 .scripture-index-lookup-search:hover {
+  background-color: var(--page-bg-color);
+}
+
+/* Same pill, same size, right next to the find-notes magnifier — copies
+   the lookup card's own verse text to the clipboard. */
+.scripture-index-lookup-copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--page-ink-color);
+  font-size: 10px;
+  opacity: .8;
+}
+
+.scripture-index-lookup-copy:hover {
   background-color: var(--page-bg-color);
 }
 
@@ -457,72 +492,108 @@
   color: var(--page-ink-color);
 }
 
-.scripture-index-browse-confirm {
+/* The instant a chapter is picked, its full verse-by-verse text shows
+   right here — no separate "narrow to a verse" step. */
+.scripture-index-browse-verses {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--page-line-color);
+}
+
+.scripture-index-browse-verses-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--page-line-color);
+  margin-bottom: 8px;
+}
+
+.scripture-index-browse-verses-label {
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--page-ink-color);
+  opacity: .6;
+}
+
+/* Mirrors the top lookup card's own find-notes magnifier — this row is
+   what stands in for that card while it's suppressed here (see
+   showLookupCard in ScriptureIndexPanel.jsx). */
+.scripture-index-browse-verses-search {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  outline: none;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--page-ink-color);
+  font-size: 10px;
   opacity: .8;
 }
 
-.scripture-index-browse-narrow {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  padding: 5px 9px;
-  border: none;
-  outline: none;
-  border-radius: 999px;
+.scripture-index-browse-verses-search:hover {
   background-color: var(--page-surface-color);
+}
+
+.scripture-index-browse-verses-status {
+  margin: 18px 0;
+  text-align: center;
+  font-size: 12px;
   color: var(--page-ink-color);
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.scripture-index-browse-narrow svg {
-  font-size: 8px;
-}
-
-.scripture-index-browse-verse-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  max-height: 260px;
-  overflow-y: auto;
-}
-
-.scripture-index-browse-verse {
-  min-width: 32px;
-  padding: 6px 4px;
-  border: none;
-  outline: none;
-  border-radius: 8px;
-  background-color: var(--page-surface-color);
-  color: var(--page-ink-color);
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.scripture-index-browse-verse-more {
-  padding: 6px 10px;
-  border: none;
-  outline: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--page-ink-color);
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
   opacity: .5;
+  font-style: italic;
+}
+
+/* Set the way an actual printed Bible page sets a chapter — every verse
+   running on in one continuous block, each one's number a small raised
+   numeral tight against its own first word, rather than each verse
+   getting its own row. Still click-to-narrow (see
+   .scripture-index-browse-verse-inline below), so this stays a <p> of
+   inline <button>s rather than block-level list rows. */
+.scripture-index-browse-verse-list {
+  margin: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  color: var(--page-ink-color);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.scripture-index-browse-verse-inline {
+  display: inline;
+  padding: 1px 2px;
+  border: none;
+  outline: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out, color 0.15s ease-in-out;
+}
+
+.scripture-index-browse-verse-inline:hover {
+  background-color: var(--page-surface-color);
+}
+
+.scripture-index-browse-verse-inline.selected {
+  background-color: var(--page-ink-color);
+  color: var(--page-bg-color);
+}
+
+.scripture-index-browse-verse-num {
+  margin-right: 1px;
+  font-size: 9px;
+  font-weight: 800;
+  opacity: .55;
+}
+
+.scripture-index-browse-verse-inline.selected .scripture-index-browse-verse-num {
+  opacity: .8;
 }
 
 .scripture-index-browse-verse-manual {

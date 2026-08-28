@@ -156,7 +156,7 @@ const ReferencePicker = ({ open, value, colorName, anchorRef, scriptureIndex, no
     const requestId = ++previewRequestRef.current;
 
     const timer = setTimeout(() => {
-      fetchVerseText({ book: pendingBook, path: String(hoverChapter) }).then((result) => {
+      fetchVerseText({ book: pendingBook, path: String(hoverChapter) }, { background: true }).then((result) => {
         if (previewRequestRef.current !== requestId) return;
         setPreview(result);
       });

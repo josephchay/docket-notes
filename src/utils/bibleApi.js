@@ -32,16 +32,107 @@ const cache = new Map(); // "book|path" -> Promise<result>, so a repeated or
 // concurrently-duplicated lookup (a pill previewed twice, a search box
 // re-typing the same reference) never spends a second real request.
 
+// A shared sliding-window budget for the whole module — every caller
+// (ScriptureIndexPanel's own query lookup AND its chapter hover-preview,
+// ReferencePicker's chapter hover-preview, NoteEditor's citation-pill
+// preview) only ever self-debounces its OWN triggering interaction; none
+// of them know about each other, so nothing previously coordinated against
+// the 15-requests/30s-per-IP limit this whole file's own top comment
+// documents. An ordinary sweep across a chapter grid hovering a dozen
+// cells, on its own, already clears that budget. Rather than touch every
+// call site to add cross-component coordination, this queues admission
+// centrally, in the one place every one of them already funnels through:
+// once ~15 real requests have gone out in the trailing 30s, any further
+// one waits for the oldest of those to age out of the window before it's
+// allowed to actually fire, instead of firing straight into a 429. This
+// only paces WHEN a request starts, not the request itself — it doesn't
+// cancel or coalesce anything, just keeps this module's own total request
+// rate under the documented ceiling regardless of how many independent
+// callers are triggering it at once.
+//
+// Two tiers, not a flat queue: a `background` request (a chapter-preview
+// hover, purely a taste while scanning — never a deliberate commit) never
+// makes a `foreground` one (a typed/clicked lookup, a citation-pill
+// preview) wait behind it. Without this, a plain scan across a large
+// book's chapter grid could burn the whole 30s budget on hovers alone,
+// leaving an unrelated, genuinely-clicked lookup elsewhere in the app
+// stuck on "Looking it up…" for up to 30 real seconds with no visible
+// reason why — foreground admissions are always taken first whenever a
+// slot opens, regardless of queue order, so a deliberate action is never
+// held hostage by ambient background activity that happened moments
+// earlier.
+const REQUEST_LIMIT = 15;
+const REQUEST_WINDOW_MS = 30000;
+const requestTimestamps = [];
+const pendingAdmissions = []; // { resolve, background }
+let draining = false;
+
+function admitNext() {
+  if (draining) return;
+  draining = true;
+
+  const tick = () => {
+    if (pendingAdmissions.length === 0) { draining = false; return; }
+
+    const now = Date.now();
+    while (requestTimestamps.length && requestTimestamps[0] <= now - REQUEST_WINDOW_MS) {
+      requestTimestamps.shift();
+    }
+
+    if (requestTimestamps.length >= REQUEST_LIMIT) {
+      const waitMs = requestTimestamps[0] + REQUEST_WINDOW_MS - now;
+      setTimeout(tick, Math.max(waitMs, 0) + 1);
+      return;
+    }
+
+    let nextIndex = pendingAdmissions.findIndex((p) => !p.background);
+    if (nextIndex === -1) nextIndex = 0;
+    const [next] = pendingAdmissions.splice(nextIndex, 1);
+    requestTimestamps.push(Date.now());
+    next.resolve();
+
+    tick();
+  };
+
+  tick();
+}
+
+function waitForSlot(background) {
+  return new Promise((resolve) => {
+    pendingAdmissions.push({ resolve, background: !!background });
+    admitNext();
+  });
+}
+
 // Resolves to one of:
 //   { status: "unsupported" }              — a 3-segment path, see above
 //   { status: "loading" }                  — never actually returned; callers
 //                                             show this themselves while awaiting
-//   { status: "ok", text, reference }      — text is the plain, already-
-//                                             trimmed concatenated verse(s)
+//   { status: "ok", text, reference,       — text is the plain, already-
+//     verses }                               trimmed concatenated verse(s);
+//                                             verses is the same passage
+//                                             broken out one entry per verse
+//                                             ({ number, text }, individually
+//                                             trimmed) — bible-api.com always
+//                                             returns this breakdown, even
+//                                             for a single-verse request, so
+//                                             a caller browsing a whole
+//                                             chapter can read it verse by
+//                                             verse instead of one long
+//                                             concatenated paragraph, with
+//                                             no separate fetch of its own.
 //   { status: "error", message }           — network failure, rate limit,
 //                                             or bible-api.com itself not
 //                                             recognizing the reference
-export function fetchVerseText({ book, path }) {
+//
+// `background` (default false) marks this call as ambient/exploratory —
+// a chapter-grid hover-preview, not a deliberate click/typed lookup — so
+// it queues behind every foreground request already waiting for a slot,
+// no matter which order they actually arrived in. Doesn't affect caching:
+// the same book|path is deduped and shared across a background AND a
+// foreground call alike, since the cache key is only ever the reference
+// itself, never the priority it happened to be requested at.
+export function fetchVerseText({ book, path }, { background } = {}) {
   if (!isFetchablePath(path)) return Promise.resolve({ status: "unsupported" });
 
   const key = `${ book }|${ path }`.toLowerCase();
@@ -52,7 +143,8 @@ export function fetchVerseText({ book, path }) {
   // URL shape, confirmed against the live API rather than assumed.
   const url = `${ BASE_URL }${ `${ book } ${ path }`.replace(/ /g, "+") }?translation=${ TRANSLATION }`;
 
-  const promise = fetch(url)
+  const promise = waitForSlot(background)
+    .then(() => fetch(url))
     .then(async (response) => {
       if (!response.ok) {
         return { status: "error", message: response.status === 404 ? "Reference not found" : `Lookup failed (${ response.status })` };
@@ -60,7 +152,10 @@ export function fetchVerseText({ book, path }) {
       const data = await response.json();
       const text = (data.text ?? "").replace(/\s+/g, " ").trim();
       if (!text) return { status: "error", message: "No text returned" };
-      return { status: "ok", text, reference: data.reference };
+      const verses = Array.isArray(data.verses)
+        ? data.verses.map((v) => ({ number: v.verse, text: (v.text ?? "").replace(/\s+/g, " ").trim() }))
+        : [];
+      return { status: "ok", text, reference: data.reference, verses };
     })
     .catch(() => ({ status: "error", message: "Couldn't reach the lookup service" }));
 
