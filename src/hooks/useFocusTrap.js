@@ -31,7 +31,21 @@ const FOCUSABLE_SELECTOR = [
 // unlike the other panels here, is only ever rendered while actively
 // editing — passed a constant `true` — so it never sees an open→false
 // transition of its own; a plain unmount runs this same cleanup instead).
-const useFocusTrap = (panelRef, open, { focusOnOpen = true } = {}) => {
+//
+// `trapTab` (default true) splits the Tab-cycling half off from the focus-
+// on-open/restore-on-close half — added for ScriptureIndexPanel.jsx's own
+// non-modal dock, which needs the LATTER (land focus somewhere reachable
+// the instant it opens, restore it on close) at every width, but only
+// wants the FORMER (an actual boundary-cycling trap) while it's genuinely
+// acting like a modal. Keeping both halves on one `open` toggle would mean
+// whatever makes the dock modal-only-sometimes (there, a viewport-width
+// media query) would ALSO have to gate the panel's `open` argument itself
+// — which then makes an unrelated width change look like a fresh open/
+// close to this hook's first effect, stealing or restoring focus purely
+// off a resize. Splitting them means `open` alone can stay the honest
+// "is this thing actually open" signal for focus-on-open, while `trapTab`
+// independently controls only whether Tab is boxed in once it's there.
+const useFocusTrap = (panelRef, open, { focusOnOpen = true, trapTab = true } = {}) => {
   const previouslyFocusedRef = useRef(null);
 
   useEffect(() => {
@@ -50,7 +64,7 @@ const useFocusTrap = (panelRef, open, { focusOnOpen = true } = {}) => {
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !trapTab) return;
 
     const handleKeyDown = (e) => {
       if (e.key !== "Tab") return;
@@ -81,7 +95,7 @@ const useFocusTrap = (panelRef, open, { focusOnOpen = true } = {}) => {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, panelRef]);
+  }, [open, trapTab, panelRef]);
 };
 
 export default useFocusTrap;

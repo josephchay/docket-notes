@@ -83,6 +83,16 @@ const ReferencePicker = ({ open, value, colorName, anchorRef, scriptureIndex, no
   const [preview, setPreview] = useState(null); // null | { status, text, message }
   const previewRequestRef = useRef(0);
 
+  // A synchronous, animation-independent "is this genuinely open right now"
+  // signal — see DueDatePicker.jsx's own identical effect for why the
+  // Scripture Index dock's Escape handler needs this rather than checking
+  // whether `.reference-picker` merely exists in the DOM (Framer's exit
+  // animation keeps that node mounted for a beat after `open` goes false).
+  useEffect(() => {
+    document.body.classList.toggle("reference-picker-open", open);
+    return () => document.body.classList.remove("reference-picker-open");
+  }, [open]);
+
   // Every fresh open lands back on the home screen — even reopening an
   // already-set reference's chip — with the search field pre-seeded so
   // retyping the same thing (or tweaking it slightly) still works, but the

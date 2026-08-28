@@ -66,6 +66,20 @@ const DueDatePicker = ({ open, value, colorName, anchorRef, onChange, onClose })
   const [position, setPosition] = useState(null);
   const panelRef = useRef(null);
 
+  // A synchronous, animation-independent "is this genuinely open right now"
+  // signal for the Scripture Index dock's own Escape handler to check (see
+  // ScriptureIndexPanel.jsx) — the dock needs to defer to whichever popover
+  // the user is actually looking at, but can't just check whether
+  // `.due-picker` exists in the DOM, since Framer's own exit animation
+  // keeps that node mounted for a beat AFTER `open` has already gone false,
+  // which would make a fast second Escape (pressed while this is still
+  // mid-exit) wrongly read as "still open." A plain effect keyed on `open`
+  // itself flips this the instant React commits, with no animation lag.
+  useEffect(() => {
+    document.body.classList.toggle("due-picker-open", open);
+    return () => document.body.classList.remove("due-picker-open");
+  }, [open]);
+
   // Re-anchors to wherever the current value (or today, if none yet) sits
   // every time the popover is freshly opened, and measures a fresh
   // position off the trigger button — rather than carrying over whatever

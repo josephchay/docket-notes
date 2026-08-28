@@ -1,38 +1,76 @@
-.scripture-index-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 950;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 12vh;
-}
-
+/* No backdrop above the narrow breakpoint at all — a non-modal dock has no
+   scrim to blur/dim the rest of the page, since the whole reason it exists
+   is to stay open and clickable alongside NoteEditor rather than block it.
+   Only rendered visibly (and only then does its onClick matter) once the
+   media query below re-enables it for a viewport too narrow to show the
+   dock beside anything else. */
 .scripture-index-backdrop {
-  position: absolute;
-  inset: 0;
-  background-color: rgba(25, 25, 25, 0.28);
+  display: none;
 }
 
-:root[data-theme="dark"] .scripture-index-backdrop {
-  background-color: rgba(0, 0, 0, 0.5);
-}
-
-/* border-radius is animated by framer during the drop-to-sheet morph, so it
-   is deliberately not set here. */
+/* A fixed, full-height rail docked to the right edge — not a centered
+   floating card. `.scripture-index-panel` positions itself directly now;
+   there's no outer flex-centering wrapper to speak of (SheetPanel's own
+   `-layer` div existed only to center a floating card, which this no
+   longer is). z-index is unchanged from the old modal card's own value —
+   it already sits correctly above NoteEditor's 800 and below the 980
+   DueDatePicker/ReferencePicker popovers that can appear on top of it. */
 .scripture-index-panel {
-  position: relative;
-  width: min(420px, 92vw);
-  max-height: 72vh;
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  height: 100dvh;
+  width: min(480px, 92vw);
+  z-index: 950;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background-color: var(--page-bg-color);
-  border: 1px solid var(--page-line-color);
-  box-shadow: 0 30px 70px -24px rgba(25, 25, 25, 0.45);
+  border-width: 0 0 0 1px;
+  border-style: solid;
+  border-color: var(--page-line-color);
+  border-radius: 22px 0 0 22px;
+  box-shadow: -30px 0 70px -24px rgba(25, 25, 25, 0.45);
   will-change: transform;
   transition: background-color 0.4s ease-in-out, border-color 0.4s ease-in-out;
   outline: none;
+}
+
+:root[data-theme="dark"] .scripture-index-panel {
+  box-shadow: -30px 0 70px -24px rgba(0, 0, 0, 0.6);
+}
+
+/* Below this, side-by-side reading isn't realistic (matches
+   NARROW_BREAKPOINT in ScriptureIndexPanel.jsx, and the one other
+   breakpoint already in this codebase, HistoryPanel.css) — the dock falls
+   back to the same modal shape every other panel here already uses:
+   a real backdrop, full-bleed width, square corners. The backdrop's own
+   onClick={closePanel} (see the JSX) is effectively decorative at THIS
+   width specifically, not a bug to chase — the panel below is deliberately
+   the full 100vw too, so there's no "outside the panel" left exposed for a
+   click to land on; a full-bleed sheet on a small screen has no tap-outside
+   affordance the way a partial-width one would, the same as this app's own
+   NoteEditor going near-fullscreen on a narrow viewport. The X button and
+   Escape (both already handle it) are the real close paths down here. */
+@media (max-width: 720px) {
+  .scripture-index-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 949;
+    background-color: rgba(25, 25, 25, 0.28);
+  }
+
+  :root[data-theme="dark"] .scripture-index-backdrop {
+    background-color: rgba(0, 0, 0, 0.5);
+  }
+
+  .scripture-index-panel {
+    width: 100vw;
+    border-radius: 0;
+    border-width: 0;
+  }
 }
 
 /* Every interactive element in this panel sets its own resting
@@ -157,7 +195,18 @@
   opacity: 1;
 }
 
+/* The dock is a full-height column now (see .scripture-index-panel above),
+   not a 72vh card, so this is the ONE scroll region for the whole body —
+   flex:1/min-height:0 is what lets it actually fill and scroll within a
+   flex-column parent, rather than growing past it. Every nested scrollbox
+   that used to live inside here (the book/section list, the chapter grid,
+   the verse list) had its own max-height/overflow-y specifically because
+   this container used to be short; those are removed below so a long list
+   just keeps flowing in this single scroll region instead of getting stuck
+   in its own small inner box the mouse wheel can't escape. */
 .scripture-index-body {
+  flex: 1;
+  min-height: 0;
   padding: 10px 14px 14px;
   overflow-y: auto;
 }
@@ -401,10 +450,9 @@
   opacity: 1;
 }
 
-.scripture-index-browse-sections {
-  max-height: 320px;
-  overflow-y: auto;
-}
+/* No longer its own scroll region — no max-height/overflow-y here (used to
+   have both) — see .scripture-index-body's own comment above; the whole
+   dock body scrolls together now instead of nesting a nested scrollbox. */
 
 .scripture-index-browse-section {
   margin-bottom: 10px;
@@ -441,11 +489,11 @@
 }
 
 .scripture-index-browse-chapter-grid {
+  /* No max-height/overflow-y of its own (used to be capped at 260px) — see
+     .scripture-index-body's own comment above. */
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 5px;
-  max-height: 260px;
-  overflow-y: auto;
 }
 
 .scripture-index-browse-chapter {
@@ -555,12 +603,15 @@
    .scripture-index-browse-verse-inline below), so this stays a <p> of
    inline <button>s rather than block-level list rows. */
 .scripture-index-browse-verse-list {
+  /* No max-height/overflow-y of its own (used to be capped at 280px) — see
+     .scripture-index-body's own comment above. Type bumped from 13px/1.8 to
+     16px/1.75 now that this reads in a tall, full-height column rather than
+     a 72vh card — a size actually comfortable to read for a while, not just
+     to skim. */
   margin: 0;
-  max-height: 280px;
-  overflow-y: auto;
   color: var(--page-ink-color);
-  font-size: 13px;
-  line-height: 1.8;
+  font-size: 16px;
+  line-height: 1.75;
 }
 
 .scripture-index-browse-verse-inline {
@@ -587,7 +638,7 @@
 
 .scripture-index-browse-verse-num {
   margin-right: 1px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
   opacity: .55;
 }

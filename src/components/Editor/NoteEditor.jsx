@@ -20,6 +20,7 @@ import StudyBody from "../Note/StudyBody";
 import DueDatePicker from "./DueDatePicker";
 import ReferencePicker from "./ReferencePicker";
 import HoverCitationOverlay from "./HoverCitationOverlay";
+import { SCRIPTURE_INDEX_EVENT } from "../Scripture/ScriptureIndexPanel";
 
 import "./NoteEditor.css";
 
@@ -496,6 +497,7 @@ const NoteEditor = ({
   const remindTap = useJellyTap();
   const checklistTap = useJellyTap();
   const studyTap = useJellyTap();
+  const scriptureTap = useJellyTap();
   const copyTap = useJellyTap();
   const resizeTap = useJellyTap();
 
@@ -947,6 +949,33 @@ const NoteEditor = ({
                 >
                   <motion.span animate={ studyTap.jelly } style={{ display: "inline-flex" }}>
                     <FaBookOpen className={ `note-editor-action-icon ${ isStudy ? "light" : "" }` } />
+                  </motion.span>
+                </motion.button>
+                {/* Opens the same corpus-wide Scripture Index every other
+                    summoner (Header's own toolbar button, the command
+                    palette) already opens — now a persistent side dock
+                    rather than a modal (see ScriptureIndexPanel.jsx), so it
+                    can stay open and readable while this editor stays open
+                    too, exactly what this button exists to make reachable
+                    without leaving the note. Non-toggling, same one-shot
+                    shape as Copy/Reminder/Close right next to it: this
+                    editor has no visibility into whether the dock is
+                    currently open (that state stays local to the panel
+                    itself), so there's nothing to show as "active" here —
+                    closing the dock happens on its own close button or
+                    Escape, not a second click on this one. */}
+                <motion.button
+                  type="button"
+                  aria-label="Open the Scripture Index"
+                  className="note-editor-action dark"
+                  whileHover={{ scale: 1.15, rotate: 6 }}
+                  whileTap={{ scale: .9 }}
+                  transition={ actionSpring }
+                  onTapStart={ scriptureTap.squash }
+                  onClick={ () => window.dispatchEvent(new CustomEvent(SCRIPTURE_INDEX_EVENT)) }
+                >
+                  <motion.span animate={ scriptureTap.jelly } style={{ display: "inline-flex" }}>
+                    <FaBookBible className="note-editor-action-icon light" />
                   </motion.span>
                 </motion.button>
                 <motion.button
