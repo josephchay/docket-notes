@@ -37,6 +37,7 @@ import { dealRandomVerse, randomFallbackVerse } from "../utils/randomVerse";
 import { isChecklistText, toChecklistText, fromChecklistText } from "../utils/checklist";
 import { isStudyText, toStudyText, fromStudyText } from "../utils/study";
 import { STUDY_LIBRARY } from "../utils/studyLibrary";
+import { primeStudyPantry, takeComposedStudy } from "../utils/studyComposer";
 import { parseCitations, parseBareCitation, BIBLE_BOOKS } from "../utils/citations";
 import { loadNotes, saveNotes, loadSettings, saveSettings, getPersistPref, setPersistPref } from "../utils/storage";
 import {
@@ -690,23 +691,45 @@ const Home = () => {
     const noteId = id();
     const newNotes = [...notes];
 
-    // Roughly one pour in three deals a COMPLETE worked study from the
-    // bundled library (see utils/studyLibrary.js) — titled, every section
-    // of its template already composed, its citations live in the app's
-    // own grammar — so a desk poured over time naturally grows finished
-    // exemplars of every study shape, not blank outlines the visitor has
-    // to discover the template picker to explain. Studies whose title is
-    // already on the desk are skipped (title-matched against every note,
-    // trash excluded since a shredded study is fair to deal again), so
-    // pouring the library dry never duplicates one — it just means plain
-    // paper again until something frees a title up. Chosen here in the
-    // handler, never inside a state updater, so StrictMode's double-invoke
-    // can't deal two different studies for one pour.
+    // Roughly one pour in three deals a COMPLETE worked study — titled,
+    // every section of its template already composed, its citations live
+    // in the app's own grammar — so a desk poured over time naturally
+    // grows finished studies of every shape, not blank outlines. Two
+    // sources, in order of preference and both repetition-proof: the
+    // hand-authored library first (utils/studyLibrary.js; title-matched
+    // against every note so it never deals a study already on the desk),
+    // then, once the shelf runs dry, the automatic composer
+    // (utils/studyComposer.js) — a study assembled ahead of time around a
+    // random dealt verse, reference-matched against every note's own text
+    // so the same passage is never composed onto the desk twice; with the
+    // whole canon to deal from, the supply never meaningfully repeats or
+    // runs out. The pantry primes as the library runs LOW (not only once
+    // it is empty), so the first composed study is usually ready the
+    // moment it is needed; an empty pantry just means plain paper this
+    // pour. Chosen here in the handler, never inside a state updater, so
+    // StrictMode's double-invoke can't deal two different studies for one
+    // pour. Trash is excluded from both checks on purpose: a shredded
+    // study is fair to deal again.
     const pouredTitles = new Set(notes.map((note) => (note.title ?? "").trim().toLowerCase()));
     const availableStudies = STUDY_LIBRARY.filter((study) => !pouredTitles.has(study.title.toLowerCase()));
-    const spawnStudy = availableStudies.length > 0 && Math.random() < 1 / 3
-      ? availableStudies[Math.floor(Math.random() * availableStudies.length)]
-      : null;
+    if (availableStudies.length <= 2) primeStudyPantry();
+    const wantsStudy = Math.random() < 1 / 3;
+    const spawnStudy = !wantsStudy ? null
+      : availableStudies.length > 0
+        ? availableStudies[Math.floor(Math.random() * availableStudies.length)]
+        : takeComposedStudy((reference) => notes.some((note) =>
+          // Best-effort textual probe (canonical spellings on both sides,
+          // since composed citations and Treasury weaves are always
+          // canonical): the exact tag, the verse opening a range
+          // ("(Luke 20:35-36)"), or leading a multi-piece group
+          // ("(Luke 20:35;" / "(Luke 20:35,"). A hand-typed lowercase or
+          // mid-group citation can still slip past — acceptable for a
+          // dedupe drawing on ~31,000 possible verses.
+          note.text.includes(`(${ reference })`)
+          || note.text.includes(`(${ reference }-`)
+          || note.text.includes(`(${ reference };`)
+          || note.text.includes(`(${ reference },`)
+        ));
 
     newNotes.push({
       id: noteId,

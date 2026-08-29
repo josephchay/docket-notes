@@ -29,8 +29,19 @@ let cachePromise = null;
 function loadAll() {
   if (!cachePromise) {
     cachePromise = fetch(`${ process.env.PUBLIC_URL }/data/cross-references.json`)
-      .then((response) => (response.ok ? response.json() : {}))
-      .catch(() => ({}));
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`cross-references ${ response.status }`))))
+      .catch(() => {
+        // The current caller still gets a usable empty map — but the
+        // FAILURE is never kept cached: one transient hiccup (a timeout, a
+        // momentary 404 mid-deploy) would otherwise pin the whole session
+        // to "no apparatus anywhere", and worse, let the study composer
+        // bake the false sentence "the bundled apparatus records no
+        // cross-reference" into permanent note text. Resetting lets the
+        // next consumer retry — the exact error-never-cached discipline
+        // bibleApi.js's own cache already keeps, for the same reason.
+        cachePromise = null;
+        return {};
+      });
   }
   return cachePromise;
 }
