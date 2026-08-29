@@ -42,8 +42,8 @@ Session Storage and local storage is being used temporarily.
 
 - Some or all notes during delete animation the note became shrinked-square like the note shape itself since <a href="https://github.com/josephchay/docket-notes/tree/71dbccb3d8b35017268a152894c92bc2065bcac1" target="_blank">71dbccb3d8b35017268a152894c92bc2065bcac1</a>, instead of circle instead like in commit: <a href="https://github.com/josephchay/docket-notes/tree/6d44f9e460ce52f49906022e3bc3965baf9c896c" target="_blank">6d44f9e460ce52f49906022e3bc3965baf9c896c</a>
 - Sound cues (enabled/disabled in Settings panel) only play for some interactables
-- Check the QuickDock functionality, if there is any bug issue under this commit <a href="https://github.com/josephchay/docket-notes/tree/53d2ad204aa70353fc4a227bf2344b8dda60924e "target="_blank">53d2ad204aa70353fc4a227bf2344b8dda60924e</a>
-- Check the TagThreads functionality, if there is any bug issue under this commit. <a href="https://github.com/josephchay/docket-notes/tree/ccc6d09d64ac98a183c0550521231babd1cbc245 "target="_blank">ccc6d09d64ac98a183c0550521231babd1cbc245</a>
+- Check the QuickDock functionality, if there is any bug issue under this commit <a href="https://github.com/josephchay/docket-notes/tree/53d2ad204aa70353fc4a227bf2344b8dda60924e " target="_blank">53d2ad204aa70353fc4a227bf2344b8dda60924e</a>
+- Check the TagThreads functionality, if there is any bug issue under this commit. <a href="https://github.com/josephchay/docket-notes/tree/ccc6d09d64ac98a183c0550521231babd1cbc245 " target="_blank">ccc6d09d64ac98a183c0550521231babd1cbc245</a>
 - Check the NoteList and the FluidVisualizer, if there is any bug issue under this commit.
 
 ## Acknowledgements
@@ -54,4 +54,5 @@ Session Storage and local storage is being used temporarily.
     - Subscriptions Proofs in <a href="src/assets/miscellaneous" target="_blank">src/assets/miscellaneous</a>
         ![Claude AI Subscription (with $100 Free Usage Credits - Used)](src/assets/miscellaneous/claude-ai-subscription-along-with-free-usage-credits-of-100-free-usage-credits-used.png)
         ![Claude AI Subscription (with $100 Free Usage Credits - Used) for Fable 5](src/assets/miscellaneous/claude-ai-subscription-free-usage-credits-for-fable5.png)
+        ![Claude AI Subscription (Pro x 5) for Fable 5](src/assets/miscellaneous/claude-ai-subscription-max-2.png)
     - Consistent sample script prompts used: <a href="claude-ai-sample-prompt-scripts" target="_blank">Claude AI Sample Script Prompts</a>
