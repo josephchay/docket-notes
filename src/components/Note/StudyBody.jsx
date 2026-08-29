@@ -141,14 +141,39 @@ const StudyBody = ({ text, onChange, locked, className, autoFocus, sectionCounts
     onChange(stringifyStudy(template, { ...sections, [key]: value }));
   };
 
+  // Both mutations below move focus deliberately, because both REMOVE the
+  // very button being activated (the ghost chip's row unmounts once its
+  // last section is added; the dismiss ✕ unmounts with its section) — a
+  // focused element that disappears surrenders focus to <body>, from
+  // where the next Tab silently escapes the editor's focus trap into the
+  // page behind the modal. rAF so the post-change DOM exists first.
   const addOptional = (key) => {
     onChange(stringifyStudy(template, { ...sections, [key]: "" }));
+    // Into the fresh section's own field — also simply the natural next
+    // action after asking for a place to write.
+    const heading = OPTIONAL_SECTIONS.find((o) => o.key === key)?.heading;
+    requestAnimationFrame(() => {
+      const rows = [...(containerRef.current?.querySelectorAll(".study-section.optional") ?? [])];
+      const target = rows.find((row) => row.querySelector(".study-section-heading")?.textContent === heading);
+      target?.querySelector("textarea")?.focus({ preventScroll: true });
+    });
   };
 
   const dismissOptional = (key) => {
     const rest = { ...sections };
     delete rest[key];
     onChange(stringifyStudy(template, rest));
+    // Lands on the LAST REQUIRED section's field — indexed off the
+    // template's own section count, never "the last .study-section-text in
+    // the DOM": AnimatePresence keeps the dismissed section mounted for
+    // its exit animation, so for a beat the DOM's last field IS the dying
+    // one, and focusing it would just drop focus a second time when it
+    // finishes unmounting (the same exit-lag trap the Escape body-class
+    // checks exist for).
+    requestAnimationFrame(() => {
+      const fields = containerRef.current?.querySelectorAll(".study-section-text");
+      fields?.[template.sections.length - 1]?.focus({ preventScroll: true });
+    });
   };
 
   const presentOptional = OPTIONAL_SECTIONS.filter(({ key }) => key in sections);

@@ -128,13 +128,26 @@ const Note = ({
   const textTimerRef = useRef(null);
 
   // Adopt outside changes unless the field is being typed in right now — a
-  // self-made edit round-trips as the same value anyway.
+  // self-made edit round-trips as the same value anyway — OR a debounced
+  // commit of this card's own typing is still pending: for that window the
+  // local draft is NEWER than note.text, and adopting anything over it
+  // (an async placeholder-verse seed landing just after a blur, an undo
+  // arriving mid-debounce) would visibly replace text the visitor just
+  // typed for up to half a second until their own commit flips it back —
+  // or, if they resumed typing during the flash, silently build their next
+  // keystrokes on top of the adopted text instead of their own. The timer
+  // refs null themselves the moment they actually fire (below), which is
+  // what makes "a commit is still pending" readable here at all — the
+  // same fired-timer discipline NoteEditor's own unmount-flush guard
+  // already established.
   useEffect(() => {
-    if (document.activeElement !== titleRef.current) setDraftTitle(note.title);
+    if (document.activeElement !== titleRef.current && !titleTimerRef.current) setDraftTitle(note.title);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.title]);
 
   useEffect(() => {
-    if (document.activeElement !== textRef.current) setDraftText(note.text);
+    if (document.activeElement !== textRef.current && !textTimerRef.current) setDraftText(note.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.text]);
 
   useEffect(() => {
@@ -145,13 +158,19 @@ const Note = ({
   const handleTitleUpdate = (title) => {
     setDraftTitle(title);
     clearTimeout(titleTimerRef.current);
-    titleTimerRef.current = setTimeout(() => updateTitle(title, note.id), debounceTimer);
+    titleTimerRef.current = setTimeout(() => {
+      titleTimerRef.current = null;
+      updateTitle(title, note.id);
+    }, debounceTimer);
   }
 
   const handleTextUpdate = (text) => {
     setDraftText(text);
     clearTimeout(textTimerRef.current);
-    textTimerRef.current = setTimeout(() => updateText(text, note.id), debounceTimer);
+    textTimerRef.current = setTimeout(() => {
+      textTimerRef.current = null;
+      updateText(text, note.id);
+    }, debounceTimer);
   }
 
   const HOLD_FILL_MS = 1000;   // how long the delete ring takes to fill once the hold registers
@@ -551,7 +570,13 @@ const Note = ({
       clearSpawn?.();
     };
 
-    morph();
+    // .start()'s promise rejects when the sequence is interrupted
+    // mid-flight — the component unmounting (a mid-spawn delete/filter, or
+    // StrictMode's dev-only mount/unmount/remount) cancels whichever step
+    // is in the air. The morph is purely decorative, so a cancelled one is
+    // never an error worth surfacing — the same reasoning as the focus
+    // editor's own resize-wobble catch, which this chain predates having.
+    morph().catch(() => {});
 
     // Only actually matters if the note is removed mid-spawn (filtered
     // out, deleted) before playBlobMorph's own complete callback ever

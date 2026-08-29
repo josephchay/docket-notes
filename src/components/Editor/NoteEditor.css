@@ -205,7 +205,7 @@
 
 /* The tag rack: pinned tags as small pills, a bare-underline field to add
    the next one — same black-ink-on-pastel-paper language as the word count
-   and quote pills below. */
+   and verse-deal pill below. */
 .note-editor-tags {
   display: flex;
   flex-wrap: wrap;
@@ -226,7 +226,11 @@
   flex-shrink: 0;
   max-height: 72px;
   margin-top: 10px;
-  padding: 2px 2px 2px 0;
+  /* Top padding is 8px, not the 2px everywhere else: a typology chain
+     renders on this row's FIRST flex line, and its arrow's TSK tick rides
+     7px above the arrow's own box — with only 2px of headroom, overflow-y:
+     auto was clipping the tick's top few pixels on every render. */
+  padding: 8px 2px 2px 0;
   overflow-y: auto;
 }
 
@@ -347,7 +351,12 @@
   padding: 10px 12px;
   border-radius: 14px;
   background: var(--black-even-more-transclucent-color);
-  overflow: hidden;
+  /* Clipped horizontally (the entrance animates height from 0, and rounded
+     corners need it) but scrollable vertically: when the paper runs out of
+     room — a tall compare, the apparatus rows, the cozy size — THIS card
+     is what shrinks and scrolls, never the writing surface above it (see
+     .note-editor-text-wrap's own min-height floor). */
+  overflow: hidden auto;
 }
 
 .note-editor-citation-preview-head {
@@ -447,10 +456,22 @@
    pill; every action inside stays live and identical to a lone pill's. */
 .note-editor-typology-chain {
   display: flex;
+  /* Wraps like every other pill row here — lobes carry nowrap labels, so
+     without this a 3-4 lobe chain's min-content width (~550px) exceeds
+     even the roomy paper and forces the whole citations rail into
+     horizontal scrolling. Markup order inside a chain is arrow-then-pill,
+     so a wrapped line leads with its own arrow — reading like a continued
+     line of printed apparatus, not an orphaned glyph. */
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   padding: 2px 4px;
-  border-radius: 999px;
+  /* A fixed 16px, NOT the 999px capsule the single pills wear: once the
+     chain wraps to two lines, a 999px radius clamps to half the taller
+     container and the corner curves cut diagonally across the first and
+     last lobes — 16px reads near-identically on one line and keeps every
+     lobe inside the ink on two. */
+  border-radius: 16px;
   background: var(--black-even-more-transclucent-color);
   box-shadow: inset 0 0 0 1.5px var(--black-more-transclucent-color);
 }
@@ -775,7 +796,15 @@
   position: relative;
   display: flex;
   flex: 1;
-  min-height: 0;
+  /* A FLOOR, not the usual min-height: 0 — this is a flex: 1 (basis 0%)
+     item, and basis-0 items resolve to literally 0px the moment the
+     column runs out of room, which an open verse-preview card (its
+     apparatus rows, or the two-pane compare) can genuinely cause on the
+     cozy paper: the note being edited would vanish entirely behind its
+     own preview. The writing surface never gives up its last few lines;
+     the preview card is what shrinks and scrolls instead (see its own
+     overflow rule below). Same floor on .editor-checklist/.editor-study. */
+  min-height: 110px;
 }
 
 .note-editor-text {
@@ -844,7 +873,9 @@ textarea.note-editor-text {
   font-weight: 400;
 }
 
-/* Deals a fresh inspiration quote while the page is still blank. */
+/* Deals a fresh random verse while the page is still blank (the class
+   keeps its original "quote" name — it's the same slot the old
+   inspiration-quote deal lived in, just dealt from scripture now). */
 .note-editor-quote {
   display: flex;
   align-items: center;
@@ -912,7 +943,6 @@ textarea.note-editor-text {
    needs to place it in .note-editor-text's old slot. */
 .editor-checklist {
   flex: 1;
-  min-height: 0;
   margin-top: 18px;
   padding-right: 10px;
   width: 100%;
@@ -921,10 +951,32 @@ textarea.note-editor-text {
 /* Same slot, same reasoning — see .editor-checklist just above. */
 .editor-study {
   flex: 1;
-  min-height: 0;
   margin-top: 18px;
   padding-right: 10px;
   width: 100%;
+}
+
+/* The same never-collapse-to-0 floor .note-editor-text-wrap carries (see
+   its own comment) — written as compound selectors deliberately: the
+   components' own base classes (.checklist-body/.study-body, in their own
+   CSS files) declare min-height: 0 at identical single-class specificity,
+   and which single-class rule wins a tie is purely an accident of
+   stylesheet load order (see HoverCitationOverlay's own backdrop-color
+   lesson) — two classes beat one regardless of order. */
+.checklist-body.editor-checklist,
+.study-body.editor-study {
+  min-height: 110px;
+}
+
+/* The cozy paper's whole height budget is only ~470px, and .note-editor
+   clips rather than scrolls — on a densely cited note (tags, pills rail
+   at its cap, an open offer banner) the full 110px floor can push the
+   footer past the paper's bottom edge. A smaller-but-still-real writing
+   strip buys that deficit back on the one size where it exists. */
+.note-editor.cozy .note-editor-text-wrap,
+.note-editor.cozy .checklist-body.editor-checklist,
+.note-editor.cozy .study-body.editor-study {
+  min-height: 80px;
 }
 
 .note-editor.locked .editor-study {

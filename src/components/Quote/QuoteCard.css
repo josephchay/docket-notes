@@ -55,6 +55,17 @@
   transition: color 0.4s ease-in-out;
 }
 
+/* The dealt verse's own reference, set after the line the way a printed
+   devotional attributes its text — smaller, quieter, and separated by a
+   breath rather than punctuation. */
+.quote-card .quote-line-reference {
+  margin-left: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: .55;
+  white-space: nowrap;
+}
+
 .quote-card .quote-deal {
   display: flex;
   align-items: center;

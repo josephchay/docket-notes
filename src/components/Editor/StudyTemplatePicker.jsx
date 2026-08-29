@@ -18,7 +18,12 @@ import "./StudyTemplatePicker.css";
 // STUDY_TEMPLATES, so a future template added there shows up here with
 // zero changes.
 const POPOVER_WIDTH = 264;
-const POPOVER_HEIGHT = 170;
+// Sized for the CURRENT five-template registry (~66px a row plus gaps and
+// padding) — the clamp below only decides where the panel's TOP lands, so
+// this being roughly right keeps the whole stack on screen in the common
+// case, and the CSS max-height/overflow backstop covers viewports shorter
+// than the stack itself. Revisit when STUDY_TEMPLATES grows.
+const POPOVER_HEIGHT = 360;
 
 const StudyTemplatePicker = ({ open, colorName, anchorRef, onChange, onClose }) => {
   const [position, setPosition] = useState(null);
@@ -43,7 +48,11 @@ const StudyTemplatePicker = ({ open, colorName, anchorRef, onChange, onClose }) 
     if (rect) {
       setPosition({
         left: Math.min(rect.left, window.innerWidth - POPOVER_WIDTH - 12),
-        top: Math.min(rect.bottom + 10, window.innerHeight - POPOVER_HEIGHT - 12),
+        // Floored at the top edge too — on a viewport shorter than the
+        // whole panel the bottom clamp alone would push `top` negative;
+        // pinning to 12 keeps the panel's head on screen and lets the CSS
+        // max-height/overflow backstop take it from there.
+        top: Math.max(12, Math.min(rect.bottom + 10, window.innerHeight - POPOVER_HEIGHT - 12)),
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -52,7 +61,19 @@ const StudyTemplatePicker = ({ open, colorName, anchorRef, onChange, onClose }) 
   useEffect(() => {
     if (!open) return;
 
-    const handleKey = (e) => { if (e.key === "Escape") onClose(); };
+    const handleKey = (e) => {
+      if (e.key !== "Escape") return;
+      // Focus goes back to the trigger button, but only when it was
+      // actually inside this panel to begin with — an Escape pressed while
+      // the mouse-only flow never moved focus here shouldn't yank it away
+      // from wherever it genuinely is. (A template PICK needs no restore
+      // at all: converting mounts StudyBody, whose own autoFocus lands in
+      // the first section.)
+      if (panelRef.current?.contains(document.activeElement)) {
+        anchorRef.current?.focus({ preventScroll: true });
+      }
+      onClose();
+    };
     const handleOutside = (e) => {
       if (panelRef.current?.contains(e.target)) return;
       if (anchorRef.current?.contains(e.target)) return;
@@ -73,6 +94,22 @@ const StudyTemplatePicker = ({ open, colorName, anchorRef, onChange, onClose }) 
     };
   }, [open, onClose, anchorRef]);
 
+  // The editor's focus trap can't see this portal, so the panel wraps Tab
+  // itself — the same cycle-at-the-boundary behavior the trap gives
+  // everything else, scoped to the template rows.
+  const handlePanelKeyDown = (e) => {
+    if (e.key !== "Tab") return;
+    const rows = [...(panelRef.current?.querySelectorAll(".study-template-row") ?? [])];
+    if (rows.length === 0) return;
+
+    e.preventDefault();
+    const index = rows.indexOf(document.activeElement);
+    const next = e.shiftKey
+      ? (index <= 0 ? rows.length - 1 : index - 1)
+      : (index === -1 || index === rows.length - 1 ? 0 : index + 1);
+    rows[next].focus();
+  };
+
   if (!position) return null;
 
   return createPortal(
@@ -85,17 +122,33 @@ const StudyTemplatePicker = ({ open, colorName, anchorRef, onChange, onClose }) 
             aria-label="Choose a study shape"
             className={ `study-template-picker ${ colorName }-bg` }
             style={{ left: position.left, top: position.top }}
+            onKeyDown={ handlePanelKeyDown }
             initial={{ opacity: 0, scale: .8, y: -10, rotate: -3 }}
             animate={{ opacity: 1, scale: 1, y: 0, rotate: 0 }}
             exit={ squashCollapse({ scale: .85, y: -8, rotate: 2 }) }
             transition={ SETTLE }
           >
             {
-              STUDY_TEMPLATES.map((template) => (
+              STUDY_TEMPLATES.map((template, index) => (
                 <motion.button
                   key={ template.id }
                   type="button"
                   aria-label={ `Shape this note as a ${ template.label } study` }
+                  // Focus lands on the first row the moment this mounts —
+                  // unlike its siblings (ColorPicker/DueDatePicker, which
+                  // decorate actions also reachable other ways), this
+                  // popover is the ONLY entry point to the non-default
+                  // templates, and it portals OUTSIDE the editor's focus
+                  // trap, so if nothing moves focus in, a keyboard user
+                  // can toggle it open and closed without ever being able
+                  // to choose. React's commit-time autoFocus rather than a
+                  // rAF'd effect: the panel remounts through
+                  // AnimatePresence on every open (so this fires each
+                  // time), and rAF callbacks are paused entirely in
+                  // non-rendering tabs/panes — a focus that only lands
+                  // when the browser happens to be painting isn't a
+                  // keyboard path, it's a race.
+                  autoFocus={ index === 0 }
                   className="study-template-row"
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: .96 }}

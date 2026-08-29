@@ -1,13 +1,15 @@
 // A thin client for bible-api.com — the one piece the rest of the Bible
 // features never had: actual scripture TEXT, not just a recognized
-// reference. Free, keyless, CORS-enabled, defaults here to the King James
-// Version to match the voice quotes.json already writes in (see that
-// file's own note about being untranslated/unlabeled KJV Genesis text).
+// reference. Free, keyless, CORS-enabled, King James Version throughout —
+// the one public-domain translation every scripture surface in this app
+// (verse previews, the Scripture Index reader, the dealt placeholder
+// verses) speaks in, so nothing ever quotes two translations at once.
 // This is deliberately the ONLY place in the app that talks to a network
 // service — everything else here is local-first by design (sessionStorage/
-// localStorage, no backend) — so every call is cached and nothing fetches
-// eagerly; a caller decides when a lookup is actually worth spending one of
-// bible-api.com's own rate-limited requests on (15 per 30s per IP, an
+// localStorage, no backend) — so every reference lookup is cached (the
+// random-verse deal below is the one named exception: caching "random"
+// would defeat it) and a caller decides when a request is actually worth
+// spending against bible-api.com's own rate limit (15 per 30s per IP, an
 // unsupported hobby service with no uptime guarantee, so failures here are
 // expected, not exceptional).
 
@@ -173,4 +175,43 @@ export function fetchVerseText({ book, path }, { background } = {}) {
   });
 
   return promise;
+}
+
+// One verse chosen by the SERVICE at random — bible-api.com's own
+// /data/{translation}/random endpoint (verified live: returns
+// { random_verse: { book, chapter, verse, text } }, with book names
+// spelled exactly as this app's own BIBLE_BOOKS list spells all 66 —
+// checked against the service's full /data/kjv book list, though
+// utils/randomVerse.js still re-validates each one rather than trusting
+// that stays true forever). Deliberately NEVER cached, unlike everything
+// above — a cached random verse isn't random, it's the same verse forever
+// — but it does wait its turn in the same shared rate-limit queue, since
+// it spends the same per-IP budget every other call here does.
+//
+// Resolves to { status: "ok", book, chapter, verse, text } or
+// { status: "error" } — no message: every caller of a RANDOM verse has a
+// local fallback ready (nothing meaningful to tell a user about why a
+// verse they never asked for by name didn't arrive).
+export function fetchRandomVerse({ background } = {}) {
+  const url = `${ BASE_URL }data/${ TRANSLATION }/random`;
+
+  return waitForSlot(background)
+    // cache: "no-store" matters here in a way it doesn't for any other
+    // call in this file: the service sends no explicit caching headers,
+    // and the browser's own heuristic HTTP cache was observed (live)
+    // serving a byte-identical "random" response back for repeat requests
+    // — a cached random verse is the same verse forever, the exact
+    // opposite of what this endpoint exists for. The module-level
+    // never-cache rule above only covered OUR cache; this covers the
+    // browser's.
+    .then(() => fetch(url, { cache: "no-store" }))
+    .then(async (response) => {
+      if (!response.ok) return { status: "error" };
+      const data = await response.json();
+      const verse = data?.random_verse;
+      const text = (verse?.text ?? "").replace(/\s+/g, " ").trim();
+      if (!text || !verse.book || !verse.chapter || !verse.verse) return { status: "error" };
+      return { status: "ok", book: verse.book, chapter: verse.chapter, verse: verse.verse, text };
+    })
+    .catch(() => ({ status: "error" }));
 }

@@ -8,6 +8,8 @@
 // This module replaces the old api.js (fetchNotes / syncNotes /
 // fetchSettings / saveSettings). Delete api.js from the project.
 
+import { randomFallbackVerse } from "./randomVerse";
+
 const NOTES_KEY = "docket-notes";
 const SETTINGS_KEY = "docket-settings";
 const TOUR_KEY = "docket-tour-seen";
@@ -90,7 +92,15 @@ export const loadNotes = () => {
         id: typeof note.id === "string" ? note.id : "",
         title: typeof note.title === "string" ? note.title : "",
         text: note.text,
-        placeholder: typeof note.placeholder === "string" ? note.placeholder : "",
+        // A LOCAL fallback verse, matching importNotes' own repair of the
+        // same missing-field case in Home.jsx — an empty note hydrated
+        // with placeholder "" would wear a blank forever, the exact thing
+        // the fallback verses exist to prevent (and local for the same
+        // reason there: a whole desk hydrating at boot must not spend
+        // dozens of rate-limited requests on placeholders).
+        placeholder: typeof note.placeholder === "string" && note.placeholder
+          ? note.placeholder
+          : randomFallbackVerse(),
         time: typeof note.time === "string" ? note.time : "",
         color: typeof note.color === "string" ? note.color : "yellow",
         favorite: !!note.favorite,

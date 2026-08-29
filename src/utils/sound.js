@@ -278,6 +278,14 @@ export const playMilestone = () => play((context) => {
 // palette. restored is deliberately delete's noise sweep played in
 // reverse (rising instead of falling) — the two actions already read as
 // opposites, so their sounds do too.
+// Shared by the `studied` and `quadriga` keys below — one player, two
+// rail identities (see the comment at those keys).
+const playStudied = () => play((context) => {
+  tone(context, { freq: 440, duration: .16, type: "sine", peak: .16 });
+  tone(context, { freq: 523.25, duration: .16, type: "sine", peak: .18, delay: .14 });
+  tone(context, { freq: 587.33, duration: .2, type: "sine", peak: .2, delay: .28 });
+});
+
 const HISTORY_ACTION_SOUNDS = {
   poured: playSpawn,
   deleted: playDelete,
@@ -340,13 +348,16 @@ const HISTORY_ACTION_SOUNDS = {
     tone(context, { freq: 780, duration: .05, type: "sine", peak: .16, delay: .04 });
   }),
   // Three unhurried, evenly-spaced tones (as opposed to milestone's quick
-  // bright run) — the three sections of a study landing in turn, at a
-  // steadier, more contemplative pace.
-  studied: () => play((context) => {
-    tone(context, { freq: 440, duration: .16, type: "sine", peak: .16 });
-    tone(context, { freq: 523.25, duration: .16, type: "sine", peak: .18, delay: .14 });
-    tone(context, { freq: 587.33, duration: .2, type: "sine", peak: .2, delay: .28 });
-  }),
+  // bright run) — the sections of a study landing in turn, at a steadier,
+  // more contemplative pace. The quadriga key plays the SAME cue: "shaped
+  // a fourfold study" is the same family of action as any study
+  // conversion, just a different shape — it earns its own HistoryPanel
+  // rail identity (icon/color/filter chip) but not a different voice, and
+  // History's own time-lapse playback resolves entries to ACTION_STYLES
+  // keys, so every styled key needs a sound here or that step plays
+  // silently mid-narration.
+  studied: playStudied,
+  quadriga: playStudied,
   // Two brief square-wave ticks bracketing a softer sine — literally
   // sonifying the punctuation this action adds (wrapping a selection in
   // parens), kept at a different frequency from tagged (880Hz) so the two

@@ -33,11 +33,45 @@ export const STUDY_TEMPLATES = [
       // discipline for the Quadriga: the literal sense is established
       // first, and every spiritual reading argues FROM it, never around
       // it), so the template itself resists the eisegesis it makes room
-      // for.
+      // for. The same prompts-as-method-controls voice carries through
+      // every template below.
       { key: "literal", heading: "Literal", prompt: "What did the human author assert, to his own audience, in its own context?" },
       { key: "allegorical", heading: "Allegorical", prompt: "What does the NT itself warrant reading here of Christ? Cite the warrant." },
       { key: "tropological", heading: "Tropological", prompt: "What conduct follows — argued from the literal sense, not around it?" },
       { key: "anagogical", heading: "Anagogical", prompt: "What hope does it direct toward — what is promised, not merely evoked?" },
+    ],
+  },
+  {
+    id: "lectio",
+    label: "Lectio Divina",
+    about: "The monastic four movements — read, ponder, answer, rest",
+    sections: [
+      { key: "lectio", heading: "Lectio", prompt: "Read slowly — which word or phrase arrests you?" },
+      { key: "meditatio", heading: "Meditatio", prompt: "Ponder it — what does it stir, and what does it recall across the canon?" },
+      { key: "oratio", heading: "Oratio", prompt: "Answer back — what does this move you to pray?" },
+      { key: "contemplatio", heading: "Contemplatio", prompt: "Rest in it — what remains true when your own words run out?" },
+    ],
+  },
+  {
+    id: "doctrineUse",
+    label: "Text, Doctrine & Use",
+    about: "The Puritan sermon method — what it says, what it teaches, what it's for",
+    sections: [
+      { key: "text", heading: "Text", prompt: "Set down the passage itself, and establish what it actually says." },
+      { key: "doctrine", heading: "Doctrine", prompt: "What truth does this text teach — stated plainly, as a proposition?" },
+      { key: "use", heading: "Use", prompt: "How is this doctrine to be used — for conviction, comfort, and practice?" },
+    ],
+  },
+  {
+    id: "exegetical",
+    label: "Exegetical",
+    about: "The scholar's bench — from the words themselves up to theology",
+    sections: [
+      { key: "passage", heading: "Passage", prompt: "Set the text down whole — the unit as it stands, before any comment." },
+      { key: "context", heading: "Context", prompt: "What surrounds it — historically, culturally, and in the book's own argument?" },
+      { key: "observations", heading: "Observations", prompt: "What is actually there — structure, repetition, tense, the words carrying the weight?" },
+      { key: "theology", heading: "Theology", prompt: "What does the whole canon do with this — stated from the text, not over it?" },
+      { key: "significance", heading: "Significance", prompt: "What follows for the church and for you — earned from everything above?" },
     ],
   },
 ];
@@ -236,20 +270,33 @@ export function stringifyStudy(template, sections) {
   return parts.join("\n\n");
 }
 
+// Builds a fresh study skeleton in the chosen template, with
+// `firstSectionText` (if any) landing in the FIRST section — the one
+// construction both conversion (toStudyText below) and spawn-time
+// study-shaped pours (Home.jsx's addNote) share, so the skeleton a pour
+// writes and the skeleton the toggle writes can never drift apart.
+// `withSensusPlenior` appends the empty Sensus Plenior layer the way the
+// editor's own ghost chip would — presence is just the heading existing,
+// so a spawned layer and a hand-added one are indistinguishable by
+// construction.
+export function seedStudyText(templateId, firstSectionText = "", { withSensusPlenior = false } = {}) {
+  const template = STUDY_TEMPLATES.find((t) => t.id === templateId) ?? STUDY_TEMPLATES[0];
+
+  const sections = {};
+  template.sections.forEach(({ key }, i) => {
+    sections[key] = i === 0 ? firstSectionText : "";
+  });
+  if (withSensusPlenior) sections.sensusPlenior = "";
+
+  return stringifyStudy(template, sections);
+}
+
 // Seeds a fresh skeleton in the chosen template — any existing plain text
 // a visitor had already started lands in the FIRST section (whatever that
 // template calls it) rather than being discarded, the same "don't throw
 // away what's already there" courtesy toChecklistText already extends.
 export function toStudyText(text, templateId) {
-  const template = STUDY_TEMPLATES.find((t) => t.id === templateId) ?? STUDY_TEMPLATES[0];
-  const existing = (text ?? "").trim();
-
-  const sections = {};
-  template.sections.forEach(({ key }, i) => {
-    sections[key] = i === 0 ? existing : "";
-  });
-
-  return stringifyStudy(template, sections);
+  return seedStudyText(templateId, (text ?? "").trim());
 }
 
 // Strips the headings back off — whichever template's, plus any appended

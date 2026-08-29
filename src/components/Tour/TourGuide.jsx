@@ -160,7 +160,7 @@ const SCRIPT = {
   quote: {
     selector: ".quote-tab",
     title: "A line of daily ink",
-    body: "Fold out a stray line to sit with — tap the shuffle inside for another whenever this one's worn out.",
+    body: "Fold out a verse to sit with, dealt fresh from scripture — tap the shuffle inside for another whenever this one's worn out.",
     accent: "var(--yellow-color)",
     icon: FaFeather,
     width: 332,

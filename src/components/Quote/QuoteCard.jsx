@@ -1,25 +1,58 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { interpret } from "xstate";
 import { FaFeather, FaShuffle } from "react-icons/fa6";
 
 import { toggleMachine } from "../Navigation/NavigationState";
-import { randomQuote } from "../../utils/data";
-import quotes from "../../assets/data/quotes.json";
+import { dealRandomVerseParts, FALLBACK_VERSES } from "../../utils/randomVerse";
 import { SNAPPY, EXIT_SPRING } from "../Motion";
 
 import "./QuoteCard.css";
 
 const springy = SNAPPY;
 
-// A strip of daily ink for the desk. The same xstate toggle machine that
-// drives the nav rail folds it in and out: unfolding morphs a dot of paper
-// out of the tab into a full strip with a loose, starchy spring, and dealing
-// a new line flips the old one away like a turned page.
+// A strip of daily ink for the desk — now dealt from scripture itself
+// rather than the old bundled quotes.json: each line is a random KJV verse
+// from bible-api.com (see utils/randomVerse.js), shown with its own
+// reference the way every other verse in this app is. The same xstate
+// toggle machine that drives the nav rail folds it in and out: unfolding
+// morphs a dot of paper out of the tab into a full strip with a loose,
+// starchy spring, and dealing a new line flips the old one away like a
+// turned page.
 const QuoteCard = () => {
   const [open, setOpen] = useState(false);
   const [service] = useState(() => interpret(toggleMachine));
-  const [quote, setQuote] = useState(() => randomQuote(quotes));
+
+  // Starts on a local fallback so the strip is never blank — the first
+  // real deal happens on the first unfold (see the effect below), never
+  // eagerly on mount: this card spends the same rate-limited request
+  // budget everything else does (utils/bibleApi.js), and most sessions
+  // never unfold it at all.
+  const [verse, setVerse] = useState(() => FALLBACK_VERSES[Math.floor(Math.random() * FALLBACK_VERSES.length)]);
+
+  // Guards a slow deal landing after a faster later one (or after several
+  // rapid taps of the deal button) — only the LATEST requested deal is
+  // allowed to set the line, the same monotonic-request-id pattern the
+  // editor's own verse previews use.
+  const dealRequestRef = useRef(0);
+  const dealtOnceRef = useRef(false);
+
+  const deal = ({ background } = {}) => {
+    const requestId = ++dealRequestRef.current;
+    dealRandomVerseParts({ background }).then((next) => {
+      if (dealRequestRef.current !== requestId) return;
+      // A deal that lands on the line already showing reads as the button
+      // doing nothing — realistic only on the offline fallback path (7
+      // local verses; the live endpoint repeating is a ~1-in-31,000
+      // fluke), where one re-draw from the remaining six restores the
+      // page-turn the old quotes.json deal always guaranteed.
+      setVerse((prev) => {
+        if (next.reference !== prev.reference || next.text !== prev.text) return next;
+        const others = FALLBACK_VERSES.filter((v) => v.reference !== prev.reference);
+        return others[Math.floor(Math.random() * others.length)] ?? next;
+      });
+    });
+  };
 
   useEffect(() => {
     service
@@ -32,16 +65,16 @@ const QuoteCard = () => {
     return () => service.stop();
   }, [service]);
 
-  // Deal a fresh line, trying a few times not to repeat the last one.
-  const deal = () => {
-    setQuote((prev) => {
-      for (let i = 0; i < 5; i++) {
-        const next = randomQuote(quotes);
-        if (next !== prev) return next;
-      }
-      return randomQuote(quotes);
-    });
-  }
+  // The first unfold trades the seeded fallback for a genuinely dealt
+  // verse — background tier, since it's ambient flavor the visitor didn't
+  // explicitly ask for, and must never make a deliberate lookup elsewhere
+  // in the app wait its turn.
+  useEffect(() => {
+    if (!open || dealtOnceRef.current) return;
+    dealtOnceRef.current = true;
+    deal({ background: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   return (
     <div className="quote-card-slot">
@@ -91,7 +124,7 @@ const QuoteCard = () => {
             >
               <AnimatePresence mode="wait" initial={ false }>
                 <motion.p
-                  key={ quote }
+                  key={ verse.reference + verse.text }
                   className="quote-line"
                   initial={{ opacity: 0, rotateX: -80, translateY: 10 }}
                   animate={{ opacity: 1, rotateX: 0, translateY: 0 }}
@@ -104,17 +137,18 @@ const QuoteCard = () => {
                   transition={{ type: "spring", stiffness: 260, damping: 16 }}
                   style={{ transformPerspective: 600 }}
                 >
-                  “{ quote }”
+                  “{ verse.text }”
+                  <span className="quote-line-reference">{ verse.reference }</span>
                 </motion.p>
               </AnimatePresence>
               <motion.button
                 type="button"
-                aria-label="Deal a new line"
+                aria-label="Deal a new verse"
                 className="quote-deal"
                 whileHover={{ scale: 1.12, rotate: 12 }}
                 whileTap={{ scale: .85 }}
                 transition={ springy }
-                onClick={ deal }
+                onClick={ () => deal() }
               >
                 <FaShuffle />
               </motion.button>

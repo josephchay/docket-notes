@@ -11,9 +11,24 @@
   flex-direction: column;
   gap: 8px;
   width: 264px;
+  /* Backstop for viewports shorter than the whole 5-template stack (a
+     small window, docked devtools) — the position clamp in the JSX keeps
+     the panel's TOP on screen, and this keeps its bottom rows reachable
+     by scrolling instead of rendering past the viewport edge. */
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
   padding: 10px;
   border-radius: 18px;
   box-shadow: 0 20px 46px -14px rgba(25, 25, 25, 0.45);
+}
+
+/* The Tab wrap this popover hand-implements (it portals outside the
+   editor's focus trap — see the JSX) is only followable if the focused
+   row is visibly marked — same outline treatment ScriptureIndexPanel's
+   own panel-wide focus-visible rule uses. */
+.study-template-row:focus-visible {
+  outline: 2px solid var(--black-color);
+  outline-offset: 2px;
 }
 
 .study-template-row {

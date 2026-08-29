@@ -59,8 +59,8 @@ const HoverCitationOverlay = forwardRef(({ text, citations, textareaRef }, ref) 
     // A scroll invalidates whatever the tooltip was last labeling — the
     // mouse hasn't moved, but the text underneath it has, so the safe,
     // simple move (matching the same "clear rather than guess" discipline
-    // pendingSelection/previewCitation's own staleness guards use in
-    // NoteEditor.jsx) is to drop it rather than try to reposition it
+    // pendingSelection's and the preview card's own staleness guards use
+    // in NoteEditor.jsx) is to drop it rather than try to reposition it
     // against content the mouse was never actually still over.
     const handleScroll = () => { setScrollTop(ta.scrollTop); clearHover(); };
     ta.addEventListener("scroll", handleScroll);
@@ -80,9 +80,17 @@ const HoverCitationOverlay = forwardRef(({ text, citations, textareaRef }, ref) 
   // Every distinct span this note's citations are attached to, merged
   // where two or more citations (e.g. two pieces of the same group) share
   // or overlap the same preceding clause, so it's marked once, not doubled.
+  // Walks EVERY occurrence of each citation, not just the deduped first
+  // one (see citations.js's occurrences) — a reference cited twice has two
+  // different clauses attached to it, and marking only the first would
+  // leave the second, visually identical "clause (Book c:v)" span
+  // inexplicably hover-dead. findPrecedingSpan only ever reads `.start`,
+  // which an occurrence carries the same as a whole citation does.
   const spans = useMemo(() => {
     const raw = citations
-      .map((citation) => ({ ...findPrecedingSpan(text, citation), full: citation.full }))
+      .flatMap((citation) => citation.occurrences.map(
+        (occurrence) => ({ ...findPrecedingSpan(text, occurrence), full: citation.full })
+      ))
       .filter((s) => s.end > s.start)
       .sort((a, b) => a.start - b.start);
 

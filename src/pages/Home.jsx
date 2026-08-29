@@ -33,9 +33,10 @@ import {
 
 import { id } from "../utils/math";
 import { formattedDateNow } from "../utils/date";
-import { randomQuote } from "../utils/data";
+import { dealRandomVerse, randomFallbackVerse } from "../utils/randomVerse";
 import { isChecklistText, toChecklistText, fromChecklistText } from "../utils/checklist";
 import { isStudyText, toStudyText, fromStudyText } from "../utils/study";
+import { STUDY_LIBRARY } from "../utils/studyLibrary";
 import { parseCitations, parseBareCitation, BIBLE_BOOKS } from "../utils/citations";
 import { loadNotes, saveNotes, loadSettings, saveSettings, getPersistPref, setPersistPref } from "../utils/storage";
 import {
@@ -79,7 +80,6 @@ import AmbientField from "../components/Ambient/AmbientField";
 import NoteConstellationPanel, { NOTE_CONSTELLATION_EVENT } from "../components/Constellation/NoteConstellationPanel";
 import useLenisScroll from "../hooks/useLenisScroll";
 
-import quotes from "../assets/data/quotes.json";
 
 import "./Home.css";
 
@@ -384,6 +384,15 @@ const Home = () => {
   // Which note is stretched open in the focus editor, if any.
   const [editingNoteId, setEditingNoteId] = useState(null);
 
+  // The latest verse-deal request per note — addNote's pour-time deal and
+  // dealVerse's button both register here, and a resolution only lands if
+  // it is still that note's newest (the same monotonic-request discipline
+  // QuoteCard's own dealRequestRef and the editor's previewRequestRef
+  // already keep): without it, spam-clicking "new verse" could settle the
+  // placeholder on whichever click's response happened to arrive LAST,
+  // not the one dealt last.
+  const verseDealsRef = useRef(new Map());
+
   // Select mode: a checkmark badge blooms onto every note, tapping toggles
   // it into the selection instead of doing nothing, and the bulk action bar
   // morphs up the moment the first one is picked.
@@ -681,11 +690,32 @@ const Home = () => {
     const noteId = id();
     const newNotes = [...notes];
 
+    // Roughly one pour in three deals a COMPLETE worked study from the
+    // bundled library (see utils/studyLibrary.js) — titled, every section
+    // of its template already composed, its citations live in the app's
+    // own grammar — so a desk poured over time naturally grows finished
+    // exemplars of every study shape, not blank outlines the visitor has
+    // to discover the template picker to explain. Studies whose title is
+    // already on the desk are skipped (title-matched against every note,
+    // trash excluded since a shredded study is fair to deal again), so
+    // pouring the library dry never duplicates one — it just means plain
+    // paper again until something frees a title up. Chosen here in the
+    // handler, never inside a state updater, so StrictMode's double-invoke
+    // can't deal two different studies for one pour.
+    const pouredTitles = new Set(notes.map((note) => (note.title ?? "").trim().toLowerCase()));
+    const availableStudies = STUDY_LIBRARY.filter((study) => !pouredTitles.has(study.title.toLowerCase()));
+    const spawnStudy = availableStudies.length > 0 && Math.random() < 1 / 3
+      ? availableStudies[Math.floor(Math.random() * availableStudies.length)]
+      : null;
+
     newNotes.push({
       id: noteId,
-      title: "",
-      text: "",
-      placeholder: randomQuote(quotes),
+      title: spawnStudy?.title ?? "",
+      text: spawnStudy?.text ?? "",
+      // The pour itself never waits on the network — a local fallback
+      // verse lands instantly, and the real dealt verse (below) replaces
+      // it whenever bible-api.com answers.
+      placeholder: randomFallbackVerse(),
       time: formattedDateNow(),
       color,
       favorite: false,
@@ -699,6 +729,31 @@ const Home = () => {
     pushUndo("poured a new note");
     setNotes(newNotes);
     playSpawn();
+
+    // The dealt verse arrives after the pour has already landed —
+    // background tier, since a pour is a deliberate act but its verse is
+    // ambient flavor that must never make a genuinely-clicked lookup
+    // elsewhere wait its turn behind a burst of pours. It only ever
+    // touches the PLACEHOLDER — invisible while any real text exists
+    // (which is a library study's whole body from birth), so this can
+    // never race the visitor's own writing and needs none of the guards a
+    // text write would. No pushUndo/sound: the pour completing, not a new
+    // user action.
+    const dealId = (verseDealsRef.current.get(noteId) ?? 0) + 1;
+    verseDealsRef.current.set(noteId, dealId);
+    dealRandomVerse({ background: true }).then((versePlaceholder) => {
+      if (verseDealsRef.current.get(noteId) !== dealId) return;
+      setNotes((prev) => {
+        // Identity no-op when the note is already gone (deleted before the
+        // deal resolved) — mapping anyway would produce a fresh array and
+        // spend a render plus a storage rewrite on changing nothing.
+        if (!prev.some((note) => note.id === noteId)) return prev;
+
+        return prev.map((note) =>
+          note.id === noteId ? { ...note, placeholder: versePlaceholder } : note
+        );
+      });
+    });
 
     let spawnOrigin = origin;
     if (!spawnOrigin) {
@@ -1235,9 +1290,13 @@ const Home = () => {
             id: typeof note.id !== "string" || !note.id || existing.has(note.id) ? id() : note.id,
             title: typeof note.title === "string" ? note.title : "",
             text: note.text,
+            // A LOCAL fallback verse, never a dealt one — a bulk import
+            // restoring dozens of notes at once would otherwise fire that
+            // many API requests into a 15-per-30s budget for placeholders
+            // that mostly sit invisible behind real imported text anyway.
             placeholder: typeof note.placeholder === "string" && note.placeholder
               ? note.placeholder
-              : randomQuote(quotes),
+              : randomFallbackVerse(),
             time: typeof note.time === "string" ? note.time : formattedDateNow(),
             color: typeof note.color === "string" && note.color in NOTE_COLORS ? note.color : "yellow",
             favorite: !!note.favorite,
@@ -1336,12 +1395,29 @@ const Home = () => {
     };
   }, []);
 
-  // Deal a fresh inspiration quote into an empty note's placeholder.
-  const updateQuote = (noteId) => {
-    const newNotes = notes.map((note) =>
-      note.id === noteId ? { ...note, placeholder: randomQuote(quotes) } : note
-    );
-    setNotes(newNotes);
+  // Deal a fresh random verse into an empty note's placeholder — the same
+  // dealt-verse machinery a pour uses (see addNote), re-rolled on demand
+  // from the editor's own "new verse" button. No instant local swap first:
+  // one clean change when the verse arrives beats a fallback flashing in
+  // and immediately being replaced. Safe at any latency, because a
+  // placeholder never shows over real text — a late arrival can't disturb
+  // anything the visitor has since written.
+  const dealVerse = (noteId) => {
+    // Registered in the same per-note ledger as addNote's pour-time deal
+    // (see verseDealsRef) — only the newest deal for a note ever lands, so
+    // rapid re-taps settle on the LAST verse dealt, never on whichever
+    // response happened to straggle in behind it.
+    const dealId = (verseDealsRef.current.get(noteId) ?? 0) + 1;
+    verseDealsRef.current.set(noteId, dealId);
+    dealRandomVerse().then((versePlaceholder) => {
+      if (verseDealsRef.current.get(noteId) !== dealId) return;
+      setNotes((prev) => {
+        if (!prev.some((note) => note.id === noteId)) return prev;
+        return prev.map((note) =>
+          note.id === noteId ? { ...note, placeholder: versePlaceholder } : note
+        );
+      });
+    });
   }
 
   // Quick-capture shortcuts: N jots a new note in a random color, / jumps to
@@ -1745,7 +1821,7 @@ const Home = () => {
               updateFavorite={ updateFavourite }
               updateLock={ updateLock }
               setNoteColor={ setNoteColor }
-              updateQuote={ updateQuote }
+              dealVerse={ dealVerse }
               updateTags={ updateTags }
               setNoteDueDate={ setNoteDueDate }
               toggleChecklist={ toggleChecklist }

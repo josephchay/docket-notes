@@ -64,7 +64,7 @@ const NoteEditor = ({
   updateFavorite,
   updateLock,
   setNoteColor,
-  updateQuote,
+  dealVerse,
   updateTags,
   setNoteDueDate,
   toggleChecklist,
@@ -79,25 +79,46 @@ const NoteEditor = ({
   const [size, setSize] = useState("roomy");
   const [copied, setCopied] = useState(false);
 
-  // The body renders as an interactive checklist or a three-part Bible
-  // study the moment its own text reads as one or the other — see Note.jsx
-  // and utils/checklist.js/utils/study.js for why both are derived rather
-  // than a stored mode. The two are mutually exclusive by construction
-  // (their marker grammars don't overlap), so at most one of these is ever
-  // true.
+  // The body renders as an interactive checklist or a template-shaped
+  // Bible study (whichever of STUDY_TEMPLATES' heading sequences the text
+  // carries) the moment its own text reads as one or the other — see
+  // Note.jsx and utils/checklist.js/utils/study.js for why both are
+  // derived rather than a stored mode. The two are mutually exclusive by
+  // construction (their marker grammars don't overlap), so at most one of
+  // these is ever true.
   const isChecklist = isChecklistText(draftText);
   const isStudy = isStudyText(draftText);
   const due = dueLabel(note.dueAt);
 
+  // While the note is EMPTY, what the paper visibly shows is the dealt
+  // placeholder verse (see utils/randomVerse.js) — and its citation tag is
+  // a real, working tag, not a picture of one: with no text of their own
+  // to read, the pills row, verse preview, and apparatus all read the
+  // placeholder instead, stepping back to the real text the moment any
+  // exists. That's also exactly what brings the tag back after untyping,
+  // with zero extra state — the whole thing is derived, same as the
+  // placeholder's own visibility. Anything that would WRITE through a
+  // citation (jump-to-selection, weave) stays off in placeholder mode:
+  // those need the citation to live in the editable text itself.
+  //
+  // Strictly draftText === "" — the browser's own rule for painting a
+  // placeholder — not a trim() check: a whitespace-only value already
+  // hides the painted placeholder, and pills claiming a verse the paper
+  // itself isn't showing would be the tag and the text disagreeing about
+  // what the note says.
+  const placeholderMode = draftText === "";
+  const citationSource = placeholderMode ? note.placeholder ?? "" : draftText;
+
   // Inline parenthetical citations woven through the note's own prose —
   // "(Genesis 1:1:7, 1:3:9-10)" — a purely derived read (see
   // utils/citations.js), never a stored mode the way checklist/study are;
-  // it just re-scans whenever the text itself changes, and works the same
-  // regardless of whether the body is plain text, a checklist, or a study.
-  // typologyLinks are the directed " -> " pairs the same parse recognizes
-  // ("(Exodus 12:3 -> John 1:29)" — type pointing at antitype), carried
-  // alongside the deduped citation list rather than attached to it.
-  const { citations, typologyLinks } = useMemo(() => parseCitationsDetailed(draftText), [draftText]);
+  // it just re-scans whenever the source itself changes, and works the
+  // same regardless of whether the body is plain text, a checklist, or a
+  // study. typologyLinks are the directed " -> " pairs the same parse
+  // recognizes ("(Exodus 12:3 -> John 1:29)" — type pointing at
+  // antitype), carried alongside the deduped citation list rather than
+  // attached to it.
+  const { citations, typologyLinks } = useMemo(() => parseCitationsDetailed(citationSource), [citationSource]);
 
   // Resolves a citation's full reference back to its parsed entry — links
   // and apparatus chips both arrive as bare strings and need the entry
@@ -195,8 +216,8 @@ const NoteEditor = ({
   // all — offers "Add reference" instead, opening ReferencePicker to
   // choose one, which then gets appended as a trailing parenthetical
   // citation right after the highlight, the exact style this app's own
-  // placeholder quotes and the user's own original sample writing already
-  // use ("...the earth was without form and void (Genesis 1:2)."). Both
+  // dealt placeholder verses and the user's own original sample writing
+  // already use ("...the earth was without form and void (Genesis 1:2)."). Both
   // share one state shape (start/end/text, a `kind` discriminant) since
   // they're mutually-exclusive outcomes of the same selection-
   // classification decision, not two independent concerns that happen to
@@ -244,10 +265,17 @@ const NoteEditor = ({
     // citation already in this note is attached to (see findPrecedingSpan)?
     // If so, offer to reveal that citation's own verse text instead of
     // offering to attach a brand new, different one to the same prose.
-    const linked = citations.find((citation) => {
-      const span = findPrecedingSpan(draftText, citation);
-      return start < span.end && end > span.start;
-    });
+    // Every occurrence is checked, not just the deduped first (the same
+    // reason HoverCitationOverlay's spans memo walks occurrences): a
+    // reference cited twice has two separately-attached clauses, and
+    // classifying only the first would offer "Add reference" on prose that
+    // visibly already carries one.
+    const linked = citations.find((citation) =>
+      citation.occurrences.some((occurrence) => {
+        const span = findPrecedingSpan(draftText, occurrence);
+        return start < span.end && end > span.start;
+      })
+    );
     if (linked) {
       setPendingSelection({ kind: "linked", start, end, text: selected, citation: linked });
       return;
@@ -431,8 +459,8 @@ const NoteEditor = ({
   // citation's own "(...)" text, so deleting only the citation elsewhere
   // (e.g. via a History-panel jump, a sibling overlay that never unmounts
   // this editor) leaves that prefix slice unchanged and the span check
-  // above none the wiser, the same reason previewCitation's own staleness
-  // effect just below checks citation identity against `citations`
+  // above none the wiser, the same reason the preview card's own staleness
+  // effect further below checks citation identity against `citations`
   // directly rather than trusting a text span.
   useEffect(() => {
     if (!pendingSelection) return;
@@ -461,9 +489,12 @@ const NoteEditor = ({
     field.setSelectionRange(citation.start, citation.end);
   };
 
-  // The one place this app ever fetches anything — clicking a citation's
-  // own label asks bible-api.com what it actually says (see utils/
-  // bibleApi.js). Unlike the jump button, this has nothing to do with
+  // Asks bible-api.com what a citation actually says — one of the few
+  // network callers in the app, all funneled through utils/bibleApi.js's
+  // shared budget (the dealt placeholder verses are the others; the
+  // cross-reference apparatus below also fetches, but only this app's own
+  // bundled same-origin dataset). Unlike the jump button, this has
+  // nothing to do with
   // where the citation sits in THIS note's own text, so it works the same
   // in checklist/study mode as in plain text, and needs no note.lock guard
   // either — a read-only lookup, same as the magnifier's cross-note search
@@ -502,14 +533,25 @@ const NoteEditor = ({
   // mount of an uncited note.
   const [crossRefs, setCrossRefs] = useState(null);
   const crossRefsRequestedRef = useRef(false);
+  // The preview card's close button — the stable focus target for controls
+  // inside the card that remove or disable themselves (see
+  // weaveApparatusRef's own focus handoff).
+  const previewCloseRef = useRef(null);
 
   const ensureCrossRefs = () => {
     if (crossRefsRequestedRef.current) return;
     crossRefsRequestedRef.current = true;
     // Resolves to {} on any failure (crossReferences.js's own .catch), so
     // a missing/blocked dataset just means no apparatus rows — never an
-    // error state to render.
-    loadCrossReferences().then((map) => setCrossRefs(map));
+    // error state to render. That empty object is kept OUT of state
+    // (stored as null) rather than trusted as a loaded dataset: every
+    // consumer gates on crossRefs truthiness, and a truthy-but-empty map
+    // would let the NT-warrant line confidently assert "the Treasury
+    // records no link" about a Treasury that never actually arrived — a
+    // false fact, worse than silence.
+    loadCrossReferences().then((map) => {
+      setCrossRefs(map && Object.keys(map).length > 0 ? map : null);
+    });
   };
 
   useEffect(() => {
@@ -624,7 +666,11 @@ const NoteEditor = ({
   // another citation: the group regex forbids nested parens, so the first
   // ")" past the origin piece IS its group's close.
   const weaveApparatusRef = (refString) => {
-    if (note.lock || !preview || preview.kind === "compare") return;
+    // placeholderMode: the origin citation lives in the PLACEHOLDER, not
+    // in any editable text a "; Ref" could be spliced into — the render
+    // hides the weave buttons for the same reason; this is the handler's
+    // own half of that guard.
+    if (note.lock || placeholderMode || !preview || preview.kind === "compare") return;
 
     const woven = parseBareCitation(refString);
     if (!woven) return;
@@ -644,6 +690,17 @@ const NoteEditor = ({
     const nextText = `${ draftText.slice(0, closeIndex) }; ${ woven.full }${ draftText.slice(closeIndex) }`;
     setDraftText(nextText);
     weaveCitation(note.id, nextText);
+
+    // The button just activated disables itself on the very next render
+    // (the reference is now cited), and a focused element that becomes
+    // disabled surrenders focus to <body> — from where Tab silently
+    // escapes the editor's focus trap. Only steps in when the weave button
+    // actually held focus (a keyboard activation, or a click in browsers
+    // that focus buttons on mousedown); the card's close button is the
+    // stable neighbor that always exists while this card is open.
+    if (document.activeElement?.classList?.contains("note-editor-citation-xref-weave")) {
+      requestAnimationFrame(() => previewCloseRef.current?.focus({ preventScroll: true }));
+    }
   };
 
   // Whether the Treasury's own links connect a typology arrow's two sides
@@ -1013,7 +1070,7 @@ const NoteEditor = ({
         title={ layered ? `Cited under ${ headings.join(" and ") }` : undefined }
       >
         {
-          !isChecklist && !isStudy && (
+          !isChecklist && !isStudy && !placeholderMode && (
             <motion.button
               type="button"
               aria-label={ `Jump to ${ citation.full } in this note` }
@@ -1534,7 +1591,13 @@ const NoteEditor = ({
                   <HoverCitationOverlay
                     ref={ hoverOverlayRef }
                     text={ draftText }
-                    citations={ citations }
+                    /* Never the placeholder-derived list — the overlay's
+                       spans are character offsets into the REAL text it
+                       mirrors, and in placeholder mode those offsets
+                       would index into a placeholder the mirror doesn't
+                       render (the browser paints placeholders itself,
+                       outside the DOM text this backdrop copies). */
+                    citations={ placeholderMode ? [] : citations }
                     textareaRef={ textRef }
                   />
                 </div>
@@ -1708,7 +1771,7 @@ const NoteEditor = ({
               {
                 preview && (
                   <motion.div
-                    className="note-editor-citation-preview"
+                    className="note-editor-citation-preview custom-scroll"
                     initial={{ opacity: 0, scale: .96, height: 0 }}
                     animate={{ opacity: 1, scale: 1, height: "auto" }}
                     exit={{ opacity: 0, scale: .96, height: 0, transition: { duration: .15 } }}
@@ -1751,6 +1814,7 @@ const NoteEditor = ({
                         )
                       }
                       <button
+                        ref={ previewCloseRef }
                         type="button"
                         aria-label="Close preview"
                         className="note-editor-citation-preview-close"
@@ -1824,7 +1888,7 @@ const NoteEditor = ({
                                             deskCount > 0 && (
                                               <span
                                                 className="note-editor-citation-xref-count"
-                                                title={ `Already cited ${ deskCount } ${ deskCount === 1 ? "time" : "times" } across your notes` }
+                                                title={ `Already cited in ${ deskCount } of your notes` }
                                               >
                                                 { deskCount }
                                               </span>
@@ -1832,7 +1896,7 @@ const NoteEditor = ({
                                           }
                                         </button>
                                         {
-                                          !note.lock && (
+                                          !note.lock && !placeholderMode && (
                                             <button
                                               type="button"
                                               aria-label={ `Weave ${ parsed.full } into this citation's group` }
@@ -1896,11 +1960,11 @@ const NoteEditor = ({
                 <span className="note-editor-date">{ note.time }</span>
                 <AnimatePresence>
                   {
-                    !draftText.trim() && (
+                    placeholderMode && (
                       <motion.button
                         key="quote"
                         type="button"
-                        aria-label="Deal a new inspiration quote"
+                        aria-label="Deal a new random verse"
                         className="note-editor-quote"
                         initial={{ opacity: 0, scale: .8 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -1908,10 +1972,10 @@ const NoteEditor = ({
                         whileHover={{ scale: 1.08 }}
                         whileTap={{ scale: .92 }}
                         transition={{ type: "spring", stiffness: 420, damping: 18 }}
-                        onClick={ () => updateQuote(note.id) }
+                        onClick={ () => dealVerse(note.id) }
                       >
                         <FaShuffle className="note-editor-quote-icon" />
-                        new quote
+                        new verse
                       </motion.button>
                     )
                   }
