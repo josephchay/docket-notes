@@ -18,12 +18,12 @@ import "./StudyTemplatePicker.css";
 // STUDY_TEMPLATES, so a future template added there shows up here with
 // zero changes.
 const POPOVER_WIDTH = 264;
-// Sized for the CURRENT five-template registry (~66px a row plus gaps and
+// Sized for the CURRENT six-template registry (~66px a row plus gaps and
 // padding) — the clamp below only decides where the panel's TOP lands, so
 // this being roughly right keeps the whole stack on screen in the common
 // case, and the CSS max-height/overflow backstop covers viewports shorter
 // than the stack itself. Revisit when STUDY_TEMPLATES grows.
-const POPOVER_HEIGHT = 360;
+const POPOVER_HEIGHT = 430;
 
 const StudyTemplatePicker = ({ open, colorName, anchorRef, onChange, onClose }) => {
   const [position, setPosition] = useState(null);

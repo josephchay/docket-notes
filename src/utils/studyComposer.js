@@ -34,6 +34,12 @@ import { BIBLE_BOOK_DETAILS } from "./bibleBookDetails";
 import { STUDY_TEMPLATES, stringifyStudy, detectStudyTemplate, parseStudy } from "./study";
 import { fetchRandomVerse } from "./bibleApi";
 import { loadCrossReferences } from "./crossReferences";
+// A deliberate two-way pairing: weaveComposer borrows this file's small
+// text helpers (exported at the bottom) while this file's pantry hands
+// weave-template picks to composeWeave — both references live inside
+// function bodies, never at module top level, which is what keeps the
+// cycle safe under ESM.
+import { composeWeave } from "./weaveComposer";
 
 // ---------- small facts, all computed, none invented ----------
 
@@ -335,8 +341,11 @@ const composeStudy = ({ book: rawBook, chapter, verse, text }, crossRefs, templa
 };
 
 // Exported for standalone verification scripts — the app itself only ever
-// goes through the pantry below.
-export { composeStudy };
+// goes through the pantry below. The small text helpers are shared with
+// weaveComposer.js (the Proclamation Weave genre builds on the same
+// deterministic-variant and incipit-title conventions rather than growing
+// second copies that could drift).
+export { composeStudy, hashOf, pick, incipitTitle, joinSentences };
 
 // ---------- the pantry ----------
 //
@@ -378,9 +387,15 @@ const fillPantry = async () => {
         if (pantry.some((entry) => entry.reference.toLowerCase() === reference.toLowerCase())) continue;
 
         const templateId = STUDY_TEMPLATES[hashOf(reference) % STUDY_TEMPLATES.length].id;
-        // composeStudy canonicalizes the dealt book's spelling itself and
-        // declines (null) anything it can't place — no pre-check needed.
-        const entry = composeStudy(dealt, crossRefs, templateId);
+        // composeStudy/composeWeave both canonicalize the dealt book's
+        // spelling themselves and decline (null) anything they can't
+        // place — no pre-check needed. The weave path is async on its own
+        // account (it fetches the chapter and up to two linked passages,
+        // background tier); every other template composes synchronously
+        // from what's already in hand.
+        const entry = templateId === "weave"
+          ? await composeWeave(dealt, crossRefs)
+          : composeStudy(dealt, crossRefs, templateId);
         if (entry) pantry.push(entry);
       } catch {
         // one bad attempt — the next may fare better

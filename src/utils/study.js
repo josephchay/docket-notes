@@ -74,6 +74,22 @@ export const STUDY_TEMPLATES = [
       { key: "significance", heading: "Significance", prompt: "What follows for the church and for you — earned from everything above?" },
     ],
   },
+  {
+    id: "weave",
+    label: "Proclamation Weave",
+    about: "The herald's cloth — the word set forth, its echoes sounded, the charge given",
+    sections: [
+      // The citation-woven proclamatory genre this app's own writer works
+      // in: narration that carries a citation on every clause, quotation
+      // that is always the text's own exact words, and connection made by
+      // the same words genuinely sounding again in another place (the old
+      // concordance method — an echo either exists in the letters or it
+      // is not claimed). The prompts hold the writer to that discipline.
+      { key: "proclamation", heading: "Proclamation", prompt: "Set the passage forth as one telling — every clause carrying its citation, every quotation the text's own exact words." },
+      { key: "echoes", heading: "Echoes", prompt: "Where do the same words sound again across the canon? Quote both places exactly, and let the echo make its own claim." },
+      { key: "exhortation", heading: "Exhortation", prompt: "Give the charge — what must be heard, kept, and done, now that the word has been set forth?" },
+    ],
+  },
 ];
 
 // Sections any study can carry APPENDED after its template's own required
