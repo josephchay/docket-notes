@@ -47,6 +47,7 @@ Session Storage and local storage is being used temporarily.
 - Check the QuickDock functionality, if there is any bug issue under this commit <a href="https://github.com/josephchay/docket-notes/tree/53d2ad204aa70353fc4a227bf2344b8dda60924e" target="_blank">53d2ad204aa70353fc4a227bf2344b8dda60924e</a>
 - Check the TagThreads functionality, if there is any bug issue under this commit. <a href="https://github.com/josephchay/docket-notes/tree/ccc6d09d64ac98a183c0550521231babd1cbc245" target="_blank">ccc6d09d64ac98a183c0550521231babd1cbc245</a>
 - Check the NoteList and the FluidVisualizer, if there is any bug issue under this commit.
+- Check out on the "gezerah shavah" technique of interpretive idiom, which is what they call (I think) the ancient concordance method
 
 ## Acknowledgements
 
